@@ -46,6 +46,15 @@
     // 合并
     const allFavs = [...longFavs, ...shortFavs].join('\n\n---\n\n');
     
+    let availableStickers = "";
+                if (character.stickerIds && character.stickerIds.length > 0) {
+                    availableStickers = character.stickerIds
+                        .map(id => db.myStickers.find(s => s.id === id)) // 找回实体
+                        .filter(Boolean)                                 // 过滤已被删除的
+                        .map(s => s.name)                                // 取名字
+                        .join('、');
+                }
+    
     const userNick = character.myNickname || character.myName;
                 // --- 插入代码开始 ---
                 if (character.offlineModeEnabled) {
@@ -148,7 +157,11 @@
 10. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
 11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
 `;
-                prompt += `12. 你拥有发送表情包的能力。这是一个可选功能，你可以根据对话氛围和内容，自行判断是否需要发送表情包来辅助表达。你不必在每次回复中都包含表情包。格式为：[${character.realName}发送的表情包：图片URL]。\n`;
+                if (availableStickers) {
+                    prompt += `12. 你拥有发送表情包的能力，这是你拥有的表情包库，包含以下表情：【${availableStickers}】。这是一个可选功能，你可以根据对话氛围，发送表情包来辅助表达情绪，你不必在每次回复中都包含表情包。格式必须严格为：[${character.realName}的表情包：表情名称]。\n⚠️ 严禁造词！你只能使用上述【】内存在的表情名称，并且绝对不要输出任何图片URL路径！\n`;
+                } else {
+                    prompt += `12. 因为你的表情包库目前为空，你无法发送任何表情包，只能使用纯文字回复。\n`;
+                }
 
                 let outputFormats = `
     a) 普通消息: [${character.realName}的消息：{消息内容}]
@@ -157,7 +170,7 @@
     d) 语音消息: [${character.realName}的语音：{语音内容}]
     e) 照片/视频: [${character.realName}发来的照片/视频：{描述}]
     f) 给我的转账: [${character.realName}的转账：{金额}元；备注：{备注}]
-    g) 表情包/图片: [${character.realName}发送的表情包：{表情包路径}]。注意：这里的路径不需要包含"https://i.postimg.cc/"，只需要提供后面的部分，例如 "害羞vHLfrV3K/1.jpg"。
+    g) 发送表情包: [${character.realName}的表情包：{表情名称}]
     h) 对我礼物的回应(此条不显示): [${character.realName}已接收礼物]
     i) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
     j) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]

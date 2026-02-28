@@ -58,6 +58,7 @@ function generateGroupSystemPrompt(group) {
         let realName = member.realName;
         let nickname = member.groupNickname;
         let persona = member.persona;
+        let availableStickers = ""; // ✨新增：该角色专属的表情包
 
         if (member.originalCharId) {
             const originalChar = db.characters.find(c => c.id === member.originalCharId);
@@ -65,12 +66,24 @@ function generateGroupSystemPrompt(group) {
                 realName = originalChar.realName;
                 nickname = originalChar.remarkName;
                 persona = originalChar.persona;
+                                if (originalChar.stickerIds && originalChar.stickerIds.length > 0) {
+                    availableStickers = originalChar.stickerIds
+                        .map(id => db.myStickers.find(s => s.id === id))
+                        .filter(Boolean)
+                        .map(s => s.name)
+                        .join('、');
+                }
             }
         }
+
 
         prompt += `   - **角色: ${realName} (AI)**\n`;
         prompt += `     - 群内昵称: ${nickname}\n`;
         prompt += `     - 人设: ${persona || '无特定人设'}\n`;
+                // ✨如果这个角色有绑定的表情包，就单独告诉 AI
+        if (availableStickers) {
+            prompt += `     - 该成员拥有的表情包：${availableStickers}\n`;
+            }
     });
     
         // 3. 组合并注入
@@ -104,7 +117,7 @@ function generateGroupSystemPrompt(group) {
 
     let outputFormats = `
   - **普通消息**: [{成员真名}的消息：{消息内容}]
-  - **表情包**: [{成员真名}发送的表情包：{表情包路径}]。注意：这里的路径不需要包含"https://i.postimg.cc/"，只需要提供后面的部分，例如 "害羞vHLfrV3K/1.jpg"。
+  - **发送表情包**: [{成员真名}的表情包：{表情名称}]
   - **语音**: [{成员真名}的语音：{语音转述的文字}]
   - **照片/视频**: [{成员真名}发来的照片/视频：{内容描述}]
   - **引用消息**: [{成员真名}引用“{被引用内容}”并回复：{回复内容}]\n\n`;
@@ -124,7 +137,7 @@ function generateGroupSystemPrompt(group) {
     const maxMessages = numMembers * 5;
     prompt += `   - **消息数量**: 你的回复需要包含 **${minMessages}到${maxMessages}条** 消息。确保有足够多的互动。\n`;
     prompt += `   - **发言者与顺序随机**: 发言顺序随机，一个成员可以连续发送多条消息。\n`;
-    prompt += `   - **内容多样性**: 你的回复应以普通文本消息为主，但可以 **偶尔、选择性地** 让某个成员发送一条特殊消息（表情包、语音、照片/视频），以增加真实感。不要滥用特殊消息。\n`;
+    prompt += `   - **内容多样性**: 你的回复应以普通文本消息为主，但可以 **偶尔、选择性地** 让某个成员发送一条特殊消息（成员拥有的表情包、语音、照片/视频），以增加真实感。不要滥用特殊消息。\n`;
     prompt += `   - **对话连贯性**: 尽管发言是随机的，但对话内容应整体围绕群聊成员的发言展开，保持一定的逻辑连贯性。\n\n`;
 
     prompt += `6. **行为准则**:\n`;

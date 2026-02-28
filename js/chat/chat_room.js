@@ -1,5 +1,9 @@
 // 在文件最上方
 let isLoadingHistory = false; // 新增：防止重复加载标志位
+let selectedLinkStickerIds = new Set(); // 关联弹窗选中的ID
+let currentStickerCategory = '全部';    // 主面板当前选中的分类
+let currentLinkStickerCategory = '全部';// 关联弹窗当前选中的分类
+let currentActionCategory = null;// 记录长按操作的分类名
 
 const chatRoomScreen = document.getElementById('chat-room-screen'),
                 chatRoomHeaderDefault = document.getElementById('chat-room-header-default'),
@@ -1167,8 +1171,10 @@ function renderNewerMessages() {
                 bubbleRow.className = 'message-bubble-row';
                 let bubbleElement;
                 const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
-                const sentStickerRegex = /\[(?:.+?)的表情包：.+?\]/i;
-                const receivedStickerRegex = /\[(?:.+?)发送的表情包：([\s\S]+?)\]/i;
+                // === 替换开始 ===
+                const unifiedStickerRegex = /\[(.*?)的表情包：(.*?)\]/; 
+                const legacyReceivedStickerRegex = /\[(?:.+?)发送的表情包：([\s\S]+?)\]/i;
+                // === 替换结束 ===
                 const voiceRegex = /\[(?:.+?)的语音：([\s\S]+?)\]/;
                 const photoVideoRegex = /\[(?:.+?)发来的照片\/视频：([\s\S]+?)\]/;
                 const privateSentTransferRegex = /\[.*?给你转账：([\d.]+)元；备注：(.*?)\]/;
@@ -1180,8 +1186,8 @@ function renderNewerMessages() {
                 const textRegex = /\[(?:.+?)的消息：([\s\S]+?)\]/;
                 const pomodoroRecordRegex = /\[专注记录\]\s*任务：([\s\S]+?)，时长：([\s\S]+?)，期间与 .*? 互动 (\d+)\s*次。/;
                 const pomodoroMatch = content.match(pomodoroRecordRegex);
-                const sentStickerMatch = content.match(sentStickerRegex);
-                const receivedStickerMatch = content.match(receivedStickerRegex);
+const unifiedStickerMatch = content.match(unifiedStickerRegex);
+                const legacyReceivedStickerMatch = content.match(legacyReceivedStickerRegex);
                 const voiceMatch = content.match(voiceRegex);
                 const photoVideoMatch = content.match(photoVideoRegex);
                 const privateSentTransferMatch = content.match(privateSentTransferRegex);
@@ -1206,39 +1212,43 @@ function renderNewerMessages() {
                     bubbleElement.addEventListener('click', () => {
                         detailsDiv.classList.toggle('active');
                     });
-                } else if ((isSent && sentStickerMatch && stickerData) || (!isSent && receivedStickerMatch)) {
-                    bubbleElement = document.createElement('div');
-                    bubbleElement.className = 'image-bubble';
+                } else if (unifiedStickerMatch || legacyReceivedStickerMatch) {
                     let stickerSrc = '';
-                    if (isSent) {
-                        stickerSrc = stickerData;
-                    } else {
-                        let useCatbox = false;
-                        if (chat && chat.worldBookIds && chat.worldBookIds.length > 0) {
-                            const worldBookContent = chat.worldBookIds.map(id => db.worldBooks.find(wb => wb.id === id)).filter(Boolean).map(wb => wb.content).join(' ');
-                            if (worldBookContent.toLowerCase().includes('catbox')) {
-                                useCatbox = true;
-                            }
+                    let stickerName = '未知表情';
+
+                    // 1. 获取图片路径
+                    if (legacyReceivedStickerMatch && !isSent) {
+                        // 兼容早期基于 URL 的旧数据
+                        stickerSrc = legacyReceivedStickerMatch[1].trim();
+                        if (!stickerSrc.startsWith('http')) stickerSrc = 'https://i.postimg.cc/' + stickerSrc.split('/').pop();
+                    } 
+                    else if (unifiedStickerMatch) {
+                        // 新逻辑：只认表情名字，所有表情都去物理库 db.myStickers 里找
+                        stickerName = unifiedStickerMatch[2].trim();
+                        const s = db.myStickers.find(x => x.name === stickerName);
+                        if (s) {
+                            stickerSrc = s.data;
+                        } else if (isSent && stickerData) {
+                            // 我自己发送那一瞬间的临时兜底
+                            stickerSrc = stickerData;
                         }
-                        const imageHost = useCatbox ? 'https://files.catbox.moe/' : 'https://i.postimg.cc/';
-                        const rawPath = receivedStickerMatch[1].trim();
-                        let finalPath;
-                        if (useCatbox) {
-                            const catboxFileRegex = /[a-z0-9]+\.(jpeg|png|gif|jpg)$/i;
-                            const pathMatch = rawPath.match(catboxFileRegex);
-                            if (pathMatch) {
-                                finalPath = pathMatch[0];
-                            } else {
-                                finalPath = rawPath;
-                            }
-                        } else {
-                            const pathExtractionRegex = /[a-zA-Z0-9]+\/.*$/;
-                            const extractedPathMatch = rawPath.match(pathExtractionRegex);
-                            finalPath = extractedPathMatch ? extractedPathMatch[0] : rawPath;
-                        }
-                        stickerSrc = `${imageHost}${finalPath}`;
                     }
-                    bubbleElement.innerHTML = `<img src="${stickerSrc}" alt="表情包">`;
+
+                    // 2. 渲染气泡
+                    bubbleElement = document.createElement('div');
+                    if (stickerSrc) {
+                        // 找到了图片，应用专门的贴纸样式，去掉普通的泡泡框
+                        bubbleElement.className = 'sticker-bubble';
+                        bubbleElement.innerHTML = `<img src="${stickerSrc}" alt="${stickerName}">`;
+                    } else {
+                        // 如果库里没找到（比如被删了），优雅降级为带背景色的文本
+                        bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
+                        if (!chat.useCustomBubbleCss) {
+                            bubbleElement.style.backgroundColor = bubbleTheme.bg;
+                            bubbleElement.style.color = bubbleTheme.text;
+                        }
+                        bubbleElement.innerHTML = `[表情包：${stickerName}]`;
+                    }
                 } else if (privateGiftMatch || groupGiftMatch) {
                     const match = privateGiftMatch || groupGiftMatch;
                     bubbleElement = document.createElement('div');
@@ -2960,7 +2970,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     
                     // 正则定义
                     // 1. 标准消息/媒体
-                    const standardRegex = /\[(.*?)((?:的消息|的语音|发送的表情包|发来的照片\/视频))：/;
+                    const standardRegex = /\[(.*?)((?:的消息|的语音|的表情包|发送的表情包|发来的照片\/视频))[:：]/;
                     // 2. 引用消息 (新增)
                     const quoteRegex = /\[(.*?)引用["“](.*?)["”]并回复[:：]([\s\S]*?)\]/;
 
@@ -3539,7 +3549,18 @@ async function handleRegenerate() {
     await getAiReply(currentChatId, currentChatType);
 }
 
-        async function setupStickerSystem() {
+// 重名处理函数
+            function getUniqueStickerName(baseName, excludeId = null) {
+                let name = baseName;
+                let counter = 1;
+                while (db.myStickers.some(s => s.name === name && s.id !== excludeId)) {
+                    name = `${baseName}(${counter})`;
+                    counter++;
+                }
+                return name;
+            }
+
+            async function setupStickerSystem() {
                 const batchAddStickerBtn = document.getElementById('batch-add-sticker-btn');
                 const batchAddStickerModal = document.getElementById('batch-add-sticker-modal');
                 const batchAddStickerForm = document.getElementById('batch-add-sticker-form');
@@ -3547,138 +3568,283 @@ async function handleRegenerate() {
                 const manageStickersBtn = document.getElementById('manage-stickers-btn');
                 const stickerManageBar = document.getElementById('sticker-manage-bar');
                 const deleteSelectedStickersBtn = document.getElementById('delete-selected-stickers-btn');
+                
+                const linkStickerBtn = document.getElementById('link-sticker-btn');
+                const linkStickerModal = document.getElementById('link-sticker-modal');
+                const cancelLinkBtn = document.getElementById('cancel-link-sticker-btn');
+                const confirmLinkBtn = document.getElementById('confirm-link-sticker-btn');
+                const linkSelectAllBtn = document.getElementById('link-sticker-select-all-btn'); // ✨全选按钮
 
+                // ==========================================
+                // 1. 关联表情包及【全选】逻辑
+                // ==========================================
+                linkStickerBtn.addEventListener('click', () => {
+                    selectedLinkStickerIds.clear();
+                    const chat = db.characters.find(c => c.id === currentChatId);
+                    const charIds = chat.stickerIds ||[];
+                    charIds.forEach(id => selectedLinkStickerIds.add(id)); 
+                    
+                    currentLinkStickerCategory = '全部'; 
+                    renderLinkStickerGrid();
+                    linkStickerModal.classList.add('visible');
+                });
+
+                cancelLinkBtn.addEventListener('click', () => {
+                    linkStickerModal.classList.remove('visible');
+                });
+
+                confirmLinkBtn.addEventListener('click', async () => {
+                    const chat = db.characters.find(c => c.id === currentChatId);
+                    chat.stickerIds = Array.from(selectedLinkStickerIds);
+                    await saveData();
+                    showToast('关联成功');
+                    linkStickerModal.classList.remove('visible');
+                });
+
+                // ✨全选按钮点击逻辑
+                linkSelectAllBtn.addEventListener('click', () => {
+                    let stickersInView = db.myStickers;
+                    if (currentLinkStickerCategory !== '全部') {
+                        stickersInView = db.myStickers.filter(s => (s.category || '默认') === currentLinkStickerCategory);
+                    }
+                    
+                    // 检查当前视图下的是否已全部选中
+                    const allSelected = stickersInView.every(s => selectedLinkStickerIds.has(s.id));
+                    
+                    if (allSelected) {
+                        // 取消全选
+                        stickersInView.forEach(s => selectedLinkStickerIds.delete(s.id));
+                    } else {
+                        // 全选
+                        stickersInView.forEach(s => selectedLinkStickerIds.add(s.id));
+                    }
+                    renderLinkStickerGrid(); 
+                });
+
+                // ==========================================
+                // 2. 分类标签长按管理菜单逻辑 ✨
+                // ==========================================
+                const categoryActionSheet = document.getElementById('category-actionsheet');
+                const renameCategoryBtn = document.getElementById('rename-category-btn');
+                const linkCategoryBtn = document.getElementById('link-category-btn');
+                const deleteCategoryBtn = document.getElementById('delete-category-btn');
+
+                categoryActionSheet.addEventListener('click', (e) => {
+                    if (e.target === categoryActionSheet) {
+                        categoryActionSheet.classList.remove('visible');
+                    }
+                });
+
+                // 一键重命名
+renameCategoryBtn.addEventListener('click', () => {
+                    categoryActionSheet.classList.remove('visible');
+                    // ✨ 修复：增加对“默认”分类的拦截
+                    if (!currentActionCategory || currentActionCategory === '默认') return; 
+                    
+                    // 找到当前分类的DOM按钮
+                    const bar = document.getElementById('sticker-category-bar');
+                    const btns = Array.from(bar.querySelectorAll('.category-btn'));
+                    const targetBtn = btns.find(b => b.textContent === currentActionCategory);
+                    if (!targetBtn) return;
+                    
+                    // 恢复系统的文本选中和交互功能
+                    targetBtn.style.userSelect = 'text';
+                    targetBtn.style.webkitUserSelect = 'text';
+                    targetBtn.style.webkitTouchCallout = 'default';
+
+                    // 让其可编辑并全选文字
+                    targetBtn.contentEditable = "true";
+                    targetBtn.focus();
+                    const range = document.createRange();
+                    range.selectNodeContents(targetBtn);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    
+                    // 完成编辑的处理函数
+                    const finishEditing = async () => {
+                        targetBtn.contentEditable = "false";
+                        targetBtn.style.userSelect = 'none';
+                        targetBtn.style.webkitUserSelect = 'none';
+                        targetBtn.style.webkitTouchCallout = 'none';
+
+                        const newName = targetBtn.textContent.trim();
+                        targetBtn.removeEventListener('blur', finishEditing);
+                        targetBtn.removeEventListener('keydown', keydownHandler);
+                        
+                        if (!newName || newName === '全部' || newName === '默认') { // 也禁止重命名为"默认"
+                            showToast('分类名称无效');
+                            renderStickerGrid(); // 恢复原状
+                            return;
+                        }
+                        
+                        if (newName !== currentActionCategory) {
+                            // 批量修改该分类下所有表情的属性
+                            db.myStickers.forEach(s => {
+                                const sCat = s.category || '默认';
+                                if (sCat === currentActionCategory) s.category = newName;
+                            });
+                            await saveData();
+                            if (currentStickerCategory === currentActionCategory) {
+                                currentStickerCategory = newName;
+                            }
+                            showToast(`分类已重命名为 ${newName}`);
+                        }
+                        renderStickerGrid();
+                    };
+
+                    const keydownHandler = (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            targetBtn.blur(); // 失去焦点会触发 finishEditing
+                        }
+                    };
+                    
+                    targetBtn.addEventListener('blur', finishEditing);
+                    targetBtn.addEventListener('keydown', keydownHandler);
+                });
+
+                // 一键关联
+                linkCategoryBtn.addEventListener('click', async () => {
+                    categoryActionSheet.classList.remove('visible');
+                    if (!currentActionCategory || currentChatType !== 'private') return;
+                    
+                    const chat = db.characters.find(c => c.id === currentChatId);
+                    if (!chat) return;
+
+                    const stickersInCat = db.myStickers.filter(s => (s.category || '默认') === currentActionCategory);
+                    const idsToLink = stickersInCat.map(s => s.id);
+                    
+                    // 将这些 ID 追加到角色身上并去重
+                    const currentSet = new Set(chat.stickerIds ||[]);
+                    idsToLink.forEach(id => currentSet.add(id));
+                    chat.stickerIds = Array.from(currentSet);
+                    
+                    await saveData();
+                    showToast(`已将该分类的 ${idsToLink.length} 个表情关联到角色`);
+                });
+
+                // 一键删除整个分类
+deleteCategoryBtn.addEventListener('click', async () => {
+                    categoryActionSheet.classList.remove('visible');
+                    // ✨ 修复：增加对“默认”分类的拦截
+                    if (!currentActionCategory || currentActionCategory === '默认') return;
+
+                    const stickersInCat = db.myStickers.filter(s => (s.category || '默认') === currentActionCategory);
+                    
+                    if (await AppUI.confirm(`确定要彻底删除【${currentActionCategory}】分类下的所有 ${stickersInCat.length} 个表情包吗？此操作不可恢复！`)) {
+                        const idsToDelete = new Set(stickersInCat.map(s => s.id));
+                        
+                        // 1. 删除内存中属于该分类的表情
+                        db.myStickers = db.myStickers.filter(s => !idsToDelete.has(s.id));
+                        
+                        // 2. 清理全站所有角色身上的关联
+                        db.characters.forEach(c => {
+                            if (c.stickerIds) {
+                                c.stickerIds = c.stickerIds.filter(id => !idsToDelete.has(id));
+                            }
+                        });
+                        
+                        // 3. 物理删除
+                        await dexieDB.myStickers.bulkDelete(Array.from(idsToDelete));
+                        await saveData();
+                        
+                        if (currentStickerCategory === currentActionCategory) {
+                            currentStickerCategory = '全部';
+                        }
+                        showToast(`已删除整个分类`);
+                        renderStickerGrid();
+                    }
+                });
+
+
+                // ==========================================
+                // 3. 批量管理与彻底删除
+                // ==========================================
                 manageStickersBtn.addEventListener('click', () => {
                     isStickerManageMode = !isStickerManageMode;
                     if (isStickerManageMode) {
                         manageStickersBtn.textContent = '取消';
-                        manageStickersBtn.classList.remove('btn-primary');
-                        manageStickersBtn.classList.add('btn-neutral');
+                        manageStickersBtn.classList.replace('btn-primary', 'btn-neutral');
                         stickerManageBar.style.display = 'flex';
-                        stickerActionSheet.classList.remove('visible'); // 如果操作菜单是开的，则关掉
                     } else {
                         manageStickersBtn.textContent = '管理';
-                        manageStickersBtn.classList.remove('btn-neutral');
-                        manageStickersBtn.classList.add('btn-primary');
+                        manageStickersBtn.classList.replace('btn-neutral', 'btn-primary');
                         stickerManageBar.style.display = 'none';
                         selectedStickerIds.clear();
                     }
-                    updateDeleteSelectedBtn();
+                    deleteSelectedStickersBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
+                    deleteSelectedStickersBtn.disabled = selectedStickerIds.size === 0;
                     renderStickerGrid();
                 });
 
                 deleteSelectedStickersBtn.addEventListener('click', async () => {
-                    if (selectedStickerIds.size === 0) {
-                        showToast('请先选择要删除的表情');
-                        return;
-                    }
-                    if (await AppUI.confirm(`确定要删除这 ${selectedStickerIds.size} 个表情吗？`, "提示", "确认", "取消")) {
+                    if (selectedStickerIds.size === 0) return showToast('请先选择');
+                    
+                    if (await AppUI.confirm(`将彻底从库中删除这 ${selectedStickerIds.size} 个表情，是否继续？`)) {
                         db.myStickers = db.myStickers.filter(s => !selectedStickerIds.has(s.id));
+                        db.characters.forEach(c => {
+                            if (c.stickerIds) {
+                                c.stickerIds = c.stickerIds.filter(id => !selectedStickerIds.has(id));
+                            }
+                        });
+                        await dexieDB.myStickers.bulkDelete(Array.from(selectedStickerIds));
                         await saveData();
-                        showToast('表情已删除');
-                        // 退出管理模式
+                        
+                        showToast('删除成功');
                         isStickerManageMode = false;
                         manageStickersBtn.textContent = '管理';
-                        manageStickersBtn.classList.remove('btn-neutral');
-                        manageStickersBtn.classList.add('btn-primary');
+                        manageStickersBtn.classList.replace('btn-neutral', 'btn-primary');
                         stickerManageBar.style.display = 'none';
                         selectedStickerIds.clear();
                         renderStickerGrid();
                     }
                 });
 
-                function updateDeleteSelectedBtn() {
-                    deleteSelectedStickersBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
-                    deleteSelectedStickersBtn.disabled = selectedStickerIds.size === 0;
-                }
-
-                batchAddStickerBtn.addEventListener('click', () => {
-                    batchAddStickerModal.classList.add('visible');
-                    stickerUrlsTextarea.value = ''; // 清空文本域
-                });
-
-                batchAddStickerForm.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    const textInput = stickerUrlsTextarea.value.trim();
-                    if (!textInput) {
-                        showToast('请输入表情包数据');
-                        return;
-                    }
-
-                    const lines = textInput.split('\n');
-                    const newStickers = [];
-
-                    for (const line of lines) {
-                        const trimmedLine = line.trim();
-                        if (!trimmedLine) continue; // 跳过空行
-
-                        const colonIndex = trimmedLine.indexOf(':');
-
-                        // 验证格式：必须包含冒号，且冒号前后都有内容
-                        if (colonIndex <= 0) {
-                            console.warn(`格式错误，已跳过: ${trimmedLine}`);
-                            continue;
-                        }
-
-                        const name = trimmedLine.substring(0, colonIndex).trim();
-                        const url = trimmedLine.substring(colonIndex + 1).trim();
-
-                        if (name && url.startsWith('http')) {
-                            newStickers.push({
-                                id: `sticker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                                name: name,
-                                data: url
-                            });
-                        } else {
-                            console.warn(`数据无效，已跳过: name='${name}', url='${url}'`);
-                        }
-                    }
-
-                    if (newStickers.length > 0) {
-                        db.myStickers.push(...newStickers); // 一次性推入所有新表情
-                        await saveData();
-                        renderStickerGrid();
-                        batchAddStickerModal.classList.remove('visible');
-                        showToast(`成功导入 ${newStickers.length} 个新表情！`);
-                    } else {
-                        showToast('未找到有效的表情包数据，请检查格式');
-                    }
-                });
-
+                // ==========================================
+                // 4. 面板打开控制及上传功能
+                // ==========================================
                 stickerToggleBtn.addEventListener('click', () => {
-                    // Hide expansion panel if open
                     const chatExpansionPanel = document.getElementById('chat-expansion-panel');
                     if (chatExpansionPanel.classList.contains('visible')) {
                         chatExpansionPanel.classList.remove('visible');
                     }
+                    if (currentChatType === 'group') {
+                        linkStickerBtn.style.display = 'none';
+                    } else {
+                        linkStickerBtn.style.display = 'inline-block';
+                    }
+                    
                     stickerModal.classList.toggle('visible');
                     if (stickerModal.classList.contains('visible')) {
                         renderStickerGrid();
                     }
                 });
+                
                 addNewStickerBtn.addEventListener('click', () => {
                     addStickerModalTitle.textContent = '添加新表情';
                     addStickerForm.reset();
                     stickerEditIdInput.value = '';
+                    document.getElementById('sticker-category-input').value = currentStickerCategory === '全部' ? '' : currentStickerCategory;
                     stickerPreview.innerHTML = '<span>预览</span>';
                     stickerUrlInput.disabled = false;
                     addStickerModal.classList.add('visible');
                 });
+                
                 addStickerForm.addEventListener('submit', async (e) => {
                     e.preventDefault();
-                    const name = stickerNameInput.value.trim();
+                    let name = stickerNameInput.value.trim();
+                    let category = document.getElementById('sticker-category-input').value.trim() || '默认';
                     const id = stickerEditIdInput.value;
                     const previewImg = stickerPreview.querySelector('img');
                     const data = previewImg ? previewImg.src : null;
-                    if (!name || !data) {
-                        return showToast('请填写表情名称并提供图片');
-                    }
-                    const stickerData = { name, data };
+                    if (!name || !data) return showToast('请填写表情名称并提供图片');
+                    
+                    name = getUniqueStickerName(name, id);
+                    const stickerData = { name, data, category };
                     if (id) {
                         const index = db.myStickers.findIndex(s => s.id === id);
-                        if (index > -1) {
-                            db.myStickers[index] = { ...db.myStickers[index], ...stickerData };
-                        }
+                        if (index > -1) db.myStickers[index] = { ...db.myStickers[index], ...stickerData };
                     } else {
                         stickerData.id = `sticker_${Date.now()}`;
                         db.myStickers.push(stickerData);
@@ -3688,10 +3854,12 @@ async function handleRegenerate() {
                     addStickerModal.classList.remove('visible');
                     showToast('表情包已保存');
                 });
+                
                 stickerUrlInput.addEventListener('input', (e) => {
                     stickerPreview.innerHTML = `<img src="${e.target.value}" alt="预览">`;
                     stickerFileUpload.value = '';
                 });
+                
                 stickerFileUpload.addEventListener('change', async (e) => {
                     const file = e.target.files[0];
                     if (file) {
@@ -3701,11 +3869,60 @@ async function handleRegenerate() {
                             stickerUrlInput.value = '';
                             stickerUrlInput.disabled = true;
                         } catch (error) {
-                            console.error('表情包压缩失败:', error);
                             showToast('表情包压缩失败，请重试');
                         }
                     }
                 });
+
+                // ==========================================
+                // 5. 批量导入
+                // ==========================================
+                batchAddStickerBtn.addEventListener('click', () => {
+                    batchAddStickerModal.classList.add('visible');
+                    stickerUrlsTextarea.value = ''; 
+                });
+                
+                batchAddStickerForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const textInput = stickerUrlsTextarea.value.trim();
+                    const category = document.getElementById('batch-category-input').value.trim() || '默认';
+                    
+                    if (!textInput) return showToast('请输入表情包数据');
+                    const lines = textInput.split('\n');
+                    const newStickers =[];
+                    for (const line of lines) {
+                        const trimmedLine = line.trim();
+                        if (!trimmedLine) continue; 
+                        const colonIndex = trimmedLine.indexOf(':');
+                        if (colonIndex <= 0) continue;
+                        let name = trimmedLine.substring(0, colonIndex).trim();
+                        const url = trimmedLine.substring(colonIndex + 1).trim();
+                        
+                        if (name && url.startsWith('http')) {
+                            name = getUniqueStickerName(name); 
+                            db.myStickers.push({id:'temp', name}); 
+                            newStickers.push({ 
+                                id: `sticker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
+                                name, 
+                                data: url,
+                                category
+                            });
+                        }
+                    }
+                    db.myStickers = db.myStickers.filter(s => s.id !== 'temp');
+                    
+                    if (newStickers.length > 0) {
+                        db.myStickers.push(...newStickers); 
+                        await saveData();
+                        renderStickerGrid();
+                        batchAddStickerModal.classList.remove('visible');
+                        showToast(`成功导入 ${newStickers.length} 个新表情！`);
+                    }
+                });
+
+                // ==========================================
+                // 6. 编辑和彻底删除(单张长按菜单)
+                // ==========================================
                 editStickerBtn.addEventListener('click', () => {
                     if (!currentStickerActionTarget) return;
                     const sticker = db.myStickers.find(s => s.id === currentStickerActionTarget);
@@ -3713,6 +3930,7 @@ async function handleRegenerate() {
                         addStickerModalTitle.textContent = '编辑表情';
                         stickerEditIdInput.value = sticker.id;
                         stickerNameInput.value = sticker.name;
+                        document.getElementById('sticker-category-input').value = sticker.category || '默认';
                         stickerPreview.innerHTML = `<img src="${sticker.data}" alt="预览">`;
                         if (sticker.data.startsWith('http')) {
                             stickerUrlInput.value = sticker.data;
@@ -3726,15 +3944,20 @@ async function handleRegenerate() {
                     stickerActionSheet.classList.remove('visible');
                     currentStickerActionTarget = null;
                 });
+                
                 deleteStickerBtn.addEventListener('click', async () => {
                     if (!currentStickerActionTarget) return;
                     const sticker = db.myStickers.find(s => s.id === currentStickerActionTarget);
                     if (sticker) {
-                        if (await AppUI.confirm(`确定要删除表情“${sticker.name}”吗？`, "提示", "确认", "取消")) {
+                        if (await AppUI.confirm(`确定要彻底删除表情“${sticker.name}”吗？`)) {
                             db.myStickers = db.myStickers.filter(s => s.id !== currentStickerActionTarget);
+                            db.characters.forEach(c => {
+                                if (c.stickerIds) c.stickerIds = c.stickerIds.filter(id => id !== currentStickerActionTarget);
+                            });
+                            await dexieDB.myStickers.delete(currentStickerActionTarget);
                             await saveData();
                             renderStickerGrid();
-                            showToast('表情已删除');
+                            showToast('表情已彻底删除');
                         }
                     }
                     stickerActionSheet.classList.remove('visible');
@@ -3742,23 +3965,125 @@ async function handleRegenerate() {
                 });
             }
 
+            // ==========================================================
+            // ======================= 渲染函数 =========================
+            // ==========================================================
+
+// 渲染主面板底部分类栏 (含长按逻辑)
+            function renderCategoryBar() {
+                const bar = document.getElementById('sticker-category-bar');
+                const datalist = document.getElementById('category-datalist');
+                if (!bar) return;
+
+                const categories = new Set(['全部', '默认']);
+                db.myStickers.forEach(s => { if (s.category) categories.add(s.category); });
+
+                bar.innerHTML = '';
+                categories.forEach(cat => {
+                    const btn = document.createElement('div');
+                    btn.className = `category-btn ${cat === currentStickerCategory ? 'active' : ''}`;
+                    btn.textContent = cat;
+                    
+                    // 默认禁止文本选中，防止长按时触发浏览器放大镜和复制菜单
+                    btn.style.userSelect = 'none';
+                    btn.style.webkitUserSelect = 'none';
+                    btn.style.webkitTouchCallout = 'none';
+                    
+                    // 点击切换
+                    btn.onclick = (e) => {
+                        if (btn.isContentEditable) return; // 正在编辑时阻止点击
+                        currentStickerCategory = cat;
+                        renderStickerGrid();
+                    };
+
+                    // ✨ 长按弹出管理菜单：动态判断按钮显隐
+                    const handleCategoryLongPress = () => {
+                        if (cat === '全部' || btn.isContentEditable) return;
+                        currentActionCategory = cat;
+                        
+                        const linkBtn = document.getElementById('link-category-btn');
+                        const renameBtn = document.getElementById('rename-category-btn');
+                        const deleteBtn = document.getElementById('delete-category-btn');
+
+                        // 1. 群聊隐藏一键关联按钮
+                        if (currentChatType === 'private') {
+                            linkBtn.style.display = 'block';
+                        } else {
+                            linkBtn.style.display = 'none';
+                        }
+                        
+                        // 2. “默认”分类隐藏重命名和删除
+                        if (cat === '默认') {
+                            renameBtn.style.display = 'none';
+                            deleteBtn.style.display = 'none';
+                        } else {
+                            renameBtn.style.display = 'block';
+                            deleteBtn.style.display = 'block';
+                        }
+                        
+                        // 3. 如果所有可用按钮都被隐藏了(比如群聊里长按“默认”)，就不弹窗
+                        if (linkBtn.style.display === 'none' && renameBtn.style.display === 'none') {
+                            return;
+                        }
+                        
+                        document.getElementById('category-actionsheet').classList.add('visible');
+                    };
+
+                    btn.addEventListener('contextmenu', (e) => {
+                        if (cat === '全部' || btn.isContentEditable) return;
+                        e.preventDefault(); 
+                        e.stopPropagation();
+                        handleCategoryLongPress();
+                    });
+
+                    let catPressTimer;
+                    btn.addEventListener('touchstart', (e) => {
+                        if (cat === '全部' || btn.isContentEditable) return;
+                        e.stopPropagation();
+                        catPressTimer = setTimeout(() => handleCategoryLongPress(), 500);
+                    });
+                    btn.addEventListener('touchend', () => clearTimeout(catPressTimer));
+                    btn.addEventListener('touchmove', () => clearTimeout(catPressTimer)); 
+
+                    bar.appendChild(btn);
+                });
+
+                if (datalist) {
+                    datalist.innerHTML = '';
+                    categories.forEach(cat => {
+                        if (cat !== '全部' && cat !== '默认') {
+                            const opt = document.createElement('option');
+                            opt.value = cat;
+                            datalist.appendChild(opt);
+                        }
+                    });
+                }
+            }
+
+            // 渲染主面板表情网格
             function renderStickerGrid() {
                 stickerGridContainer.innerHTML = '';
-                if (db.myStickers.length === 0) {
-                    stickerGridContainer.innerHTML = '<p style="color:#aaa; text-align:center;">还没有表情包，快去添加吧！</p>';
+                renderCategoryBar();
+                
+                let stickersToRender = db.myStickers;
+                if (currentStickerCategory !== '全部') {
+                    stickersToRender = db.myStickers.filter(s => (s.category || '默认') === currentStickerCategory);
+                }
+
+                if (stickersToRender.length === 0) {
+                    const emptyMsg = currentStickerCategory === '全部' ? '还没有表情包，快去添加吧！' : `该分类下没有表情`;
+                    stickerGridContainer.innerHTML = `<p style="color:#aaa; text-align:center; margin-top: 20px; width: 100%;">${emptyMsg}</p>`;
                     return;
                 }
-                db.myStickers.forEach(sticker => {
+
+                stickersToRender.forEach(sticker => {
                     const item = document.createElement('div');
                     item.className = 'sticker-item';
-                    item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span>${sticker.name}</span>`;
+                    item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span title="${sticker.name}">${sticker.name}</span>`;
 
                     if (isStickerManageMode) {
                         item.classList.add('is-managing');
-                        if (selectedStickerIds.has(sticker.id)) {
-                            item.classList.add('is-selected');
-                        }
-                        // 在管理模式下，单击是选择/取消选择
+                        if (selectedStickerIds.has(sticker.id)) item.classList.add('is-selected');
                         item.addEventListener('click', () => {
                             if (selectedStickerIds.has(sticker.id)) {
                                 selectedStickerIds.delete(sticker.id);
@@ -3767,29 +4092,90 @@ async function handleRegenerate() {
                                 selectedStickerIds.add(sticker.id);
                                 item.classList.add('is-selected');
                             }
-                            // 更新底部删除按钮的计数
                             const deleteBtn = document.getElementById('delete-selected-stickers-btn');
                             deleteBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
                             deleteBtn.disabled = selectedStickerIds.size === 0;
                         });
                     } else {
-                        // 非管理模式下的原始逻辑
                         item.addEventListener('click', () => sendSticker(sticker));
-                        item.addEventListener('contextmenu', (e) => { // 使用 contextmenu 替代 mousedown
-                            e.preventDefault();
-                            e.stopPropagation();
+                        
+                        item.addEventListener('contextmenu', (e) => { 
+                            e.preventDefault(); e.stopPropagation();
                             handleStickerLongPress(sticker.id);
                         });
                         item.addEventListener('touchstart', (e) => {
                             e.stopPropagation();
-                            longPressTimer = setTimeout(() => {
-                                handleStickerLongPress(sticker.id);
-                            }, 500);
+                            longPressTimer = setTimeout(() => handleStickerLongPress(sticker.id), 500);
                         });
                         item.addEventListener('touchend', () => clearTimeout(longPressTimer));
                         item.addEventListener('touchmove', () => clearTimeout(longPressTimer));
                     }
                     stickerGridContainer.appendChild(item);
+                });
+            }
+
+            // 渲染关联表情弹窗内的网格与分类，并动态更新全选按钮文字
+            function renderLinkStickerGrid() {
+                const grid = document.getElementById('link-sticker-grid');
+                const catBar = document.getElementById('link-sticker-category-bar');
+                const selectAllBtn = document.getElementById('link-sticker-select-all-btn');
+                
+                // 1. 渲染分类栏
+                const categories = new Set(['全部', '默认']);
+                db.myStickers.forEach(s => { if (s.category) categories.add(s.category); });
+                
+                catBar.innerHTML = '';
+                categories.forEach(cat => {
+                    const btn = document.createElement('div');
+                    btn.className = `category-btn ${cat === currentLinkStickerCategory ? 'active' : ''}`;
+                    btn.textContent = cat;
+                    btn.onclick = () => {
+                        currentLinkStickerCategory = cat;
+                        renderLinkStickerGrid(); // 点击重绘
+                    };
+                    catBar.appendChild(btn);
+                });
+
+                // 2. 渲染关联网格
+                grid.innerHTML = '';
+                let stickersToRender = db.myStickers;
+                if (currentLinkStickerCategory !== '全部') {
+                    stickersToRender = db.myStickers.filter(s => (s.category || '默认') === currentLinkStickerCategory);
+                }
+
+                // 3. ✨动态判定全选状态
+                if (stickersToRender.length === 0) {
+                    grid.innerHTML = '<p style="color:#aaa; text-align:center; width: 100%;">该分类下没有表情。</p>';
+                    selectAllBtn.style.display = 'hidden';
+                    return;
+                }
+                selectAllBtn.style.display = 'visible';
+                const allSelected = stickersToRender.every(s => selectedLinkStickerIds.has(s.id));
+                selectAllBtn.textContent = allSelected ? '☑ 全选' : '☐ 全选';
+
+                // 4. 填充图片
+                stickersToRender.forEach(sticker => {
+                    const item = document.createElement('div');
+                    item.className = 'sticker-item is-managing'; // 强制套用管理样式的遮罩效果
+                    item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span>${sticker.name}</span>`;
+                    
+                    if (selectedLinkStickerIds.has(sticker.id)) {
+                        item.classList.add('is-selected');
+                    }
+
+                    item.addEventListener('click', () => {
+                        if (selectedLinkStickerIds.has(sticker.id)) {
+                            selectedLinkStickerIds.delete(sticker.id);
+                            item.classList.remove('is-selected');
+                        } else {
+                            selectedLinkStickerIds.add(sticker.id);
+                            item.classList.add('is-selected');
+                        }
+                        // 点单张时，实时检查是否达到了全选状态
+                        const nowAllSelected = stickersToRender.every(s => selectedLinkStickerIds.has(s.id));
+                        selectAllBtn.textContent = nowAllSelected ? '取消全选' : '全选';
+                    });
+                    grid.appendChild(item);
                 });
             }
 
