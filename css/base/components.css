@@ -1,9 +1,8 @@
 .phone-screen {
     max-width: 100%;
-    max-height: 100%;
     width: 100vw;
     height: 100vh;
-    height: 100dvh;
+    max-height: 100dvh;
     border-radius: 0;
     /* 去除圆角 */
     box-shadow: none;
@@ -16,9 +15,11 @@
 
 .screen {
     display: none;
+    min-height: 0;
     flex-direction: column;
     width: 100%;
-    height: 100%;
+    flex: 1; /* 核心修正：完美填满 phone-screen 剩下的所有空间 */
+    height: auto; /* 配合 flex: 1 使用 */
     animation: fadeIn 0.5s ease;
     position: relative;
     /* 修改：确保内部屏幕也是定位上下文 */
@@ -33,18 +34,14 @@
     justify-content: space-between;
     align-items: center;
     padding: 16px 20px;
-    padding-top: calc(16px + env(safe-area-inset-top));
     background-color: rgba(255, 255, 255, 0.5);
     backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px) !important;
+    -webkit-backdrop-filter: blur(5px);
     border-bottom: 1px solid #eee;
     flex-shrink: 0;
     position: relative;
     z-index: 10;
     height: auto;
-    /* 让高度自动撑开 */
-    min-height: calc(50px + env(safe-area-inset-top));
-    /* 保证最小高度 */
 }
 
 .app-header .back-btn,
@@ -141,6 +138,7 @@
     overflow-y: auto;
     padding: 20px;
     position: relative;
+    min-height: 0;
 }
 
 .placeholder-text {
@@ -235,7 +233,7 @@
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
     padding: 10px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    padding-bottom: 10px;
     animation: slideUp 0.3s ease-out;
 }
 
@@ -250,6 +248,9 @@
     cursor: pointer;
     border-radius: 10px;
     margin-bottom: 8px;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
 }
 
 .action-sheet-button.danger {
@@ -288,7 +289,6 @@
 }
 
 .list-item:last-child {
-
     border-bottom: none; 
 }
 

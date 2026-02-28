@@ -1,12 +1,11 @@
 html {
     height: 100%;
-    height: 100vh;
-    height: 100dvh;
     overflow: hidden;
     scrollbar-width: none;
     /* Firefox */
     -ms-overflow-style: none;
     /* IE and Edge */
+    overscroll-behavior: none;
 }
 
 html::-webkit-scrollbar {
@@ -18,6 +17,8 @@ html::-webkit-scrollbar {
 *::before,
 *::after {
     box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
 }
 
 

@@ -25,6 +25,10 @@
         
     --border-radius: 8px;
     --phone-corner-radius: 0px;
+    
+    /* 安全区默认变量 */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body {
@@ -33,11 +37,9 @@ body {
     padding: 0;
     background: #ffffff;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    height: 100dvh;
+    min-height: 100vh;
     overflow: hidden;
+    overscroll-behavior: none; 
 
     /* 关键：确保内容能延伸 */
     box-sizing: border-box;

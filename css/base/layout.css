@@ -1,0 +1,170 @@
+/* ==========================================
+   顶部全局安全区避让集中管理区
+   ========================================== */
+
+.app-header {    
+    padding-top: max(16px , var(--safe-top));
+    min-height: 50px;
+}
+
+#home-screen {    
+    padding-top: calc(45px + var(--safe-top));
+}
+
+#chat-room-header-select,
+#chat-room-header-default {
+    min-height: 60px;
+    padding-top: max(8px , var(--safe-top));
+}
+
+/* 聊天消息滚动区 */
+#chat-room-screen .message-area {
+    padding-top: calc(70px + var(--safe-top)) ;
+}
+
+#chat-list-screen .app-header {
+    min-height: 50px;
+    padding-top: max(8px , var(--safe-top));
+}
+
+#forum-screen .app-header {
+    padding-top: calc(8px + var(--safe-top));
+}
+
+#forum-screen .forum-top-search-bar {
+    top: calc(40px + var(--safe-top)); 
+    /* 紧贴 Header 下方 */
+}
+
+#forum-screen .forum-content-area {
+    padding-top: calc(105px + var(--safe-top)); 
+}
+
+#journal-detail-screen .app-header {
+    min-height: 50px;
+    padding-top: max(18px , var(--safe-top));
+}
+
+.rpg-scroll-col {
+    padding-top: calc(10px + var(--safe-top)); 
+}
+
+.rpg-screen-base .app-header {
+    padding-top: calc(10px + var(--safe-top)); 
+}
+
+#rpg-top-dialog {
+    top: calc(60px + var(--safe-top)); 
+}
+
+/* ==========================================
+   底部全局安全区避让集中管理区
+   ========================================== */
+#home-screen {    
+    padding-bottom: max(25px , var(--safe-bottom));
+}
+
+/* 如果你的主内容区被底部栏遮挡 */
+.has-bottom-nav .content {
+    /* 基础留白 + 安全区高度 */
+    padding-bottom: calc(65px + var(--safe-bottom)); 
+}
+
+#settings-screen .content {
+    padding-bottom: max(15px , var(--safe-bottom));
+}
+
+/* 聊天室底部的输入框外壳 (本身没有额外padding，只需要加上安全区) */
+#chat-room-screen .chat-input-wrapper {
+    padding-bottom: var(--safe-bottom);
+}
+
+/* 聊天消息滚动区 */
+#chat-room-screen .message-area {
+    padding-bottom: calc(100px + var(--safe-bottom)) ;
+}
+
+/* 聊天室内的底部弹出面板 (表情包面板、扩展面板等) */
+#sticker-modal,
+#chat-expansion-panel {
+    padding-bottom: var(--safe-bottom);
+}
+
+/* 各种弹出面板 (Action Sheet 等) 底部也需要避让 */
+.action-sheet {
+    padding-bottom: max(10px , var(--safe-bottom));
+}
+
+#multi-select-bar,
+#world-book-multi-select-bar,
+#sticker-manage-bar {
+    /* 原本可能有 10px 的 padding，现在加上安全区 */
+    padding-bottom: max(10px , var(--safe-bottom));
+}
+
+/* 消息列表屏幕 */
+#chat-list-container {
+    padding-bottom: calc(80px + var(--safe-bottom)); 
+}
+
+#my-personas-list {
+    padding-bottom: calc(70px + var(--safe-bottom));
+}
+
+#chat-list-screen .bottom-nav-tabs {
+    bottom: max(15px , var(--safe-bottom));
+}
+
+/* 偷看 */
+.cart-footer {
+    padding-bottom: max(15px , var(--safe-bottom));
+}
+
+.transfer-station-input-area {
+    padding-bottom: max(8px , var(--safe-bottom));
+}
+
+/* 番茄钟 */
+.focus-bottom-controls {
+    padding-bottom: max(20px , var(--safe-bottom));
+}
+
+/* 论坛 */
+.bottom-tab-bar {
+    padding-bottom: var(--safe-bottom);
+    min-height: calc(60px + var(--safe-bottom));
+}
+
+#forum-screen .forum-content-area {
+    padding-bottom: calc(70px + var(--safe-bottom)); 
+}
+
+.world-content-wrapper {
+    padding-bottom: calc(60px + var(--safe-bottom)); 
+}
+
+#favorites-list-container {
+    padding-bottom: calc(60px + var(--safe-bottom)); 
+}
+
+#favorites-list-container.manage-mode {
+    padding-bottom: calc(120px + var(--safe-bottom)); 
+}
+
+.favorites-manage-bar {
+    /* 原本可能有 10px 的 padding，现在加上安全区 */
+    padding-bottom: max(10px , var(--safe-bottom));
+}
+
+/* 论坛详情页底部 */
+#detail-content-area {
+    padding-bottom: calc(70px + var(--safe-bottom)); 
+}
+
+#forum-post-detail-screen .detail-reply-bar {
+    /* 原本可能有 10px 的 padding，现在加上安全区 */
+    padding-bottom: max(10px , var(--safe-bottom));
+    min-height: 60px;
+    /* 固定高度 */
+}
+    
