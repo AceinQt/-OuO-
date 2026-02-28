@@ -60,7 +60,6 @@
     height: 80px;
 }
 
-#sticker-modal,
 #chat-expansion-panel {
     position: absolute;
     bottom: 0;
@@ -68,6 +67,22 @@
     right: 0;
     height: 35%;
     max-height: 250px;
+    background: rgba(243, 242, 247, 0.98);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
+    z-index: 65;
+    display: none;
+    flex-direction: column;
+}
+
+#sticker-modal {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 50%;
+    max-height: 350px;
     background: rgba(243, 242, 247, 0.98);
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
@@ -92,11 +107,22 @@
     justify-content: space-between;
     align-items: center;
     text-align: center;
+    flex-shrink: 0;
 }
 
 #sticker-modal .header span {
     margin:0;
 }
+
+#sticker-modal .sticker-tabs {
+     display: flex; 
+     gap: 15px; 
+     font-weight: bold; 
+     cursor: pointer;
+}
+
+
+
 
 #sticker-modal .btn-group {
     gap: 8px;
@@ -118,6 +144,7 @@
     border-top: none; 
     background-color: transparent;
     justify-content: space-between;
+    flex-shrink: 0;
 }
 
 #sticker-manage-bar .placeholder {
@@ -144,6 +171,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
     gap: 15px;
+    flex: 1;
 }
 
 .sticker-item {
@@ -205,22 +233,104 @@
     max-width: 360px;
 }
 
+#add-sticker-modal .sticker-detail {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 15px;
+    flex-shrink: 0;
+}
+
+#add-sticker-modal .form-group {
+    margin-bottom: 10px;
+}
+
 #sticker-preview {
-    width: 100px;
-    height: 100px;
+    width: 80px;
+    height: 80px;
     border: 2px dashed #ddd;
     border-radius: 10px;
-    margin: 0 auto 15px;
+    margin: 0 auto 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #aaa;
     background-color: #f9f9f9;
+    flex-shrink: 0;
 }
 
 #sticker-preview img {
     max-width: 100%;
     max-height: 100%;
+}
+
+#link-sticker-modal .modal-window {
+     width: 90%; 
+     max-width: 400px; 
+     height: 70vh; 
+     display: flex; 
+     flex-direction: column;
+}
+
+#link-sticker-modal .sticker-grid {
+     flex: 1; 
+     overflow-y: auto; 
+     margin: 0;
+     padding: 0;
+     max-height: 50vh;
+}
+
+/* 表情包分类底栏 */
+#link-sticker-bar {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px 0; 
+    background: transparent;
+    gap: 5px;
+}
+
+#link-sticker-category-bar {
+      flex:6;
+      display: flex; 
+      overflow-x: auto; 
+      padding-left: 5px; 
+      border-left: 1px solid #eee;
+}
+
+
+
+#link-sticker-select-all-btn  {
+    flex:1;
+    padding: 4px 0;
+    font-size: 14px;
+    white-space: nowrap;
+    margin:0;
+    background: transparent;
+    color: var(--primary-color);
+}
+
+#sticker-category-bar {
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+    border-top: 1px solid #eee;
+    gap: 10px;
+    background: transparent;
+}
+
+.category-btn {
+    padding: 4px 12px;
+    border-radius: 15px;
+    background: var(--white-color);
+    color: #555;
+    font-size: 14px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.category-btn.active {
+    background: var(--primary-color);
+    color: #fff;
 }
 
 /* --- Group Chat Specific Styles --- */
@@ -283,6 +393,73 @@
     padding: 20px 15px 15px;
     align-items: center;
     justify-content: center;
+}
+
+#world-book-selection-modal,
+#invite-member-modal,
+#group-recipient-selection-modal,
+#global-pomodoro-world-book-selection-modal,
+#select-persona-modal {
+    z-index: 102;
+}
+
+#world-book-selection-modal .modal-window,
+#invite-member-modal .modal-window,
+#group-recipient-selection-modal .modal-window {
+    width: 90%;
+    max-width: 380px;
+}
+
+#world-book-selection-list,
+#invite-member-selection-list,
+#group-recipient-selection-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
+.world-book-select-item,
+.invite-member-select-item,
+.group-recipient-select-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 5px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.world-book-select-item:last-child,
+.invite-member-select-item:last-child,
+.group-recipient-select-item:last-child {
+    border-bottom: none;
+}
+
+.world-book-select-item input[type="checkbox"],
+.invite-member-select-item input[type="checkbox"],
+.group-recipient-select-item input[type="checkbox"] {
+    margin-right: 15px;
+    width: 20px;
+    height: 20px;
+}
+
+.world-book-select-item label,
+.invite-member-select-item label,
+.group-recipient-select-item label {
+    font-weight: 500;
+    color: var(--text-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+}
+
+.invite-member-select-item img,
+.group-recipient-select-item img {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
 }
 
 /* --- Chat Expansion Panel --- */

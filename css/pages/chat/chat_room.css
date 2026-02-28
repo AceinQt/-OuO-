@@ -7,7 +7,7 @@
 /* 1. 只有当屏幕被激活时(.active)，才强制设为 block 并开启相对定位 */
 /* 注意：这里把选择器改为了 #chat-room-screen.active */
 #chat-room-screen.active {
-    display: block !important;
+    display: block;
     /* 覆盖默认的 display: flex */
     position: relative;
     height: 100%;
@@ -17,7 +17,6 @@
 }
 
 #chat-room-screen .content {
-
     flex-direction: column;
     padding: 0;
     padding-bottom: 0px;
@@ -50,14 +49,14 @@
 
 .message-area {
     /* 关键：允许容器收缩！绝不能设为 100% */
-    min-height: 0 !important;
+    min-height: 0;
 
     flex-grow: 1;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overflow-anchor: none;
     /* 顶部避让 Header */
-    padding: 70px 10px 100px;
+    padding: 70px 10px 0;
 
     scroll-behavior: auto;
     box-sizing: border-box;
@@ -302,6 +301,24 @@
     border-radius: calc(var(--border-radius) - 4px);
 }
 
+/* --- 专属表情包气泡样式 --- */
+.message-wrapper .sticker-bubble {
+    background-color: transparent; /* 强制透明背景 */
+    box-shadow: none;              /* 去除阴影 */
+    padding: 0;                    /* 去除内边距 */
+    max-width: 140px;                         /* 表情包最大宽度，比普通图片小 */
+    overflow: hidden;
+}
+
+.message-wrapper .sticker-bubble img {
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    border-radius: 8px; /* 可选：给表情包稍微加一点圆角 */
+    display: block;
+    background: transparent;
+}
+
 .voice-bubble {
     display: flex;
     align-items: center;
@@ -389,11 +406,11 @@
 
 .message-bubble.sent .quoted-message .quoted-sender {
     font-size: 14px;
-    color: #ffffff !important;
+    color: #ffffff;
 }
 
 .message-bubble.sent .quoted-message .quoted-text {
-    color: rgba(255, 255, 255, 0.8) !important;
+    color: rgba(255, 255, 255, 0.8);
 }
 
 
@@ -463,7 +480,7 @@
                  2. 【核心修复】强制把底部间距设为 0 (覆盖默认的 12px)
         */
 .message-wrapper.narration-wrapper:has(+ .message-wrapper.narration-wrapper) {
-    margin-bottom: 0 !important;
+    margin-bottom: 0;
     /* 关键！不再撑开距离 */
 }
 
@@ -486,7 +503,7 @@
                因为上方气泡的 margin-bottom 已经是 0 了，
                这里只需要 -1px 让边框重叠即可，不需要 -15px 那么大了 
             */
-    margin-top: 0 !important;
+    margin-top: 0;
 }
 
 .message-wrapper.narration-wrapper+.message-wrapper.narration-wrapper .narration-bubble {
@@ -511,8 +528,8 @@
 /* 3. 【核心修复】强制去除最后一个元素的底部空隙 */
 /* 无论 markdown 生成了什么标签（p, ul, div），最后一个都不能有 margin */
 .narration-bubble.markdown-content>*:last-child {
-    margin-bottom: 0 !important;
-    padding-bottom: 0 !important;
+    margin-bottom: 0;
+    padding-bottom: 0;
 }
 
 /* 4. 基础设置 */
@@ -836,7 +853,7 @@
                设置 -85px 的上边距，把提示语往上拉 85px。
                这样视觉间距就只剩下 105 - 85 = 20px，刚好合适。
             */
-    margin-top: -95px !important;
+    margin-top: -95px;
 
     /* --- 关键修复 2：撑开底部 --- */
     /* 
@@ -844,10 +861,10 @@
                而不是被输入框挡住。
                这也让它占据了物理空间，从而产生“挤压/上推”气泡的动画效果。
             */
-    margin-bottom: 105px !important;
+    margin-bottom: 105px;
 
     /* --- 层级提升 --- */
-    z-index: 10 !important;
+    z-index: 10;
     /* 必须高于输入框的 50 */
 
     /* 其他属性 */
@@ -861,7 +878,7 @@
 
 /* 配合 JS 显示 */
 .typing-indicator[style*="display: block"] {
-    display: block !important;
+    display: block;
 }
 
 #sticker-bar {
@@ -916,26 +933,23 @@
     width: 100%;
     z-index: 50;
     background-color: rgba(243, 242, 247, 0.85);
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     border-bottom-left-radius: var(--phone-corner-radius);
     border-bottom-right-radius: var(--phone-corner-radius);
 
     /* 稍微加一点顶部边框线，增加质感（可选） */
     border-top: 1px solid rgba(255, 255, 255, 0.3);
-    padding-bottom: env(safe-area-inset-bottom) !important;
 }
 
 
 .message-input-area {
     display: flex;
     align-items: center;
-    padding: 6px 10px;
-    
+    padding: 6px 10px;    
     background: transparent;
     flex-shrink: 0;
     gap: 10px;
-
     overflow: hidden;
 }
 
@@ -1001,13 +1015,12 @@
     left: 0;
     width: 100%;
     background: rgba(243, 242, 247, 0.8);
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     display: none;
     justify-content: space-between;
     align-items: center;
     padding: 10px 20px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
     border-top: 1px solid #eee;
     z-index: 60;
     border-bottom-left-radius: var(--phone-corner-radius);
@@ -1019,23 +1032,10 @@
     display: flex;
 }
 
-
-
-
-
-
 #chat-room-header-select,
 #chat-room-header-default {
-    /* --- 核心修改 1：高度自动计算 --- */
-    /* 原高度 60px + 系统状态栏高度 */
-    height: calc(60px + env(safe-area-inset-top));
-
-    /* --- 核心修改 2：顶部内边距 --- */
-    /* 原顶部内边距 20px + 系统状态栏高度，确保文字不被刘海遮挡 */
-    padding-top: calc(20px + env(safe-area-inset-top));
-
     /* 保持原有的左右和底部内边距 */
-    padding-bottom: 20px;
+    padding-bottom: 8px;
     padding-left: 10px;
     padding-right: 10px;
 
@@ -1047,8 +1047,8 @@
     width: 100%;
     z-index: 50;
     background-color: rgba(243, 242, 247, 0.85);
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
 

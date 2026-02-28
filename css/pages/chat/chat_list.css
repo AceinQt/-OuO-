@@ -4,15 +4,14 @@
 #chat-list-screen .app-header {
     background-color: var(--gray-color);
     border: none;
-    height: 60px;
+    padding: 8px 20px;
 }
 
 #chat-list-screen .content {
     padding: 0;
     background-color: var(--gray-color);
-    /* 调整高度计算，给底部悬浮栏留出空间 */
-    height: calc(100% - 60px); 
     overflow: hidden;
+    flex-grow: 1;
 }
 
 #chat-list-screen .app-header .action-btn svg {
@@ -36,7 +35,6 @@
     box-sizing: border-box;
     
     /* 关键 2：直接在列表最下方留出悬浮 Tab 的避让空间 */
-    padding-bottom: 80px; 
     margin-bottom: 0;
 }
 
@@ -54,22 +52,6 @@
     padding-bottom: 0;
 }
 
-/* 1. 确保父容器可以作为绝对定位的参考坐标系 */
-#tab-view-messages {
-    position: relative; 
-}
-
-/* 2. 让空状态提示悬浮在白色圆角背景的中央 */
-#no-chats-placeholder {
-    position: absolute;
-    top: 15%; /* 放在大概垂直居中稍微偏上的位置，视觉上更自然 */
-    left: 50%;
-    transform: translate(-50%, -50%); /* 精确居中对齐 */
-    width: 100%;
-    margin-top: 0; /* 移除原来的 margin-top */
-    z-index: 10;   /* 确保它显示在最上层 */
-    pointer-events: none; /* 防止提示文本的隐形图层遮挡列表的手势滑动 */
-}
 /* 3. 头像与徽标 */
 .chat-avatar {
     width: 50px;
@@ -168,12 +150,21 @@
     display: block;
 }
 
+/* 1. 确保父容器可以作为绝对定位的参考坐标系 */
+#tab-view-messages {
+    position: relative; 
+}
 
-/* 我 的页面保持透明（透出 content 的灰底） */
-
-
-#my-personas-list {
-    padding-bottom: 70px; /* 避让底部悬浮栏 */
+/* 2. 让空状态提示悬浮在白色圆角背景的中央 */
+#no-chats-placeholder {
+    position: absolute;
+    top: 15%; /* 放在大概垂直居中稍微偏上的位置，视觉上更自然 */
+    left: 50%;
+    transform: translate(-50%, -50%); /* 精确居中对齐 */
+    width: 100%;
+    margin-top: 0; /* 移除原来的 margin-top */
+    z-index: 10;   /* 确保它显示在最上层 */
+    pointer-events: none; /* 防止提示文本的隐形图层遮挡列表的手势滑动 */
 }
 
 /* 5. “我”的页面卡片样式 (提取自JS行内样式) */
@@ -238,15 +229,14 @@
     
     /* 悬浮样式核心 */
     position: absolute;
-    bottom: 10px;
-    left: 10px;
-    right: 10px;
+    left: 15px;
+    right: 15px;
     height: 55px;
     background-color: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(3px);
     -webkit-backdrop-filter: blur(3px);
     border-radius: 40px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
     padding: 5px;
     border: 1px solid rgba(255,255,255,0.5);
     z-index: 50;
