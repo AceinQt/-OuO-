@@ -108,6 +108,11 @@ window.init = async () => {
         } else {
             console.error("Critical: loadData function not found!");
         }
+        
+        // 数据加载完毕后，立刻应用安全区设置        
+        if (typeof applySafeAreaSettings === 'function') {
+            applySafeAreaSettings();
+        }
 
         // 设置状态栏颜色
         if (typeof setAndroidThemeColor === 'function') {
@@ -175,6 +180,9 @@ window.init = async () => {
         if (typeof setupStickerSystem === 'function') await setupStickerSystem();
         if (typeof setupCustomizeApp === 'function') setupCustomizeApp();
         if (typeof setupTutorialApp === 'function') setupTutorialApp();
+        if (typeof setupSafeAreaToggles === 'function') {
+            setupSafeAreaToggles();
+        }
         
 
         // 预设相关
