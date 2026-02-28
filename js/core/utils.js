@@ -1,5 +1,7 @@
  // js/core/utils.js 追加内容：
 
+// --- js/core/utils.js ---
+
 function switchScreen(targetId) {
     // 获取所有屏幕元素
     const screens = document.querySelectorAll('.screen');
@@ -9,30 +11,31 @@ function switchScreen(targetId) {
     if (targetScreen) {
         targetScreen.classList.add('active');
         
-        // 处理不同页面的状态栏颜色 (根据你 index.html 里的逻辑)
+        // 动态处理状态栏颜色 (Theme Color)
         if (typeof setAndroidThemeColor === 'function') {
-            switch (targetId) {
-                case 'chat-room-screen':
-                case 'chat-list-screen':
-                case 'me-screen':    setAndroidThemeColor('rgba(243,242,247,0.85)');
-                    break;
-                case 'forum-screen':
-                case 'forum-post-detail-screen':
-                case 'favorites-screen':
-                case 'peek-screen': // 假设偷看页面也是白色
-                    setAndroidThemeColor('#FFFFFF');
-                    break;
-                case 'journal-detail-screen':
-                    setAndroidThemeColor('#F5F2EF');
-                    break;
-                case 'home-screen':
-                    // 如果 db 对象在全局可用
-                    if (typeof db !== 'undefined') {
-                        setAndroidThemeColor(db.homeStatusBarColor || '#FFFFFF');
-                    }
-                    break;
-                default:
-                    setAndroidThemeColor('#FFFFFF');
+            // 主页没有标准的 app-header，特殊处理，依然走设置里的自定义颜色
+            if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
+                setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
+            } else {
+                // 使用 requestAnimationFrame 确保页面已经被赋予 display: flex 并渲染后，再计算颜色
+                // （因为 display: none 的元素获取计算样式可能不准确）
+                requestAnimationFrame(() => {
+    const header = targetScreen.querySelector('.app-header');
+    if (header) {
+        const bgColor = window.getComputedStyle(header).backgroundColor;
+        
+        if (bgColor === 'rgba(0, 0, 0, 0)' || bgColor === 'transparent') {
+             setAndroidThemeColor('#FFFFFF');
+             document.body.style.backgroundColor = '#FFFFFF';
+        } else {
+             setAndroidThemeColor(bgColor);
+             document.body.style.backgroundColor = bgColor;
+        }
+    } else {
+        setAndroidThemeColor('#FFFFFF');
+        document.body.style.backgroundColor = '#FFFFFF';
+    }
+});
             }
         }
         
@@ -44,18 +47,17 @@ function switchScreen(targetId) {
                 t.classList.remove('active');
             }
         });
-    }
-    
-        const globalNav = document.querySelector('.bottom-tab-bar');
         
+        // 控制全局底部导航栏的显示/隐藏
+        const globalNav = document.querySelector('.bottom-tab-bar');
         if (globalNav) {
-            // 检查当前页面是否有 "has-bottom-nav" 这个类名
             if (targetScreen.classList.contains('has-bottom-nav')) {
-                globalNav.style.display = 'flex'; // 有标记，就显示
+                globalNav.style.display = 'flex';
             } else {
-                globalNav.style.display = 'none'; // 没标记，就隐藏
+                globalNav.style.display = 'none';
             }
         }    
+    }
 
     // 关闭所有的遮罩层和侧边栏
     const overlays = document.querySelectorAll('.modal-overlay, .action-sheet-overlay, .settings-sidebar');

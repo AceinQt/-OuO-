@@ -6,7 +6,8 @@ const globalSettingKeys = [
     'apiPresets', 'bubbleCssPresets', 'globalCss',
     'globalCssPresets', 'homeSignature',
     'homeWidgetSettings', 'insWidgetSettings', 'homeStatusBarColor',
-    'pomodoroTasks', 'pomodoroSettings'
+    'pomodoroTasks', 'pomodoroSettings' ,
+    'enableTopSafeArea', 'enableBottomSafeArea'
 ];
 
 // 2. 初始化内存数据库对象 (db)
@@ -34,6 +35,9 @@ window.db = {
     forumBindings: { worldBookIds: [], charIds: [], userPersonaIds: [], useChatHistory: false, historyLimit: 50 },
     watchingPostIds: [],
     favoritePostIds: [],
+    enableTopSafeArea: true,
+    enableBottomSafeArea: true,
+    homeStatusBarColor: '#ffffff',
 
     // --- 基础设置 ---
     apiSettings: {},
