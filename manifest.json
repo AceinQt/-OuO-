@@ -2,8 +2,7 @@
   "name": "-OuO-",
   "short_name": "OuO",
   "start_url": ".",
-  "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"], 
+  "display": "standalone", 
   "theme_color": "#00000000", 
   "background_color": "#ffffff",
   "description": "一个有趣的测试网页应用",
@@ -31,6 +30,7 @@
   ]
 
 }
+
 
 
 
