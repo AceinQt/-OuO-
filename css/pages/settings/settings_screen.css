@@ -11,7 +11,7 @@
 }
 
 #settings-screen .content {
-    padding: 15px; /* 上下左右留出间距 */
+    padding: 10px 15px; /* 上下左右留出间距 */
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     display: flex;
@@ -28,6 +28,7 @@
     margin-top: 10px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    flex-shrink: 0;
 }
 
 /* 卡片容器 */
@@ -39,6 +40,7 @@
     display: flex;
     flex-direction: column;
     padding-bottom:2px;
+    flex-shrink: 0;
 }
 
 /* 设置项（行） */
@@ -123,6 +125,22 @@
 #settings-screen .switch {    
     width: 75px;
     height: 28px;
+}
+
+#safe-area-top-switch {    
+    width: 80px;
+}
+
+#safe-area-top-toggle:checked+.slider:before {
+    -webkit-transform: translateX(26px);
+    -ms-transform: translateX(26px);
+    transform: translateX(26px);
+}
+
+#safe-area-bottom-toggle:checked+.slider:before {
+    -webkit-transform: translateX(26px);
+    -ms-transform: translateX(26px);
+    transform: translateX(26px);
 }
 
 #dark-mode-toggle:checked+.slider:before {
