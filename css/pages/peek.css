@@ -262,6 +262,14 @@
 /* =========================================
    5. Messages & Conversation
    ========================================= */
+#peek-messages-screen .list-item {
+    padding: 15px 0;
+}
+
+#peek-messages-screen .list-item:first-child {
+    padding: 0 0 15px;
+}
+
 #peek-messages-screen .list-item:hover,
 #peek-conversation-screen {
     background-color: #EEEDF2;
@@ -334,7 +342,9 @@
    7. Cart Screen
    ========================================= */
 #peek-cart-screen { background-color: #f8f9fa; }
-#peek-cart-screen .content { padding: 0; }
+#peek-cart-screen .content { 
+   padding: 0; 
+}
 .cart-item-list { list-style: none; padding: 0; margin: 0; }
 
 .cart-item {
@@ -358,9 +368,10 @@
 .cart-item-price { font-size: 16px; font-weight: bold; color: #e53935; }
 
 .cart-footer {
-    display: flex; justify-content: space-between; align-items: center;
+    display: flex; 
+    justify-content: space-between;
+    align-items: center;
     padding: 15px 20px;
-    padding-bottom: calc(15px + env(safe-area-inset-bottom));
     background-color: #fff;
     border-top: 1px solid #eee;
     flex-shrink: 0;
@@ -399,7 +410,8 @@
 }
 
 .transfer-station-input-area {
-    flex-shrink: 0; padding: 8px;
+    flex-shrink: 0; 
+    padding: 8px 8px 8px 15px;
     background-color: #f7f7f7;
     border-top: 1px solid #e0e0e0;
     display: flex; align-items: center;
@@ -426,7 +438,7 @@
    9. Browser Screen
    ========================================= */
 #peek-browser-screen { background-color: #ffffff; }
-#peek-browser-screen .content { padding: 15px 0; }
+#peek-browser-screen .content { padding: 10px 0; }
 .browser-history-list { list-style: none; padding: 0; margin: 0; }
 
 .browser-history-item {

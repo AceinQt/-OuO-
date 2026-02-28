@@ -86,7 +86,6 @@
     justify-content: space-between;
     align-items: center;
     padding: 10px 20px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
     border-top: 1px solid #eee;
     z-index: 20;
     animation: slideUp 0.3s ease-out;
@@ -116,6 +115,6 @@
 }
 
 .world-book-item.selected {
-    padding-left: 50px !important;
+    padding-left: 50px;
     background-color: #EBF5FF;
 }

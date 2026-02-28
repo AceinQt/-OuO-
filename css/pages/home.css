@@ -1,7 +1,8 @@
 #home-screen {
     background-size: cover;
     background-position: center;    
-    padding: 45px 5px 25px;
+    padding-left: 5px;
+    padding-right: 5px;
     /* New styles for swipe functionality */
     flex-direction: column;
     overflow: hidden;
@@ -93,7 +94,6 @@ img[src=""], img:not([src]) {
 #home-screen.day-mode .ins-widget-avatar {
     border: 2px solid white;
     /* 头像边框 */
-
 }
 
 #home-screen.day-mode .widget-battery svg {

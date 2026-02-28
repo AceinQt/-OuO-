@@ -240,7 +240,7 @@
     width: 100%;
     max-width: 320px;
     /* Limit width for better spacing */
-    padding: 20px 0 calc(20px + env(safe-area-inset-bottom));
+    padding: 20px 0;
     flex-shrink: 0;
 }
 

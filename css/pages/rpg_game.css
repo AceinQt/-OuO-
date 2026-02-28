@@ -74,7 +74,7 @@
     top: 0;
     left: 0;
     width: 100%;
-    background: transparent;
+    background: var(--bg-color);
     border: none;
     padding: 10px;
     z-index: 10;
@@ -86,8 +86,8 @@
     align-items: center;
     justify-content: center;
     text-align: center;
-    padding: 20px;
-    background-image: linear-gradient(135deg, #DAF0FC 0%, #FFFFFF 100%);
+    padding: 0 20px 20px;
+    background-color: var(--bg-color);
     /* 增加一点氛围感 */
 }
 
@@ -105,8 +105,6 @@
     overflow-y: auto;
     width: 100%;
     height: 100%;
-    /* 适配顶部 Header */
-    padding-top: calc(10px + env(safe-area-inset-top));
 }
 
 .rpg-scroll-col.active {
@@ -316,7 +314,7 @@
 
 .rpg-version-text {
     position: absolute;
-    bottom: calc(20px + env(safe-area-inset-bottom));
+    bottom: 20px;
     color: #aaa;
     font-size: 12px;
 }
@@ -338,7 +336,6 @@
     flex-shrink: 0;
     z-index: 20;
     padding: 10px 15px;
-    padding-top: calc(10px + env(safe-area-inset-top));
     height: auto;
     display: flex;
     justify-content: space-between;
@@ -431,7 +428,6 @@
 /* 顶部提示框 */
 #rpg-top-dialog {
     position: absolute;
-    top: calc(60px + env(safe-area-inset-top));
     left: 50%;
     transform: translateX(-50%);
     width: 85%;

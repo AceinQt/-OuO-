@@ -8,6 +8,10 @@
     border-bottom: none;
 }
 
+#memory-journal-screen {
+    border-bottom: none;
+}
+
 /* --- Memory Tabs Styles --- */
 /* --- Memory Tabs Styles (复刻收藏页) --- */
 .mem-tab-header {
@@ -153,9 +157,6 @@
     border-left: 2px solid var(--accent-color);
     /* 蓝色区分长期总结 */
 }
-
-
-
 
 /* 详情页时间编辑样式 */
 .date-edit-container {
@@ -316,7 +317,6 @@
     border-bottom: none;
     box-shadow: none;
     padding-bottom: 0;
-    height: 50px;
 }
 
 #journal-detail-screen .app-header .back-btn {
@@ -458,7 +458,7 @@
 /* 标题样式微调 */
 #journal-detail-title {
     text-align: center;
-    font-family: var(--handwriting-font) !important;
+    font-family: var(--handwriting-font);
     font-size: calc(28px * var(--font-scale, 1));
     color: var(--ink-color);
     margin-bottom: 15px;
@@ -500,11 +500,11 @@
 /* --- 颜文字专用样式 (兼容性修复版) --- */
 /* --- 1. 普通颜文字 (优先用系统字体，解决嘴歪、错位问题) --- */
 .kaomoji {
-    font-family: "KaomojiFixed", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", 'NotoGeneral' !important;
-    font-weight: normal !important;
+    font-family: "KaomojiFixed", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", 'NotoGeneral';
+    font-weight: normal;
     color: var(--ink-color);
     font-size: inherit;
-    line-height: 1 !important;
+    line-height: 1;
     vertical-align: 1px;
     letter-spacing: 0.5px;
 }
@@ -512,12 +512,12 @@
 /* --- 2. 泰文颜文字专用 (优先用 NotoThai，解决方框问题) --- */
 .kaomoji-thai {
     /* 必须把 NotoThai 放在系统字体前面，强行覆盖系统的方框 */
-    font-family: 'KaomojiFixed', -apple-system, BlinkMacSystemFont, Roboto, sans-serif !important;
+    font-family: 'KaomojiFixed', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
 
-    font-weight: normal !important;
+    font-weight: normal;
     color: var(--ink-color);
     font-size: inherit;
-    line-height: 1 !important;
+    line-height: 1;
     vertical-align: 1px;
     letter-spacing: 0.5px;
 }
@@ -528,7 +528,7 @@
     color: #333;
     line-height: 1.6;
     /* 关键：允许 Markdown 渲染的 HTML 自动换行，不再保留原始空白符 */
-    white-space: normal !important;
+    white-space: normal;
     text-align: justify;
     text-justify: inter-ideograph;
     word-break: break-all;
@@ -585,10 +585,10 @@
 
 /* 编辑模式下的样式：恢复等宽字体和原始换行，方便编辑 Markdown 源码 */
 .journal-markdown-content[contenteditable="true"] {
-    white-space: pre-wrap !important;
+    white-space: pre-wrap;
     font-family: monospace, sans-serif;
     background-color: #fffcfc;
     padding: 10px;
-    border: 1px dashed var(--primary-color) !important;
+    border: 1px dashed var(--primary-color);
     color: #333;
 }

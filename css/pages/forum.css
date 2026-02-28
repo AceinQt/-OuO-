@@ -317,7 +317,7 @@
     border-radius: 12px;
     /* 统一的大圆角 */
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    margin: 5px;
+    margin: 0 5px;
     /* 距离屏幕边缘的距离 */
     overflow: hidden;
     /* 关键：剪裁内容，确保第一个和最后一个帖子的圆角不被直角覆盖 */
@@ -391,7 +391,7 @@
     text-align: center;
     padding: 40px 20px;
     color: #999;
-    margin: 0 !important;
+    margin: 0;
 }
 
 /* --- Forum Post Detail Screen --- */
@@ -399,22 +399,27 @@
     background-color: var(--gray-color);
 }
 
-#forum-screen .app-header {
-    background-color: #FFFFFF;
-    border-bottom: none;
-    height: calc(50px + env(safe-area-inset-top)) !important;
-}
-
 #favorites-screen .app-header {
     background-color: #FFFFFF;
     border-bottom: none;
-    height: calc(60px + env(safe-area-inset-top)) !important;
+    padding-bottom: 5px;
+}
+
+
+#world-screen .app-header {
+    background-color: var(--gray-color);
+    border-bottom: none;
 }
 
 #me-screen .app-header {
+    background-color: var(--gray-color);
+    border-bottom: none;
+    padding-bottom: 5px;
+}
+
+#forum-screen .app-header {
     background-color: #FFFFFF;
-    border: none;
-    height: calc(60px + env(safe-area-inset-top)) !important;
+    border-bottom: none;    
 }
 
 #favorites-screen .app-header .title-container .title,
@@ -429,12 +434,6 @@
 /* --- 论坛详情页新样式 --- */
 #forum-post-detail-screen {
     background-color: var(--gray-color);
-    /* 类似贴吧和社交媒体的浅灰色背景 */
-}
-
-#forum-post-detail-screen .content {
-    padding: 10px;
-    /* 页面边距 */
 }
 
 #d-delete-btn svg {
@@ -445,7 +444,6 @@
 #forum-post-detail-screen .app-header {
     background-color: #FFFFFF;
     border: none;
-    height: 60px;
     box-shadow: 0 2px 10px rgba(130, 170, 200, 0.1);
 }
 
@@ -604,7 +602,7 @@
     color: #333;
     line-height: 1.5;
     /* 增加行高，让文字不拥挤 */
-    white-space: normal !important;
+    white-space: normal;
     padding-bottom: 0;
     margin-bottom: 20px;
 }
@@ -612,9 +610,9 @@
 /* 2. 强力控制 P 标签 (段落) */
 .post-detail-content-body p,
 .markdown-content p {
-    display: block !important;
-    margin-top: 0 !important;
-    margin-bottom: 12px !important;
+    display: block;
+    margin-top: 0;
+    margin-bottom: 12px;
     /* 这里控制段落间距，18px 足够明显 */
     text-align: justify;
     /* 两端对齐 */
@@ -628,8 +626,8 @@
 .post-detail-content-body h2,
 .post-detail-content-body h3,
 .post-detail-content-body blockquote {
-    margin-top: 20px !important;
-    margin-bottom: 10px !important;
+    margin-top: 20px;
+    margin-bottom: 10px;
 }
 
 /* 4. 引用块内部优化 */
@@ -643,12 +641,12 @@
 
 /* 引用块里的段落不要再加巨大间距了 */
 .markdown-content blockquote p {
-    margin-bottom: 0 !important;
+    margin-bottom: 0;
 }
 
 /* 5. 最后一个元素去除下边距 */
 .post-detail-content-body>*:last-child {
-    margin-bottom: 0 !important;
+    margin-bottom: 0;
 }
 
 /* 斜体字颜色修改 */
@@ -915,9 +913,8 @@
     justify-content: space-around;
     align-items: center;
     z-index: 100;
-    box-shadow: 0 -2px 10px rgba(130, 170, 200, 0.1);
-    padding-bottom: env(safe-area-inset-bottom) !important;
-    height: calc(60px + env(safe-area-inset-bottom)) !important;
+    box-shadow: 0 -2px 10px rgba(130, 170, 200, 0.1);    
+    height: auto; 
     display: none;
 }
 
@@ -949,8 +946,6 @@
 /* --- 顶部搜索栏 (新版) --- */
 .forum-top-search-bar {
     position: absolute;
-    top: calc(40px + env(safe-area-inset-top)) !important;
-    /* 紧贴 Header 下方 */
     left: 0;
     width: 100%;
     height: 60px;
@@ -1022,11 +1017,8 @@
     width: 100%;
     height: 100%; /* 或者 100vh，确保它占满整个屏幕高度 */
     
-    /* 2. 内边距 (避让顶部搜索栏和底部导航栏) */
-    padding-top: 105px !important; /* Header(50) + Search(55) = 105 左右，原55太小会被遮挡 */
-    padding-bottom: 70px !important; /* BottomNav(60) + Gap */
-    padding-left: 5px !important;
-    padding-right: 5px !important;
+    padding-left: 5px;
+    padding-right: 5px;
     
     /* 3. 关键：启用内部滚动 */
     overflow-y: auto; 
@@ -1037,20 +1029,7 @@
     -webkit-overflow-scrolling: touch;
 }
 
-/* 针对 Chrome/Safari/Webkit内核 隐藏滚动条 */
-#forum-screen .forum-content-area::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
-}
-
 /* --- 世界页样式 --- */
-#world-screen .app-header {
-    background-color: var(--gray-color);
-    border: none;
-    height: calc(60px + env(safe-area-inset-top)) ;
-}
-
 #world-screen .content {
     background-color: var(--gray-color);
 }
@@ -1058,20 +1037,18 @@
 
 
 /* --- 世界页面布局 --- */
-/* 移除原本的 padding，改为布局容器控制 */
 #world-screen .tab-content-area {
     box-sizing: border-box;
     scrollbar-width: none;
     padding: 0;
     display: flex;
     flex-direction: row;
-    height: calc(100% - 120px);
-    /* 减去 Header(60) + BottomNav(60) + Padding(10) */
-    overflow: hidden;
-    position: absolute;
+    
+    /* 核心修改：移除 absolute，移除 top/bottom，直接让其自动填满剩余空间 */
+    position: relative;
     width: 100%;
-    top: calc(60px + env(safe-area-inset-top)) ;
-    bottom: calc(60px + env(safe-area-inset-bottom)) ;
+    flex-grow: 1; /* 自动占据头部以下的全部空间 */
+    overflow: hidden;
 }
 
 /* 侧边栏 */
@@ -1220,8 +1197,6 @@
     padding: 10px;
     background-color: var(--gray-color);
     /* 背景稍微灰一点，突出卡片 */
-    padding-bottom: 60px;
-    /* 留出底部空间 */
     /* --- 新增：隐藏滚动条 --- */
     scrollbar-width: none;
     /* Firefox */
@@ -1346,21 +1321,10 @@
     box-shadow: 3px 2px 0 0 rgba(0, 0, 0, 0.1);
 }
 
-/* --- 1. 收藏页防遮挡修复 --- */
-/* 正常状态下底部留白（给底部导航栏） */
-/* 管理模式下底部留白增加（给删除栏留位） */
-/* 导航栏60px + 删除栏约50px + 间距 */
-#favorites-list-container.manage-mode {
-    padding-bottom: 120px !important;
-}
-
-/* --- 新增：通用选中样式 (仿照 world-book-item) --- */
-/* --- 通用 Checkbox 样式 (支持未选中显示空心圆) --- */
-
 /* 1. 基础容器：预留左侧圆圈空间 */
 .custom-check-item {
     position: relative;
-    padding-left: 36px !important;
+    padding-left: 36px;
     /* 左边距 = 圆圈宽(20) + 间距(10) + 原边距(6) */
     transition: all 0.2s ease;
     border: 1px solid transparent;
@@ -1423,10 +1387,10 @@
 /* --- 特殊处理：收藏页 --- */
 /* 防止收藏页在“非管理模式”下也显示圆圈 */
 #favorites-list-container:not(.manage-mode) .fav-post-card.custom-check-item {
-    padding-left: 15px !important;
+    padding-left: 15px;
     /* 恢复默认内边距 */
-    background-color: #fff !important;
-    border-color: transparent !important;
+    background-color: #fff;
+    border-color: transparent;
 }
 
 /* 非管理模式下，隐藏伪元素圆圈 */
@@ -1436,11 +1400,6 @@
 }
 
 /* --- 我页面头像修改 --- */
-#me-screen .app-header{
-    background-color: var(--gray-color);
-    border:none;
-}
-
 #me-screen .me-content-area{
     padding:20px 0 70px 0;
         background-color: var(--gray-color);
@@ -1539,7 +1498,8 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start; /* 关键：左对齐 */
-    margin-left: 10px; /* 离头像的间距 */  
+    margin-left: 10px; /* 离头像的间距 */
+    
     gap:5px;
 }
 
@@ -1572,20 +1532,20 @@ background-color: var(--top-pinned-bg);
     font-size: 13px;
     color: #aaa;
     text-align: left;
-    white-space: nowrap; 
+    white-space: nowrap;
 }
 
 .me-code-badge input {
     background: transparent;
     border: 1px dashed transparent;  
+    width: 4.5ch;
+    box-sizing: content-box;
     color: #aaa;
     font-family: 'Varela Round', sans-serif;
     font-size: 13px;
     padding: 2px 4px 1px 4px;
     margin-top:2px;
     border-radius: 12px; 
-    width: 4.5ch; 
-    box-sizing: content-box;
 }
 
 .me-code-badge input:hover {
@@ -1778,29 +1738,15 @@ background-color: var(--top-pinned-bg);
 }
 
 /* --- 详情页布局核心 --- */
-.detail-content-area {
-    padding-bottom: 70px !important;
-    height: 100%;
+#detail-content-area {
     overflow-y: auto;
     /* 保持滚动功能 */
     box-sizing: border-box;
-    padding-left: 15px;
-    padding-right: 15px;
-    padding-top: 15px;
-
-    /* --- 新增：隐藏滚动条 --- */
-    scrollbar-width: none;
-    /* Firefox */
-    -ms-overflow-style: none;
-    /* IE 10+ */
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 10px;
 }
 
-/* 针对 Chrome/Safari/Webkit内核 隐藏滚动条 */
-.detail-content-area::-webkit-scrollbar {
-    display: none;
-    width: 0;
-    height: 0;
-}
 
 /* --- 底部固定回复栏 --- */
 .detail-reply-bar {
@@ -1812,12 +1758,12 @@ background-color: var(--top-pinned-bg);
     /* 核心修改：同时设置 left 和 right，不设置 width */
     width: auto;
     /* 核心修改：让宽度自动适应 left/right */
-    height: 60px;
-    /* 固定高度 */
     background-color: rgba(255, 255, 255, 0.9);
     backdrop-filter: blur(8px);
     border: none;
-    padding: 8px 15px;
+    padding-top: 10px;
+    padding-left: 15px;
+    padding-right: 15px;
     box-sizing: border-box;
     display: flex;
     align-items: center;
@@ -1876,7 +1822,7 @@ background-color: var(--top-pinned-bg);
 .reply-anon-wrapper {
     display: inline-flex;
     align-items: center;
-    padding: 4px 8px 4px 36px !important;
+    padding: 4px 8px 4px 36px;
     /* 强制覆盖，确保圆圈位置 */
     border-radius: 19px;
     cursor: pointer;
@@ -1888,14 +1834,14 @@ background-color: var(--top-pinned-bg);
 
 /* 隐藏原生 checkbox */
 .hidden-checkbox {
-    display: none !important;
+    display: none;
 }
 
 /* 匿名按钮选中状态 - 稍微改小一点 padding 以适应底部栏高度 */
 .reply-anon-wrapper.selected {
     background-color: var(--top-pinned-bg);
     border-color: var(--primary-color);
-    padding-left: 36px !important;
+    padding-left: 36px;
 }
 
 .reply-anon-wrapper.selected::after {
