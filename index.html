@@ -3,20 +3,28 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
+    <!-- 1. 完善 Viewport：新增 maximum-scale=1.0 彻底锁死双指缩放和输入框自动放大 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    
     <title>OuO</title>
     <meta name="theme-color" content="#FFFFFF" />
+    
+    <!-- 2. iOS Safari 伪装原生 App 三连击 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <link rel="apple-touch-icon" href="./icon/icon_cat.png">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="apple-touch-icon" href="./icon/icon_cat.png">
+
+    <!-- 新增：破解图床防盗链（极其重要！因为你的代码里用了 postimg.cc） -->
+    <meta name="referrer" content="no-referrer" />
+
+    <!-- 你的外部脚本和样式（保持不变） -->
     <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
     <script src="https://unpkg.com/dompurify@2.3.8/dist/purify.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="css/main.css">
-
-
 </head>
 
 <body>
@@ -277,21 +285,26 @@
                 <button class="btn btn-danger" id="delete-selected-btn">删除已选
                 </button>
             </div>
+<!-- 表情包主面板 -->
             <div id="sticker-modal">
                 <div class="header">
-                    <span>我的表情</span>
+                    <span style="font-weight: bold; color: var(--primary-color);">我的表情</span>
                     <div class="btn-group">
+                        <button class="btn btn-primary" id="link-sticker-btn" style="display: none;">关联</button>
                         <button class="btn btn-primary" id="manage-stickers-btn">管理</button>
                         <button class="btn btn-primary" id="batch-add-sticker-btn">批量导入</button>
-                        <button class="btn btn-primary" id="add-new-sticker-btn">添加新表情</button>
+                        <button class="btn btn-primary" id="add-new-sticker-btn">添加</button>
                     </div>
                 </div>
+                
+                <!-- 表情网格区 -->
                 <div class="sticker-grid" id="sticker-grid-container"></div>
                 <div id="sticker-manage-bar">
                     <div class="placeholder"></div>
-                    <button class="btn btn-danger" id="delete-selected-stickers-btn">删除已选
-                        (0)</button>
+                    <button class="btn btn-danger" id="delete-selected-stickers-btn">删除已选(0)</button>
                 </div>
+                <!-- 新增：底部分类栏 -->
+                <div id="sticker-category-bar"></div>               
             </div>
             <!-- NEW: Chat Expansion Panel -->
             <div id="chat-expansion-panel">
@@ -439,6 +452,37 @@
         <!-- 第二组：外观 (壁纸, 字体, 自定义, 主题) -->
         <div class="settings-group-title">外观</div>
         <div class="settings-card">
+        <!-- 顶部安全区避让 (Toggle) -->
+            <div class="settings-item toggle-setting" style="cursor: default;">
+                <div class="setting-icon-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="feather"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line></svg>
+                </div>
+                <div class="item-details">
+                    <span class="item-name">顶部避让</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <label class="switch">
+                        <input type="checkbox" id="safe-area-top-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 底部安全区避让 (Toggle) -->
+            <div class="settings-item toggle-setting" style="cursor: default;">
+                <div class="setting-icon-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="feather"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="15" x2="21" y2="15"></line></svg>
+                </div>
+                <div class="item-details">
+                    <span class="item-name">底部避让</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <label class="switch">
+                        <input type="checkbox" id="safe-area-bottom-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
             <!-- 更换壁纸 -->
             <div class="settings-item" data-target="wallpaper-screen">
                 <div class="setting-icon-box">
@@ -1550,7 +1594,7 @@
                 <div class="title-container">
                     <h1 class="title">详 情</h1>
                 </div>
-                <div class="action-btn-group" style="display: flex; gap: 5px;">
+                <div class="action-btn-group">
                     <!-- 新增：收藏星标 -->
                     <button class="action-btn" id="d-delete-btn" style="cursor: pointer;">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1572,7 +1616,7 @@
             </header>
 
             <!-- 2. 静态 Main (内容滚动区) -->
-            <main class="content detail-content-area">
+            <main class="content" id="detail-content-area">
                 <!-- 帖子主体容器 -->
                 <div class="post-detail-container">
                     <div class="post-detail-main">
@@ -2343,46 +2387,92 @@
             </div>
         </div>
  
+            <!-- 关联表情包选择弹窗 -->
+            <div id="link-sticker-modal" class="modal-overlay">
+                <div class="modal-window">
+                    <h3>从库中勾选要关联的表情</h3>
+                    <div id="link-sticker-bar">
+                    <button type="button" class="btn btn-secondary" id="link-sticker-select-all-btn">全选</button>
+                    <div id="link-sticker-category-bar"></div>
+                    </div>
+                    <div class="sticker-grid" id="link-sticker-grid"></div>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-primary" id="confirm-link-sticker-btn">确认关联</button>         
+                        <button type="button" class="btn btn-neutral" id="cancel-link-sticker-btn">取消</button>
+                    </div>
+                </div>
+            </div>
 
+            <!-- 新增：分类长按管理菜单 -->
+            <div id="category-actionsheet" class="action-sheet-overlay">
+                <div class="action-sheet">
+                    <button class="action-sheet-button" id="rename-category-btn">重命名分类</button>
+                    <button class="action-sheet-button" id="link-category-btn">一键关联到本角色</button>
+                    <button class="action-sheet-button danger" id="delete-category-btn">删除整个分类及内容</button>
+                </div>
+            </div>
+            
+            <!-- 添加单张表情 -->
+            <div id="add-sticker-modal" class="modal-overlay">
+                <div class="modal-window">
+                    <h3 id="add-sticker-modal-title">添加新表情</h3>
+                    <form id="add-sticker-form">
+                        <div class="sticker-detail">
+                        <input type="hidden" id="sticker-edit-id">
+                        <div id="sticker-preview"><span>预览</span></div>
+  
+                        <div class="form-group">
+                        <!-- 新增分类输入框，附带 datalist 用于下拉提示 -->
+                        
+                            <label for="sticker-category-input">所属分类</label>
+                            <input type="text" id="sticker-category-input" placeholder="留空则为'默认'" list="category-datalist">
+                            <datalist id="category-datalist"></datalist>
+                        </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="sticker-name">表情名称</label>
+                            <input type="text" id="sticker-name" placeholder="如：开心" required>
+                        </div>
 
-        <div id="add-sticker-modal" class="modal-overlay">
-            <div class="modal-window">
-                <h3 id="add-sticker-modal-title">添加新表情</h3>
-                <form id="add-sticker-form"><input type="hidden" id="sticker-edit-id">
-                    <div id="sticker-preview"><span>预览</span></div>
-                    <div class="form-group"><label for="sticker-name">表情名称</label><input type="text" id="sticker-name"
-                            placeholder="如：开心" required>
-                    </div>
-                    <div class="form-group"><label for="sticker-url-input">表情URL</label><input type="url"
-                            id="sticker-url-input" placeholder="粘贴图片URL">
-                    </div>
-                    <p style="text-align:center; color:#888; margin: -10px 0 15px;">或</p><input type="file"
-                        id="sticker-file-upload" accept="image/*" style="display:none;"><label for="sticker-file-upload"
-                        class="btn btn-secondary" style="width:100%; margin-bottom: 20px;">从本地上传</label>
-                    <button type="submit" class="btn btn-primary">保存</button>
-                </form>
+  
+                        <div class="form-group">
+                            <label for="sticker-url-input">表情URL</label>
+                            <input type="url" id="sticker-url-input" placeholder="粘贴图片URL">
+                        </div>
+                        <p style="text-align:center; color:#888; margin: -5px 0 10px;">或</p>
+                        <input type="file" id="sticker-file-upload" accept="image/*" style="display:none;">
+                        <label for="sticker-file-upload" class="btn btn-secondary" style="width:100%; margin-bottom: 20px;">从本地上传</label>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </form>
+                </div>
             </div>
-        </div>
-        <div id="sticker-actionsheet" class="action-sheet-overlay">
-            <div class="action-sheet">
-                <button class="action-sheet-button" id="edit-sticker-btn">编辑</button>
-                <button class="action-sheet-button danger" id="delete-sticker-btn">删除</button>
+
+            <div id="sticker-actionsheet" class="action-sheet-overlay">
+                <div class="action-sheet">
+                    <button class="action-sheet-button" id="edit-sticker-btn">编辑</button>
+                    <button class="action-sheet-button danger" id="delete-sticker-btn">彻底删除</button>
+                </div>
             </div>
-        </div>
-        <!-- Batch Add Sticker Modal -->
-        <div id="batch-add-sticker-modal" class="modal-overlay">
-            <div class="modal-window">
-                <h3>批量导入表情</h3>
-                <form id="batch-add-sticker-form">
-                    <div class="form-group">
-                        <label for="sticker-urls-textarea">数据格式：名称:URL (英文冒号，每行一个)</label>
-                        <textarea id="sticker-urls-textarea" rows="8"
-                            placeholder="例如：&#10;开心:https://example.com/happy.gif&#10;哭泣:https://example.com/cry.png"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary">开始导入</button>
-                </form>
+
+            <!-- 批量导入表情 -->
+            <div id="batch-add-sticker-modal" class="modal-overlay">
+                <div class="modal-window">
+                    <h3>批量导入表情</h3>
+                    <form id="batch-add-sticker-form">
+                        <!-- 新增批量导入时的分类选择 -->
+                        <div class="form-group">
+                            <label for="batch-category-input">导入到分类</label>
+                            <input type="text" id="batch-category-input" placeholder="留空则为'默认'" list="category-datalist">
+                        </div>
+                        <div class="form-group">
+                            <label for="sticker-urls-textarea">数据格式：名称:URL (英文冒号，每行一个)</label>
+                            <textarea id="sticker-urls-textarea" rows="8" placeholder="例如：&#10;开心:https://example.com/happy.gif&#10;哭泣:https://example.com/cry.png"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary">开始导入</button>
+                    </form>
+                </div>
             </div>
-        </div>
+            
         <div id="send-voice-modal" class="modal-overlay">
             <div class="modal-window">
                 <h3>发送语音消息</h3>
@@ -3181,6 +3271,7 @@
     <script src="js/settings/tutorial.js"></script>
     <script src="js/settings/font_settings.js"></script>
     <script src="js/settings/customize.js"></script>
+    <script src="js/settings/safe_toggle.js"></script>
 
 
 <!-- 世界书 -->    
@@ -3214,5 +3305,4 @@
     <script src="js/main.js"></script>
 
 </body>
-
 </html>
