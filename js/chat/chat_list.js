@@ -1,20 +1,19 @@
 let currentPersonaIdToEdit = null;
 
-// --- 1. 替换 chat_list.js 中的 setupChatListScreen 函数 ---
-
+// --- START OF FILE chat_list.js Snippet ---
 function setupChatListScreen() {
-    // 重新获取 DOM 元素
     chatListContainer = document.getElementById('chat-list-container');
     noChatsPlaceholder = document.getElementById('no-chats-placeholder');
     addChatBtn = document.getElementById('chat-list-add-btn');
     addCharModal = document.getElementById('add-char-modal');
     addCharForm = document.getElementById('add-char-form');
     
-    // 渲染两个列表
     renderChatList();
     renderUserPersonas(); 
+    
+    // 初始化气泡编辑器
+    if(typeof setupBubblePresets === 'function') setupBubblePresets();
 
-    // Tab 切换逻辑
     const tabs = document.querySelectorAll('.nav-tab-item');
     const views = document.querySelectorAll('.tab-content-view');
     const title = document.getElementById('chat-list-title');
@@ -23,31 +22,33 @@ function setupChatListScreen() {
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
-            // 样式切换
             tabs.forEach(t => { t.classList.remove('active'); t.style.color = '#999'; });
             tab.classList.add('active');
             tab.style.color = 'var(--primary-color)';
 
-            // 内容显示切换
             views.forEach(v => v.style.display = 'none');
             const targetView = document.getElementById(`tab-view-${tab.dataset.tab}`);
-            if (targetView) targetView.style.display = 'block';
+            if (targetView) {
+                // 如果是气泡外观设置页，使用 flex 布局；否则使用 block
+                if (tab.dataset.tab === 'bubbles') {
+                    targetView.style.display = 'flex';
+                } else {
+                    targetView.style.display = 'block';
+                }
+            }
 
-            // 标题和按钮显隐逻辑
             if (tab.dataset.tab === 'messages') {
                 title.textContent = '聊天';
                 if(createGroupBtn) createGroupBtn.style.display = 'inline-flex';
                 if(importBtn) importBtn.style.display = 'inline-flex';
+                addChatBtn.style.display = 'inline-flex';
                 
-                // 消息页面的 + 号是新建聊天
                 addChatBtn.onclick = () => {
                     addCharModal.classList.add('visible');
                     addCharForm.reset();
                     document.getElementById('selected-persona-id').value = ''; 
                     document.getElementById('my-name-for-char').disabled = false;
                     document.getElementById('my-nickname-for-char').disabled = false;
-                    
-                    // --- 修复：正确重置绑定按钮样式 ---
                     const btn = document.getElementById('add-chat-select-persona-btn');
                     if(btn) {
                         btn.innerHTML = '绑定人设';
@@ -55,23 +56,30 @@ function setupChatListScreen() {
                         btn.classList.remove('btn-primary');
                     }
                 };
-            } else {
+            } else if (tab.dataset.tab === 'me') {
                 title.textContent = '我';
                 if(createGroupBtn) createGroupBtn.style.display = 'none';
                 if(importBtn) importBtn.style.display = 'none';
+                addChatBtn.style.display = 'inline-flex';
                 
-                // “我”页面的 + 号是新建档案
-                addChatBtn.onclick = () => {
-                    openUserPersonaModal(); 
-                };
+                addChatBtn.onclick = () => { openUserPersonaModal(); };
+            } else if (tab.dataset.tab === 'bubbles') {
+                title.textContent = '外观';
+                // 隐藏右上角的各种按钮
+                if(createGroupBtn) createGroupBtn.style.display = 'none';
+                if(importBtn) importBtn.style.display = 'none';
+                addChatBtn.style.display = 'none';
+                
+                // 触发渲染气泡编辑器列表
+                if(typeof window.renderGlobalBubblePresets === 'function') {
+                    window.renderGlobalBubblePresets();
+                }
             }
         });
     });
 
-    // 默认点第一个 Tab
     if(tabs.length > 0) tabs[0].click();
 
-    // 列表点击事件
     chatListContainer.addEventListener('click', (e) => {
         const chatItem = e.target.closest('.chat-item');
         if (chatItem) {
@@ -80,7 +88,6 @@ function setupChatListScreen() {
             openChatRoom(currentChatId, currentChatType);
         }
     });
-    // 长按菜单等...
     chatListContainer.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         const chatItem = e.target.closest('.chat-item');
@@ -88,6 +95,7 @@ function setupChatListScreen() {
         handleChatListLongPress(chatItem.dataset.id, chatItem.dataset.type, e.clientX, e.clientY);
     });
 }
+
 
 // --- 替换 chat_list.js 中的 setupAddCharModal 函数 ---
 

@@ -42,32 +42,7 @@ const stickerToggleBtn = document.getElementById('sticker-toggle-btn'),
   const stickerActionSheet = document.getElementById('sticker-actionsheet'),
                 editStickerBtn = document.getElementById('edit-sticker-btn'),
                 deleteStickerBtn = document.getElementById('delete-sticker-btn'); 
- 
-             const voiceMessageBtn = document.getElementById('voice-message-btn'),
-                sendVoiceModal = document.getElementById('send-voice-modal'),
-                sendVoiceForm = document.getElementById('send-voice-form'),
-                voiceTextInput = document.getElementById('voice-text-input'),
-                voiceDurationPreview = document.getElementById('voice-duration-preview');
-            const photoVideoBtn = document.getElementById('photo-video-btn'),
-                sendPvModal = document.getElementById('send-pv-modal'),
-                sendPvForm = document.getElementById('send-pv-form'),
-                pvTextInput = document.getElementById('pv-text-input');
-            const imageRecognitionBtn = document.getElementById('image-recognition-btn'),
-                imageUploadInput = document.getElementById('image-upload-input');
-            const walletBtn = document.getElementById('wallet-btn'),
-                sendTransferModal = document.getElementById('send-transfer-modal'),
-                sendTransferForm = document.getElementById('send-transfer-form'),
-                transferAmountInput = document.getElementById('transfer-amount-input'),
-                transferRemarkInput = document.getElementById('transfer-remark-input');
-            const receiveTransferActionSheet = document.getElementById('receive-transfer-actionsheet'),
-                acceptTransferBtn = document.getElementById('accept-transfer-btn'),
-                returnTransferBtn = document.getElementById('return-transfer-btn');
-            const sendGiftModal = document.getElementById('send-gift-modal'),
-                sendGiftForm = document.getElementById('send-gift-form'),
-                giftDescriptionInput = document.getElementById('gift-description-input');
-            const timeSkipModal = document.getElementById('time-skip-modal'),
-                timeSkipForm = document.getElementById('time-skip-form'),
-                timeSkipInput = document.getElementById('time-skip-input');                                    
+            
 
 function setupChatRoom() {
     if ('scrollRestoration' in history) {
@@ -729,7 +704,25 @@ function enterMultiSelectMode(initialMessageId) {
                 currentPage = 1;
                 chatRoomScreen.className = chatRoomScreen.className.replace(/\bchat-active-[^ ]+\b/g, '');
                 chatRoomScreen.classList.add(`chat-active-${chatId}`);
-                updateCustomBubbleStyle(chatId, chat.customBubbleCss, chat.useCustomBubbleCss);
+                // --- 【核心修复：动态应用全局默认气泡】 ---
+                let cssToApply = chat.customBubbleCss || '';
+
+if (!chat.bubbleThemeName || chat.bubbleThemeName === 'default' || chat.bubbleThemeName === '默认') {
+    if (typeof _getBubblePresets === 'function') {
+        // 实时抓取最新的全局“默认”预设
+        const defaultPreset = _getBubblePresets().find(p => p.name === '默认');
+        if (defaultPreset && defaultPreset.css) {
+            cssToApply = defaultPreset.css;
+        } else {
+            cssToApply = '';
+        }
+    }
+}
+
+                let useCustomToApply = !!cssToApply;
+
+updateCustomBubbleStyle(chatId, cssToApply, useCustomToApply);
+                // --- 修复结束 ---
                 // --- 插入代码：初始化线下模式 UI 状态 ---
                 if (type === 'private') {
                     applyOfflineNarrationCss(chatId, chat.offlineNarrationCss);
@@ -856,25 +849,26 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
         // 3. 延迟一小会儿再执行一次 (应对 DOM 渲染延迟)
         setTimeout(forceToBottom, 50);
 
-        // 4. 【核心修复】针对所有图片的“无死角”监听
+// 4. 【核心修复】针对所有图片的“无死角”监听
         const images = messageArea.querySelectorAll('img');
         
         if (images.length > 0) {
+            // 💡 声明一个变量用于防抖
+            let scrollTimeout = null;
+            // 💡 封装一个防抖的滚动函数
+            const debouncedScroll = () => {
+                if (scrollTimeout) clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    requestAnimationFrame(forceToBottom);
+                }, 30); // 30ms 内如果有多张图片连续加载完成，只会执行最后一次滚动
+            };
+
             images.forEach(img => {
-                // 情况 A: 图片已经有缓存 (complete 为 true)
-                // 即使缓存了，浏览器渲染也需要几毫秒，所以必须重新执行滚动
                 if (img.complete) {
-                    forceToBottom();
-                } 
-                // 情况 B: 图片正在加载
-                else {
-                    // 使用 onload 确保加载完撑开高度后滚动
-                    img.addEventListener('load', () => {
-                requestAnimationFrame(forceToBottom);
-            });
-            img.addEventListener('error', () => {
-                 requestAnimationFrame(forceToBottom);
-            });
+                    debouncedScroll();
+                } else {
+                    img.addEventListener('load', debouncedScroll);
+                    img.addEventListener('error', debouncedScroll);
                 }
             });
         }
@@ -961,9 +955,7 @@ function renderNewerMessages() {
     // 因为追加内容到底部不会影响当前视口（除非用户已经紧贴底部，那样正好顺滑看到新消息）。
 }
 
-            function calculateVoiceDuration(text) {
-                return Math.max(1, Math.min(60, Math.ceil(text.length / 3.5)));
-            }
+
 
             function createMessageBubbleElement(message) {
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
@@ -1054,10 +1046,8 @@ function renderNewerMessages() {
                     const themeKey = chat.theme || 'white_blue';
                     const theme = colorThemes[themeKey] || colorThemes['white_blue'];
                     const bubbleTheme = theme.received;
-                    if (!chat.useCustomBubbleCss) {
-                        bubbleElement.style.backgroundColor = bubbleTheme.bg;
-                        bubbleElement.style.color = bubbleTheme.text;
-                    }
+bubbleElement.style.backgroundColor = bubbleTheme.bg;
+bubbleElement.style.color = bubbleTheme.text;
 
 
                     const translationDiv = document.createElement('div');
@@ -1239,14 +1229,12 @@ const unifiedStickerMatch = content.match(unifiedStickerRegex);
                     if (stickerSrc) {
                         // 找到了图片，应用专门的贴纸样式，去掉普通的泡泡框
                         bubbleElement.className = 'sticker-bubble';
-                        bubbleElement.innerHTML = `<img src="${stickerSrc}" alt="${stickerName}">`;
+                        bubbleElement.innerHTML = `<img src="${stickerSrc}" alt="${stickerName}" style="min-width: 100px; min-height: 100px; aspect-ratio: 1/1; object-fit: contain;">`;
                     } else {
                         // 如果库里没找到（比如被删了），优雅降级为带背景色的文本
                         bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
-                        if (!chat.useCustomBubbleCss) {
-                            bubbleElement.style.backgroundColor = bubbleTheme.bg;
-                            bubbleElement.style.color = bubbleTheme.text;
-                        }
+                        bubbleElement.style.backgroundColor = bubbleTheme.bg;
+bubbleElement.style.color = bubbleTheme.text;
                         bubbleElement.innerHTML = `[表情包：${stickerName}]`;
                     }
                 } else if (privateGiftMatch || groupGiftMatch) {
@@ -1306,10 +1294,8 @@ const unifiedStickerMatch = content.match(unifiedStickerRegex);
                 } else if (voiceMatch) {
                     bubbleElement = document.createElement('div');
                     bubbleElement.className = 'voice-bubble';
-                    if (!chat.useCustomBubbleCss) {
-                        bubbleElement.style.backgroundColor = bubbleTheme.bg;
-                        bubbleElement.style.color = bubbleTheme.text;
-                    }
+                    bubbleElement.style.backgroundColor = bubbleTheme.bg;
+bubbleElement.style.color = bubbleTheme.text;
                     bubbleElement.innerHTML = `<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg><svg class="voice-icon" viewBox="0 0 24 24" fill="currentColor">
   <!-- 多个竖线表示声波 -->
     <path d="M3 9v6h2V9H6z"></path>
@@ -1365,10 +1351,8 @@ const unifiedStickerMatch = content.match(unifiedStickerRegex);
                     bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
                     let userText = textMatch[1].trim().replace(/\[发送时间:.*?\]/g, '').trim();
                     bubbleElement.innerHTML = DOMPurify.sanitize(userText);
-                    if (!chat.useCustomBubbleCss) {
-                        bubbleElement.style.backgroundColor = bubbleTheme.bg;
-                        bubbleElement.style.color = bubbleTheme.text;
-                    }
+                    bubbleElement.style.backgroundColor = bubbleTheme.bg;
+bubbleElement.style.color = bubbleTheme.text;
                 } else if (message && Array.isArray(message.parts) && message.parts[0].type === 'html') {
                     bubbleElement = document.createElement('div');
                     bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;
@@ -1383,10 +1367,8 @@ const unifiedStickerMatch = content.match(unifiedStickerRegex);
                     }
                     displayedContent = displayedContent.replace(/\[发送时间:.*?\]/g, '').trim();
                     bubbleElement.innerHTML = DOMPurify.sanitize(displayedContent);
-                    if (!chat.useCustomBubbleCss) {
-                        bubbleElement.style.backgroundColor = bubbleTheme.bg;
-                        bubbleElement.style.color = bubbleTheme.text;
-                    }
+                    bubbleElement.style.backgroundColor = bubbleTheme.bg;
+bubbleElement.style.color = bubbleTheme.text;
                 }
                     // 1. 创建头像元素
     const avatarImg = document.createElement('img');
@@ -1845,27 +1827,7 @@ async function withdrawMessage(messageId) {
             }
 
 
-            async function sendImageForRecognition(base64Data) {
-                if (!base64Data || isGenerating) return;
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                const myName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
-                await processTimePerception(chat, currentChatId, currentChatType);
-                const textPrompt = `[${myName}发来了一张图片：]`;
-                const message = {
-                    id: `msg_${Date.now()}`,
-                    role: 'user',
-                    content: base64Data,
-                    parts: [{ type: 'text', text: textPrompt }, { type: 'image', data: base64Data }],
-                    timestamp: Date.now(),
-                };
-                if (currentChatType === 'group') {
-                    message.senderId = 'user_me';
-                }
-                chat.history.push(message);
-                addMessageBubble(message, currentChatId, currentChatType);
-                await saveData();
-                renderChatList();
-            }
+
 
             async function sendSticker(sticker) {
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
@@ -1890,313 +1852,98 @@ async function withdrawMessage(messageId) {
                 stickerModal.classList.remove('visible');
             }
 
-            async function sendMyVoiceMessage(text) {
-                if (!text) return;
-                sendVoiceModal.classList.remove('visible');
-                await new Promise(resolve => setTimeout(resolve, 100));
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                const myName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
-                await processTimePerception(chat, currentChatId, currentChatType);
-                const content = `[${myName}的语音：${text}]`;
-                const message = {
-                    id: `msg_${Date.now()}`,
-                    role: 'user',
-                    content: content,
-                    parts: [{ type: 'text', text: content }],
-                    timestamp: Date.now()
-                };
-                if (currentChatType === 'group') {
-                    message.senderId = 'user_me';
-                }
-                chat.history.push(message);
-                addMessageBubble(message, currentChatId, currentChatType);
-                await saveData();
-                renderChatList();
-            }
-
-            async function sendMyPhotoVideo(text) {
-                if (!text) return;
-                sendPvModal.classList.remove('visible');
-                await new Promise(resolve => setTimeout(resolve, 100));
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                const myName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
-                await processTimePerception(chat, currentChatId, currentChatType);
-                const content = `[${myName}发来的照片\/视频：${text}]`;
-                const message = {
-                    id: `msg_${Date.now()}`,
-                    role: 'user',
-                    content: content,
-                    parts: [{ type: 'text', text: content }],
-                    timestamp: Date.now()
-                };
-                if (currentChatType === 'group') {
-                    message.senderId = 'user_me';
-                }
-                chat.history.push(message);
-                addMessageBubble(message, currentChatId, currentChatType);
-                await saveData();
-                renderChatList();
-            }
-
-            async function sendMyTransfer(amount, remark) {
-                sendTransferModal.classList.remove('visible');
-                await new Promise(resolve => setTimeout(resolve, 100));
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                await processTimePerception(chat, currentChatId, currentChatType);
-                if (currentChatType === 'private') {
-                    const content = `[${chat.myName}给你转账：${amount}元；备注：${remark}]`;
-                    const message = {
-                        id: `msg_${Date.now()}`,
-                        role: 'user',
-                        content: content,
-                        parts: [{ type: 'text', text: content }],
-                        timestamp: Date.now(),
-                        transferStatus: 'pending'
-                    };
-                    chat.history.push(message);
-                    addMessageBubble(message, currentChatId, currentChatType);
-                } else { // Group chat
-                    currentGroupAction.recipients.forEach(recipientId => {
-                        const recipient = chat.members.find(m => m.id === recipientId);
-                        if (recipient) {
-                            const content = `[${chat.me.realName} 向 ${recipient.realName} 转账：${amount}元；备注：${remark}]`;
-                            const message = {
-                                id: `msg_${Date.now()}_${recipientId}`,
-                                role: 'user',
-                                content: content,
-                                parts: [{ type: 'text', text: content }],
-                                timestamp: Date.now(),
-                                senderId: 'user_me'
-                            };
-                            chat.history.push(message);
-                            addMessageBubble(message, currentChatId, currentChatType);
-                        }
-                    });
-                }
-                await saveData();
-                renderChatList();
-            }
-
-            async function sendMyGift(description) {
-                if (!description) return;
-                sendGiftModal.classList.remove('visible');
-                await new Promise(resolve => setTimeout(resolve, 100));
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                await processTimePerception(chat, currentChatId, currentChatType);
-
-                if (currentChatType === 'private') {
-                    const content = `[${chat.myName}送来的礼物：${description}]`;
-                    const message = {
-                        id: `msg_${Date.now()}`,
-                        role: 'user',
-                        content: content,
-                        parts: [{ type: 'text', text: content }],
-                        timestamp: Date.now(),
-                        giftStatus: 'sent'
-                    };
-                    chat.history.push(message);
-                    addMessageBubble(message, currentChatId, currentChatType);
-                } else { // Group chat
-                    currentGroupAction.recipients.forEach(recipientId => {
-                        const recipient = chat.members.find(m => m.id === recipientId);
-                        if (recipient) {
-                            const content = `[${chat.me.realName} 向 ${recipient.realName} 送来了礼物：${description}]`;
-                            const message = {
-                                id: `msg_${Date.now()}_${recipientId}`,
-                                role: 'user',
-                                content: content,
-                                parts: [{ type: 'text', text: content }],
-                                timestamp: Date.now(),
-                                senderId: 'user_me'
-                            };
-                            chat.history.push(message);
-                            addMessageBubble(message, currentChatId, currentChatType);
-                        }
-                    });
-                }
-                await saveData();
-                renderChatList();
-            }
-
-            // --- NEW: Time Skip System ---
-            function setupTimeSkipSystem() {
-
-                timeSkipModal.addEventListener('click', (e) => {
-                    if (e.target === timeSkipModal) timeSkipModal.classList.remove('visible');
-                });
-                timeSkipForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    sendTimeSkipMessage(timeSkipInput.value.trim());
-                });
-            }
-
-            async function sendTimeSkipMessage(text) {
-    if (!text) return;
-    timeSkipModal.classList.remove('visible');
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-    if (!chat) return;
-
-    await processTimePerception(chat, currentChatId, currentChatType);
-
-    const now = Date.now();
-
-    // 1. UI 展示消息 (保持不变，用 system-display 是为了触发你的CSS样式)
-    const visualMessage = {
-        id: `msg_visual_${now}`,
-        role: 'system',
-        content: `[system-display:${text}]`, // 这里保留 system-display 是为了前端渲染样式，反正是给用户看的，不给AI看
-        parts: [],
-        timestamp: now,
-        isAiIgnore: true // AI 看不到这条
-    };
-
-    // 2. AI 上下文消息 (修改这里！)
-    // 去掉 system，改为更自然的描述标签
-    const contextContent = `[剧情旁白：${text}]`; 
-    
-    const contextMessage = {
-        id: `msg_context_${now}`,
-        role: 'user', // 既然是用户写的旁白，用 user 角色最合适
-        content: contextContent,
-        parts: [{ type: 'text', text: contextContent }],
-        timestamp: now,
-        isHidden: true // 用户界面不显示这条
-    };
-
-    if (currentChatType === 'group') {
-        contextMessage.senderId = 'user_me';
-        visualMessage.senderId = 'user_me';
-    }
-
-    chat.history.push(visualMessage, contextMessage);
-    addMessageBubble(visualMessage, currentChatId, currentChatType);
-    await saveData();
-    // renderChatList(); // 不需要调用
-}
-
             // --- 线下模式 ---
-            const offlineModeModal = document.getElementById('offline-mode-modal');
-            const offlineModeForm = document.getElementById('offline-mode-form');
-            const offlineModeToggle = document.getElementById('offline-mode-toggle');
-            const offlineNarrationCssInput = document.getElementById('offline-narration-css');
-            const cancelOfflineModeBtn = document.getElementById('cancel-offline-mode-btn');
-
-            function setupOfflineModeLogic() {
-                // 初始化监听器
-                cancelOfflineModeBtn.addEventListener('click', () => {
-                    offlineModeModal.classList.remove('visible');
-                });
-
-                offlineModeModal.addEventListener('click', (e) => {
-                    if (e.target === offlineModeModal) offlineModeModal.classList.remove('visible');
-                });
-
-                offlineModeForm.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    if (currentChatType !== 'private') {
-                        showToast('线下模式仅支持单人聊天');
-                        return;
-                    }
-
-                    const chat = db.characters.find(c => c.id === currentChatId);
-                    if (!chat) return;
-
-                    const wasEnabled = chat.offlineModeEnabled;
-                    const isNowEnabled = offlineModeToggle.checked;
-
-                    // 更新数据
-                    chat.offlineModeEnabled = isNowEnabled;
-                    chat.offlineNarrationCss = offlineNarrationCssInput.value;
-
-                    const now = Date.now();
-
-                    // =======================================================
-                    // 情况 1: 退出线下模式
-                    // =======================================================
-                    if (wasEnabled && !isNowEnabled) {
-                        // 1. 指令消息 (isHidden: true -> 用户不看，AI看)
-                        const endInstruction = `[system: 面对面情节结束。切换回手机聊天模式。恢复使用 [${chat.realName}的消息：...] 格式。]`;
-                        const instructionMsg = {
-                            id: `msg_ins_off_${now}`,
-                            role: 'user', 
-                            content: endInstruction,
-                            parts: [{ type: 'text', text: endInstruction }],
-                            timestamp: now,
-                            isHidden: true // 🚩 只有 AI 能看到
-                        };
-                        chat.history.push(instructionMsg);
-
-                        // 2. 展示消息 (isAiIgnore: true -> 用户看，AI不看)
-                        const displayMsg = {
-                            id: `msg_vis_off_${now}`,
-                            role: 'system',
-                            content: `[system-display: 已退出线下模式]`,
-                            parts: [],
-                            timestamp: now + 1,
-                            isAiIgnore: true // 🚩 只有用户能看到 (AI 忽略)
-                        };
-                        chat.history.push(displayMsg);
-                        addMessageBubble(displayMsg, currentChatId, currentChatType);
-                    }
-                    // =======================================================
-                    // 情况 2: 进入线下模式
-                    // =======================================================
-                    else if (!wasEnabled && isNowEnabled) {
-                        // 1. 指令消息 (用户不看，AI看)
-                        const startInstruction = `[system: 场景切换：从现在开始，${chat.realName}与用户进行【面对面】互动。请根据人设直接描写动作和语言。]`;
-                        const instructionMsg = {
-                            id: `msg_ins_on_${now}`,
-                            role: 'user', 
-                            content: startInstruction,
-                            parts: [{ type: 'text', text: startInstruction }],
-                            timestamp: now,
-                            isHidden: true // 🚩 只有 AI 能看到
-                        };
-                        chat.history.push(instructionMsg);
-
-                        // 2. 展示消息 (用户看，AI不看)
-                        const displayMsg = {
-                            id: `msg_vis_on_${now}`,
-                            role: 'system',
-                            content: `[system-display: 已开启线下模式]`,
-                            parts: [],
-                            timestamp: now + 1,
-                            isAiIgnore: true // 🚩 只有用户能看到 (AI 忽略)
-                        };
-                        chat.history.push(displayMsg);
-                        addMessageBubble(displayMsg, currentChatId, currentChatType);
-                    }
-
-                    await saveData();
-
-                    applyOfflineNarrationCss(chat.id, chat.offlineNarrationCss);
-                    updateOfflineModeUI(chat.offlineModeEnabled);
-                    
-                    const offlineBtn = document.querySelector('.expansion-item[data-action="offline-mode-settings"]');
-                    if (offlineBtn) {
-                        if (chat.offlineModeEnabled) offlineBtn.classList.add('active');
-                        else offlineBtn.classList.remove('active');
-                    }
-
-                    offlineModeModal.classList.remove('visible');
-                    showToast(chat.offlineModeEnabled ? '线下模式已开启' : '线下模式已关闭');
-                });
-            }
-
-            function openOfflineModeSettings() {
+            async function openOfflineModeSettings() {
                 if (currentChatType !== 'private') {
                     showToast('线下模式仅支持单人聊天');
                     return;
                 }
                 const chat = db.characters.find(c => c.id === currentChatId);
+                if (!chat) return;
 
-                // 填充表单
-                offlineModeToggle.checked = !!chat.offlineModeEnabled;
-                offlineNarrationCssInput.value = chat.offlineNarrationCss || '';
+                const wasEnabled = chat.offlineModeEnabled;
+                const isNowEnabled = !wasEnabled; // 直接取反
 
-                offlineModeModal.classList.add('visible');
+                // 使用专用的 AppUI.confirm 替代原生 confirm
+                const confirmMsg = isNowEnabled 
+                    ? '确定要开启线下模式吗？\n开启后将进入面对面互动模式。' 
+                    : '确定要关闭线下模式吗？\n关闭后将恢复正常的手机聊天。';
+
+                const isConfirmed = await AppUI.confirm(confirmMsg, "模式切换");
+                
+                if (!isConfirmed) {
+                    return; // 用户点击取消则中断
+                }
+
+                // 确认后更新数据
+                chat.offlineModeEnabled = isNowEnabled;
+                const now = Date.now();
+
+                // =======================================================
+                // 情况 1: 退出线下模式
+                // =======================================================
+                if (wasEnabled && !isNowEnabled) {
+                    const endInstruction = `[system: 面对面情节结束。切换回手机聊天模式。恢复使用[${chat.realName}的消息：...] 格式。]`;
+                    const instructionMsg = {
+                        id: `msg_ins_off_${now}`,
+                        role: 'user', 
+                        content: endInstruction,
+                        parts:[{ type: 'text', text: endInstruction }],
+                        timestamp: now,
+                        isHidden: true
+                    };
+                    chat.history.push(instructionMsg);
+
+                    const displayMsg = {
+                        id: `msg_vis_off_${now}`,
+                        role: 'system',
+                        content: `[system-display: 已退出线下模式]`,
+                        parts:[],
+                        timestamp: now + 1,
+                        isAiIgnore: true 
+                    };
+                    chat.history.push(displayMsg);
+                    addMessageBubble(displayMsg, currentChatId, currentChatType);
+                }
+                // =======================================================
+                // 情况 2: 进入线下模式
+                // =======================================================
+                else if (!wasEnabled && isNowEnabled) {
+                    const startInstruction = `[system: 场景切换：从现在开始，${chat.realName}与用户进行【面对面】互动。请根据人设直接描写动作和语言。]`;
+                    const instructionMsg = {
+                        id: `msg_ins_on_${now}`,
+                        role: 'user', 
+                        content: startInstruction,
+                        parts:[{ type: 'text', text: startInstruction }],
+                        timestamp: now,
+                        isHidden: true 
+                    };
+                    chat.history.push(instructionMsg);
+
+                    const displayMsg = {
+                        id: `msg_vis_on_${now}`,
+                        role: 'system',
+                        content: `[system-display: 已开启线下模式]`,
+                        parts:[],
+                        timestamp: now + 1,
+                        isAiIgnore: true 
+                    };
+                    chat.history.push(displayMsg);
+                    addMessageBubble(displayMsg, currentChatId, currentChatType);
+                }
+
+                await saveData();
+
+                // 更新界面按钮状态和顶部呼吸灯
+                updateOfflineModeUI(chat.offlineModeEnabled);
+                
+                const offlineBtn = document.querySelector('.expansion-item[data-action="offline-mode-settings"]');
+                if (offlineBtn) {
+                    if (chat.offlineModeEnabled) offlineBtn.classList.add('active');
+                    else offlineBtn.classList.remove('active');
+                }
+
+                showToast(chat.offlineModeEnabled ? '线下模式已开启' : '线下模式已关闭');
             }
 
             function applyOfflineNarrationCss(chatId, css) {
@@ -2410,101 +2157,7 @@ switch (action) {
                 });
             }
 
-            function openDeleteChunkModal() {
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                if (!chat || !chat.history || chat.history.length === 0) {
-                    showToast('当前没有聊天记录可删除');
-                    return;
-                }
-                const totalMessages = chat.history.length;
-                const rangeInfo = document.getElementById('delete-chunk-range-info');
-                rangeInfo.textContent = `当前聊天总消息数: ${totalMessages}`;
-                document.getElementById('delete-chunk-form').reset();
-                document.getElementById('delete-chunk-modal').classList.add('visible');
-            }
 
-            function setupDeleteHistoryChunk() {
-                const deleteChunkForm = document.getElementById('delete-chunk-form');
-                const confirmBtn = document.getElementById('confirm-delete-chunk-btn');
-                const cancelBtn = document.getElementById('cancel-delete-chunk-btn');
-                const deleteChunkModal = document.getElementById('delete-chunk-modal');
-                const confirmModal = document.getElementById('delete-chunk-confirm-modal');
-                const previewBox = document.getElementById('delete-chunk-preview');
-
-                let startRange, endRange;
-
-                deleteChunkForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                    const totalMessages = chat.history.length;
-
-                    startRange = parseInt(document.getElementById('delete-range-start').value);
-                    endRange = parseInt(document.getElementById('delete-range-end').value);
-
-                    if (isNaN(startRange) || isNaN(endRange) || startRange <= 0 || endRange < startRange || endRange > totalMessages) {
-                        showToast('请输入有效的起止范围');
-                        return;
-                    }
-
-                    const startIndex = startRange - 1;
-                    const endIndex = endRange;
-                    const messagesToDelete = chat.history.slice(startIndex, endIndex);
-
-                    // --- NEW PREVIEW LOGIC ---
-                    let previewHtml = '';
-                    const totalToDelete = messagesToDelete.length;
-
-                    if (totalToDelete <= 4) {
-                        // If 4 or fewer messages, show all of them
-                        previewHtml = messagesToDelete.map(msg => {
-                            const contentMatch = msg.content.match(/\[.*?的消息：([\s\S]+)\]/);
-                            const text = contentMatch ? contentMatch[1] : msg.content;
-                            return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
-                        }).join('');
-                    } else {
-                        // If more than 4, show first 2, ellipsis, and last 2
-                        const firstTwo = messagesToDelete.slice(0, 2);
-                        const lastTwo = messagesToDelete.slice(-2);
-
-                        const firstTwoHtml = firstTwo.map(msg => {
-                            const contentMatch = msg.content.match(/\[.*?的消息：([\s\S]+)\]/);
-                            const text = contentMatch ? contentMatch[1] : msg.content;
-                            return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
-                        }).join('');
-
-                        const lastTwoHtml = lastTwo.map(msg => {
-                            const contentMatch = msg.content.match(/\[.*?的消息：([\s\S]+)\]/);
-                            const text = contentMatch ? contentMatch[1] : msg.content;
-                            return `<p>${msg.role === 'user' ? '我' : chat.remarkName || '对方'}: ${text.substring(0, 50)}...</p>`;
-                        }).join('');
-
-                        previewHtml = `${firstTwoHtml}<p style="text-align: center; color: #999; margin: 5px 0;">...</p>${lastTwoHtml}`;
-                    }
-                    previewBox.innerHTML = previewHtml;
-
-                    deleteChunkModal.classList.remove('visible');
-                    confirmModal.classList.add('visible');
-                });
-
-                confirmBtn.addEventListener('click', async () => {
-                    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                    const startIndex = startRange - 1;
-                    const count = endRange - startIndex;
-
-                    chat.history.splice(startIndex, count);
-                    await saveData();
-
-                    confirmModal.classList.remove('visible');
-                    showToast(`已成功删除 ${count} 条消息`);
-                    currentPage = 1;
-                    renderMessages(false, true);
-                    renderChatList();
-                });
-
-                cancelBtn.addEventListener('click', () => {
-                    confirmModal.classList.remove('visible');
-                });
-            }
 
             function getMixedContent(responseData) {
                 const results = [];
@@ -3548,755 +3201,4 @@ async function handleRegenerate() {
     // 4. 重新触发AI回复
     await getAiReply(currentChatId, currentChatType);
 }
-
-// 重名处理函数
-            function getUniqueStickerName(baseName, excludeId = null) {
-                let name = baseName;
-                let counter = 1;
-                while (db.myStickers.some(s => s.name === name && s.id !== excludeId)) {
-                    name = `${baseName}(${counter})`;
-                    counter++;
-                }
-                return name;
-            }
-
-            async function setupStickerSystem() {
-                const batchAddStickerBtn = document.getElementById('batch-add-sticker-btn');
-                const batchAddStickerModal = document.getElementById('batch-add-sticker-modal');
-                const batchAddStickerForm = document.getElementById('batch-add-sticker-form');
-                const stickerUrlsTextarea = document.getElementById('sticker-urls-textarea');
-                const manageStickersBtn = document.getElementById('manage-stickers-btn');
-                const stickerManageBar = document.getElementById('sticker-manage-bar');
-                const deleteSelectedStickersBtn = document.getElementById('delete-selected-stickers-btn');
-                
-                const linkStickerBtn = document.getElementById('link-sticker-btn');
-                const linkStickerModal = document.getElementById('link-sticker-modal');
-                const cancelLinkBtn = document.getElementById('cancel-link-sticker-btn');
-                const confirmLinkBtn = document.getElementById('confirm-link-sticker-btn');
-                const linkSelectAllBtn = document.getElementById('link-sticker-select-all-btn'); // ✨全选按钮
-
-                // ==========================================
-                // 1. 关联表情包及【全选】逻辑
-                // ==========================================
-                linkStickerBtn.addEventListener('click', () => {
-                    selectedLinkStickerIds.clear();
-                    const chat = db.characters.find(c => c.id === currentChatId);
-                    const charIds = chat.stickerIds ||[];
-                    charIds.forEach(id => selectedLinkStickerIds.add(id)); 
-                    
-                    currentLinkStickerCategory = '全部'; 
-                    renderLinkStickerGrid();
-                    linkStickerModal.classList.add('visible');
-                });
-
-                cancelLinkBtn.addEventListener('click', () => {
-                    linkStickerModal.classList.remove('visible');
-                });
-
-                confirmLinkBtn.addEventListener('click', async () => {
-                    const chat = db.characters.find(c => c.id === currentChatId);
-                    chat.stickerIds = Array.from(selectedLinkStickerIds);
-                    await saveData();
-                    showToast('关联成功');
-                    linkStickerModal.classList.remove('visible');
-                });
-
-                // ✨全选按钮点击逻辑
-                linkSelectAllBtn.addEventListener('click', () => {
-                    let stickersInView = db.myStickers;
-                    if (currentLinkStickerCategory !== '全部') {
-                        stickersInView = db.myStickers.filter(s => (s.category || '默认') === currentLinkStickerCategory);
-                    }
-                    
-                    // 检查当前视图下的是否已全部选中
-                    const allSelected = stickersInView.every(s => selectedLinkStickerIds.has(s.id));
-                    
-                    if (allSelected) {
-                        // 取消全选
-                        stickersInView.forEach(s => selectedLinkStickerIds.delete(s.id));
-                    } else {
-                        // 全选
-                        stickersInView.forEach(s => selectedLinkStickerIds.add(s.id));
-                    }
-                    renderLinkStickerGrid(); 
-                });
-
-                // ==========================================
-                // 2. 分类标签长按管理菜单逻辑 ✨
-                // ==========================================
-                const categoryActionSheet = document.getElementById('category-actionsheet');
-                const renameCategoryBtn = document.getElementById('rename-category-btn');
-                const linkCategoryBtn = document.getElementById('link-category-btn');
-                const deleteCategoryBtn = document.getElementById('delete-category-btn');
-
-                categoryActionSheet.addEventListener('click', (e) => {
-                    if (e.target === categoryActionSheet) {
-                        categoryActionSheet.classList.remove('visible');
-                    }
-                });
-
-                // 一键重命名
-renameCategoryBtn.addEventListener('click', () => {
-                    categoryActionSheet.classList.remove('visible');
-                    // ✨ 修复：增加对“默认”分类的拦截
-                    if (!currentActionCategory || currentActionCategory === '默认') return; 
-                    
-                    // 找到当前分类的DOM按钮
-                    const bar = document.getElementById('sticker-category-bar');
-                    const btns = Array.from(bar.querySelectorAll('.category-btn'));
-                    const targetBtn = btns.find(b => b.textContent === currentActionCategory);
-                    if (!targetBtn) return;
-                    
-                    // 恢复系统的文本选中和交互功能
-                    targetBtn.style.userSelect = 'text';
-                    targetBtn.style.webkitUserSelect = 'text';
-                    targetBtn.style.webkitTouchCallout = 'default';
-
-                    // 让其可编辑并全选文字
-                    targetBtn.contentEditable = "true";
-                    targetBtn.focus();
-                    const range = document.createRange();
-                    range.selectNodeContents(targetBtn);
-                    const sel = window.getSelection();
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                    
-                    // 完成编辑的处理函数
-                    const finishEditing = async () => {
-                        targetBtn.contentEditable = "false";
-                        targetBtn.style.userSelect = 'none';
-                        targetBtn.style.webkitUserSelect = 'none';
-                        targetBtn.style.webkitTouchCallout = 'none';
-
-                        const newName = targetBtn.textContent.trim();
-                        targetBtn.removeEventListener('blur', finishEditing);
-                        targetBtn.removeEventListener('keydown', keydownHandler);
-                        
-                        if (!newName || newName === '全部' || newName === '默认') { // 也禁止重命名为"默认"
-                            showToast('分类名称无效');
-                            renderStickerGrid(); // 恢复原状
-                            return;
-                        }
-                        
-                        if (newName !== currentActionCategory) {
-                            // 批量修改该分类下所有表情的属性
-                            db.myStickers.forEach(s => {
-                                const sCat = s.category || '默认';
-                                if (sCat === currentActionCategory) s.category = newName;
-                            });
-                            await saveData();
-                            if (currentStickerCategory === currentActionCategory) {
-                                currentStickerCategory = newName;
-                            }
-                            showToast(`分类已重命名为 ${newName}`);
-                        }
-                        renderStickerGrid();
-                    };
-
-                    const keydownHandler = (e) => {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            targetBtn.blur(); // 失去焦点会触发 finishEditing
-                        }
-                    };
-                    
-                    targetBtn.addEventListener('blur', finishEditing);
-                    targetBtn.addEventListener('keydown', keydownHandler);
-                });
-
-                // 一键关联
-                linkCategoryBtn.addEventListener('click', async () => {
-                    categoryActionSheet.classList.remove('visible');
-                    if (!currentActionCategory || currentChatType !== 'private') return;
-                    
-                    const chat = db.characters.find(c => c.id === currentChatId);
-                    if (!chat) return;
-
-                    const stickersInCat = db.myStickers.filter(s => (s.category || '默认') === currentActionCategory);
-                    const idsToLink = stickersInCat.map(s => s.id);
-                    
-                    // 将这些 ID 追加到角色身上并去重
-                    const currentSet = new Set(chat.stickerIds ||[]);
-                    idsToLink.forEach(id => currentSet.add(id));
-                    chat.stickerIds = Array.from(currentSet);
-                    
-                    await saveData();
-                    showToast(`已将该分类的 ${idsToLink.length} 个表情关联到角色`);
-                });
-
-                // 一键删除整个分类
-deleteCategoryBtn.addEventListener('click', async () => {
-                    categoryActionSheet.classList.remove('visible');
-                    // ✨ 修复：增加对“默认”分类的拦截
-                    if (!currentActionCategory || currentActionCategory === '默认') return;
-
-                    const stickersInCat = db.myStickers.filter(s => (s.category || '默认') === currentActionCategory);
-                    
-                    if (await AppUI.confirm(`确定要彻底删除【${currentActionCategory}】分类下的所有 ${stickersInCat.length} 个表情包吗？此操作不可恢复！`)) {
-                        const idsToDelete = new Set(stickersInCat.map(s => s.id));
-                        
-                        // 1. 删除内存中属于该分类的表情
-                        db.myStickers = db.myStickers.filter(s => !idsToDelete.has(s.id));
-                        
-                        // 2. 清理全站所有角色身上的关联
-                        db.characters.forEach(c => {
-                            if (c.stickerIds) {
-                                c.stickerIds = c.stickerIds.filter(id => !idsToDelete.has(id));
-                            }
-                        });
-                        
-                        // 3. 物理删除
-                        await dexieDB.myStickers.bulkDelete(Array.from(idsToDelete));
-                        await saveData();
-                        
-                        if (currentStickerCategory === currentActionCategory) {
-                            currentStickerCategory = '全部';
-                        }
-                        showToast(`已删除整个分类`);
-                        renderStickerGrid();
-                    }
-                });
-
-
-                // ==========================================
-                // 3. 批量管理与彻底删除
-                // ==========================================
-                manageStickersBtn.addEventListener('click', () => {
-                    isStickerManageMode = !isStickerManageMode;
-                    if (isStickerManageMode) {
-                        manageStickersBtn.textContent = '取消';
-                        manageStickersBtn.classList.replace('btn-primary', 'btn-neutral');
-                        stickerManageBar.style.display = 'flex';
-                    } else {
-                        manageStickersBtn.textContent = '管理';
-                        manageStickersBtn.classList.replace('btn-neutral', 'btn-primary');
-                        stickerManageBar.style.display = 'none';
-                        selectedStickerIds.clear();
-                    }
-                    deleteSelectedStickersBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
-                    deleteSelectedStickersBtn.disabled = selectedStickerIds.size === 0;
-                    renderStickerGrid();
-                });
-
-                deleteSelectedStickersBtn.addEventListener('click', async () => {
-                    if (selectedStickerIds.size === 0) return showToast('请先选择');
-                    
-                    if (await AppUI.confirm(`将彻底从库中删除这 ${selectedStickerIds.size} 个表情，是否继续？`)) {
-                        db.myStickers = db.myStickers.filter(s => !selectedStickerIds.has(s.id));
-                        db.characters.forEach(c => {
-                            if (c.stickerIds) {
-                                c.stickerIds = c.stickerIds.filter(id => !selectedStickerIds.has(id));
-                            }
-                        });
-                        await dexieDB.myStickers.bulkDelete(Array.from(selectedStickerIds));
-                        await saveData();
-                        
-                        showToast('删除成功');
-                        isStickerManageMode = false;
-                        manageStickersBtn.textContent = '管理';
-                        manageStickersBtn.classList.replace('btn-neutral', 'btn-primary');
-                        stickerManageBar.style.display = 'none';
-                        selectedStickerIds.clear();
-                        renderStickerGrid();
-                    }
-                });
-
-                // ==========================================
-                // 4. 面板打开控制及上传功能
-                // ==========================================
-                stickerToggleBtn.addEventListener('click', () => {
-                    const chatExpansionPanel = document.getElementById('chat-expansion-panel');
-                    if (chatExpansionPanel.classList.contains('visible')) {
-                        chatExpansionPanel.classList.remove('visible');
-                    }
-                    if (currentChatType === 'group') {
-                        linkStickerBtn.style.display = 'none';
-                    } else {
-                        linkStickerBtn.style.display = 'inline-block';
-                    }
-                    
-                    stickerModal.classList.toggle('visible');
-                    if (stickerModal.classList.contains('visible')) {
-                        renderStickerGrid();
-                    }
-                });
-                
-                addNewStickerBtn.addEventListener('click', () => {
-                    addStickerModalTitle.textContent = '添加新表情';
-                    addStickerForm.reset();
-                    stickerEditIdInput.value = '';
-                    document.getElementById('sticker-category-input').value = currentStickerCategory === '全部' ? '' : currentStickerCategory;
-                    stickerPreview.innerHTML = '<span>预览</span>';
-                    stickerUrlInput.disabled = false;
-                    addStickerModal.classList.add('visible');
-                });
-                
-                addStickerForm.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    let name = stickerNameInput.value.trim();
-                    let category = document.getElementById('sticker-category-input').value.trim() || '默认';
-                    const id = stickerEditIdInput.value;
-                    const previewImg = stickerPreview.querySelector('img');
-                    const data = previewImg ? previewImg.src : null;
-                    if (!name || !data) return showToast('请填写表情名称并提供图片');
-                    
-                    name = getUniqueStickerName(name, id);
-                    const stickerData = { name, data, category };
-                    if (id) {
-                        const index = db.myStickers.findIndex(s => s.id === id);
-                        if (index > -1) db.myStickers[index] = { ...db.myStickers[index], ...stickerData };
-                    } else {
-                        stickerData.id = `sticker_${Date.now()}`;
-                        db.myStickers.push(stickerData);
-                    }
-                    await saveData();
-                    renderStickerGrid();
-                    addStickerModal.classList.remove('visible');
-                    showToast('表情包已保存');
-                });
-                
-                stickerUrlInput.addEventListener('input', (e) => {
-                    stickerPreview.innerHTML = `<img src="${e.target.value}" alt="预览">`;
-                    stickerFileUpload.value = '';
-                });
-                
-                stickerFileUpload.addEventListener('change', async (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        try {
-                            const compressedUrl = await compressImage(file, { quality: 0.8, maxWidth: 200, maxHeight: 200 });
-                            stickerPreview.innerHTML = `<img src="${compressedUrl}" alt="预览">`;
-                            stickerUrlInput.value = '';
-                            stickerUrlInput.disabled = true;
-                        } catch (error) {
-                            showToast('表情包压缩失败，请重试');
-                        }
-                    }
-                });
-
-                // ==========================================
-                // 5. 批量导入
-                // ==========================================
-                batchAddStickerBtn.addEventListener('click', () => {
-                    batchAddStickerModal.classList.add('visible');
-                    stickerUrlsTextarea.value = ''; 
-                });
-                
-                batchAddStickerForm.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    const textInput = stickerUrlsTextarea.value.trim();
-                    const category = document.getElementById('batch-category-input').value.trim() || '默认';
-                    
-                    if (!textInput) return showToast('请输入表情包数据');
-                    const lines = textInput.split('\n');
-                    const newStickers =[];
-                    for (const line of lines) {
-                        const trimmedLine = line.trim();
-                        if (!trimmedLine) continue; 
-                        const colonIndex = trimmedLine.indexOf(':');
-                        if (colonIndex <= 0) continue;
-                        let name = trimmedLine.substring(0, colonIndex).trim();
-                        const url = trimmedLine.substring(colonIndex + 1).trim();
-                        
-                        if (name && url.startsWith('http')) {
-                            name = getUniqueStickerName(name); 
-                            db.myStickers.push({id:'temp', name}); 
-                            newStickers.push({ 
-                                id: `sticker_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, 
-                                name, 
-                                data: url,
-                                category
-                            });
-                        }
-                    }
-                    db.myStickers = db.myStickers.filter(s => s.id !== 'temp');
-                    
-                    if (newStickers.length > 0) {
-                        db.myStickers.push(...newStickers); 
-                        await saveData();
-                        renderStickerGrid();
-                        batchAddStickerModal.classList.remove('visible');
-                        showToast(`成功导入 ${newStickers.length} 个新表情！`);
-                    }
-                });
-
-                // ==========================================
-                // 6. 编辑和彻底删除(单张长按菜单)
-                // ==========================================
-                editStickerBtn.addEventListener('click', () => {
-                    if (!currentStickerActionTarget) return;
-                    const sticker = db.myStickers.find(s => s.id === currentStickerActionTarget);
-                    if (sticker) {
-                        addStickerModalTitle.textContent = '编辑表情';
-                        stickerEditIdInput.value = sticker.id;
-                        stickerNameInput.value = sticker.name;
-                        document.getElementById('sticker-category-input').value = sticker.category || '默认';
-                        stickerPreview.innerHTML = `<img src="${sticker.data}" alt="预览">`;
-                        if (sticker.data.startsWith('http')) {
-                            stickerUrlInput.value = sticker.data;
-                            stickerUrlInput.disabled = false;
-                        } else {
-                            stickerUrlInput.value = '';
-                            stickerUrlInput.disabled = true;
-                        }
-                        addStickerModal.classList.add('visible');
-                    }
-                    stickerActionSheet.classList.remove('visible');
-                    currentStickerActionTarget = null;
-                });
-                
-                deleteStickerBtn.addEventListener('click', async () => {
-                    if (!currentStickerActionTarget) return;
-                    const sticker = db.myStickers.find(s => s.id === currentStickerActionTarget);
-                    if (sticker) {
-                        if (await AppUI.confirm(`确定要彻底删除表情“${sticker.name}”吗？`)) {
-                            db.myStickers = db.myStickers.filter(s => s.id !== currentStickerActionTarget);
-                            db.characters.forEach(c => {
-                                if (c.stickerIds) c.stickerIds = c.stickerIds.filter(id => id !== currentStickerActionTarget);
-                            });
-                            await dexieDB.myStickers.delete(currentStickerActionTarget);
-                            await saveData();
-                            renderStickerGrid();
-                            showToast('表情已彻底删除');
-                        }
-                    }
-                    stickerActionSheet.classList.remove('visible');
-                    currentStickerActionTarget = null;
-                });
-            }
-
-            // ==========================================================
-            // ======================= 渲染函数 =========================
-            // ==========================================================
-
-// 渲染主面板底部分类栏 (含长按逻辑)
-            function renderCategoryBar() {
-                const bar = document.getElementById('sticker-category-bar');
-                const datalist = document.getElementById('category-datalist');
-                if (!bar) return;
-
-                const categories = new Set(['全部', '默认']);
-                db.myStickers.forEach(s => { if (s.category) categories.add(s.category); });
-
-                bar.innerHTML = '';
-                categories.forEach(cat => {
-                    const btn = document.createElement('div');
-                    btn.className = `category-btn ${cat === currentStickerCategory ? 'active' : ''}`;
-                    btn.textContent = cat;
-                    
-                    // 默认禁止文本选中，防止长按时触发浏览器放大镜和复制菜单
-                    btn.style.userSelect = 'none';
-                    btn.style.webkitUserSelect = 'none';
-                    btn.style.webkitTouchCallout = 'none';
-                    
-                    // 点击切换
-                    btn.onclick = (e) => {
-                        if (btn.isContentEditable) return; // 正在编辑时阻止点击
-                        currentStickerCategory = cat;
-                        renderStickerGrid();
-                    };
-
-                    // ✨ 长按弹出管理菜单：动态判断按钮显隐
-                    const handleCategoryLongPress = () => {
-                        if (cat === '全部' || btn.isContentEditable) return;
-                        currentActionCategory = cat;
-                        
-                        const linkBtn = document.getElementById('link-category-btn');
-                        const renameBtn = document.getElementById('rename-category-btn');
-                        const deleteBtn = document.getElementById('delete-category-btn');
-
-                        // 1. 群聊隐藏一键关联按钮
-                        if (currentChatType === 'private') {
-                            linkBtn.style.display = 'block';
-                        } else {
-                            linkBtn.style.display = 'none';
-                        }
-                        
-                        // 2. “默认”分类隐藏重命名和删除
-                        if (cat === '默认') {
-                            renameBtn.style.display = 'none';
-                            deleteBtn.style.display = 'none';
-                        } else {
-                            renameBtn.style.display = 'block';
-                            deleteBtn.style.display = 'block';
-                        }
-                        
-                        // 3. 如果所有可用按钮都被隐藏了(比如群聊里长按“默认”)，就不弹窗
-                        if (linkBtn.style.display === 'none' && renameBtn.style.display === 'none') {
-                            return;
-                        }
-                        
-                        document.getElementById('category-actionsheet').classList.add('visible');
-                    };
-
-                    btn.addEventListener('contextmenu', (e) => {
-                        if (cat === '全部' || btn.isContentEditable) return;
-                        e.preventDefault(); 
-                        e.stopPropagation();
-                        handleCategoryLongPress();
-                    });
-
-                    let catPressTimer;
-                    btn.addEventListener('touchstart', (e) => {
-                        if (cat === '全部' || btn.isContentEditable) return;
-                        e.stopPropagation();
-                        catPressTimer = setTimeout(() => handleCategoryLongPress(), 500);
-                    });
-                    btn.addEventListener('touchend', () => clearTimeout(catPressTimer));
-                    btn.addEventListener('touchmove', () => clearTimeout(catPressTimer)); 
-
-                    bar.appendChild(btn);
-                });
-
-                if (datalist) {
-                    datalist.innerHTML = '';
-                    categories.forEach(cat => {
-                        if (cat !== '全部' && cat !== '默认') {
-                            const opt = document.createElement('option');
-                            opt.value = cat;
-                            datalist.appendChild(opt);
-                        }
-                    });
-                }
-            }
-
-            // 渲染主面板表情网格
-            function renderStickerGrid() {
-                stickerGridContainer.innerHTML = '';
-                renderCategoryBar();
-                
-                let stickersToRender = db.myStickers;
-                if (currentStickerCategory !== '全部') {
-                    stickersToRender = db.myStickers.filter(s => (s.category || '默认') === currentStickerCategory);
-                }
-
-                if (stickersToRender.length === 0) {
-                    const emptyMsg = currentStickerCategory === '全部' ? '还没有表情包，快去添加吧！' : `该分类下没有表情`;
-                    stickerGridContainer.innerHTML = `<p style="color:#aaa; text-align:center; margin-top: 20px; width: 100%;">${emptyMsg}</p>`;
-                    return;
-                }
-
-                stickersToRender.forEach(sticker => {
-                    const item = document.createElement('div');
-                    item.className = 'sticker-item';
-                    item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span title="${sticker.name}">${sticker.name}</span>`;
-
-                    if (isStickerManageMode) {
-                        item.classList.add('is-managing');
-                        if (selectedStickerIds.has(sticker.id)) item.classList.add('is-selected');
-                        item.addEventListener('click', () => {
-                            if (selectedStickerIds.has(sticker.id)) {
-                                selectedStickerIds.delete(sticker.id);
-                                item.classList.remove('is-selected');
-                            } else {
-                                selectedStickerIds.add(sticker.id);
-                                item.classList.add('is-selected');
-                            }
-                            const deleteBtn = document.getElementById('delete-selected-stickers-btn');
-                            deleteBtn.textContent = `删除已选 (${selectedStickerIds.size})`;
-                            deleteBtn.disabled = selectedStickerIds.size === 0;
-                        });
-                    } else {
-                        item.addEventListener('click', () => sendSticker(sticker));
-                        
-                        item.addEventListener('contextmenu', (e) => { 
-                            e.preventDefault(); e.stopPropagation();
-                            handleStickerLongPress(sticker.id);
-                        });
-                        item.addEventListener('touchstart', (e) => {
-                            e.stopPropagation();
-                            longPressTimer = setTimeout(() => handleStickerLongPress(sticker.id), 500);
-                        });
-                        item.addEventListener('touchend', () => clearTimeout(longPressTimer));
-                        item.addEventListener('touchmove', () => clearTimeout(longPressTimer));
-                    }
-                    stickerGridContainer.appendChild(item);
-                });
-            }
-
-            // 渲染关联表情弹窗内的网格与分类，并动态更新全选按钮文字
-            function renderLinkStickerGrid() {
-                const grid = document.getElementById('link-sticker-grid');
-                const catBar = document.getElementById('link-sticker-category-bar');
-                const selectAllBtn = document.getElementById('link-sticker-select-all-btn');
-                
-                // 1. 渲染分类栏
-                const categories = new Set(['全部', '默认']);
-                db.myStickers.forEach(s => { if (s.category) categories.add(s.category); });
-                
-                catBar.innerHTML = '';
-                categories.forEach(cat => {
-                    const btn = document.createElement('div');
-                    btn.className = `category-btn ${cat === currentLinkStickerCategory ? 'active' : ''}`;
-                    btn.textContent = cat;
-                    btn.onclick = () => {
-                        currentLinkStickerCategory = cat;
-                        renderLinkStickerGrid(); // 点击重绘
-                    };
-                    catBar.appendChild(btn);
-                });
-
-                // 2. 渲染关联网格
-                grid.innerHTML = '';
-                let stickersToRender = db.myStickers;
-                if (currentLinkStickerCategory !== '全部') {
-                    stickersToRender = db.myStickers.filter(s => (s.category || '默认') === currentLinkStickerCategory);
-                }
-
-                // 3. ✨动态判定全选状态
-                if (stickersToRender.length === 0) {
-                    grid.innerHTML = '<p style="color:#aaa; text-align:center; width: 100%;">该分类下没有表情。</p>';
-                    selectAllBtn.style.display = 'hidden';
-                    return;
-                }
-                selectAllBtn.style.display = 'visible';
-                const allSelected = stickersToRender.every(s => selectedLinkStickerIds.has(s.id));
-                selectAllBtn.textContent = allSelected ? '☑ 全选' : '☐ 全选';
-
-                // 4. 填充图片
-                stickersToRender.forEach(sticker => {
-                    const item = document.createElement('div');
-                    item.className = 'sticker-item is-managing'; // 强制套用管理样式的遮罩效果
-                    item.innerHTML = `<img src="${sticker.data}" alt="${sticker.name}"><span>${sticker.name}</span>`;
-                    
-                    if (selectedLinkStickerIds.has(sticker.id)) {
-                        item.classList.add('is-selected');
-                    }
-
-                    item.addEventListener('click', () => {
-                        if (selectedLinkStickerIds.has(sticker.id)) {
-                            selectedLinkStickerIds.delete(sticker.id);
-                            item.classList.remove('is-selected');
-                        } else {
-                            selectedLinkStickerIds.add(sticker.id);
-                            item.classList.add('is-selected');
-                        }
-                        // 点单张时，实时检查是否达到了全选状态
-                        const nowAllSelected = stickersToRender.every(s => selectedLinkStickerIds.has(s.id));
-                        selectAllBtn.textContent = nowAllSelected ? '取消全选' : '全选';
-                    });
-                    grid.appendChild(item);
-                });
-            }
-
-            function handleStickerLongPress(stickerId) {
-                if (isStickerManageMode) return;
-                clearTimeout(longPressTimer);
-                currentStickerActionTarget = stickerId;
-                stickerActionSheet.classList.add('visible');
-            }
             
-              function setupVoiceMessageSystem() {
-                voiceMessageBtn.addEventListener('click', () => {
-                    sendVoiceForm.reset();
-                    voiceDurationPreview.textContent = '0"';
-                    sendVoiceModal.classList.add('visible');
-                });
-                sendVoiceForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    sendMyVoiceMessage(voiceTextInput.value.trim());
-                });
-            }
-
-            function setupPhotoVideoSystem() {
-                photoVideoBtn.addEventListener('click', () => {
-                    sendPvForm.reset();
-                    sendPvModal.classList.add('visible');
-                });
-                sendPvForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    sendMyPhotoVideo(pvTextInput.value.trim());
-                });
-            }
-
-            function setupWalletSystem() {
-                walletBtn.addEventListener('click', () => {
-                    if (currentChatType === 'private') {
-                        sendTransferForm.reset();
-                        sendTransferModal.classList.add('visible');
-                    } else if (currentChatType === 'group') {
-                        currentGroupAction.type = 'transfer';
-                        renderGroupRecipientSelectionList('转账给');
-                        groupRecipientSelectionModal.classList.add('visible');
-                    }
-                });
-                sendTransferForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    const amount = transferAmountInput.value;
-                    const remark = transferRemarkInput.value.trim();
-                    if (amount > 0) {
-                        sendMyTransfer(amount, remark);
-                    } else {
-                        showToast('请输入有效的金额');
-                    }
-                });
-                acceptTransferBtn.addEventListener('click', () => respondToTransfer('received'));
-                returnTransferBtn.addEventListener('click', () => respondToTransfer('returned'));
-            }
-
-            function handleReceivedTransferClick(messageId) {
-                currentTransferMessageId = messageId;
-                receiveTransferActionSheet.classList.add('visible');
-            }
-
-            async function respondToTransfer(action) {
-                if (!currentTransferMessageId) return;
-                const character = db.characters.find(c => c.id === currentChatId);
-                const message = character.history.find(m => m.id === currentTransferMessageId);
-                if (message) {
-                    message.transferStatus = action;
-                    const cardOnScreen = messageArea.querySelector(`.message-wrapper[data-id="${currentTransferMessageId}"] .transfer-card`);
-                    if (cardOnScreen) {
-                        cardOnScreen.classList.remove('received', 'returned');
-                        cardOnScreen.classList.add(action);
-                        cardOnScreen.querySelector('.transfer-status').textContent = action === 'received' ? '已收款' : '已退回';
-                        cardOnScreen.style.cursor = 'default';
-                    }
-                    let contextMessageContent = (action === 'received') ? `[${character.myName}接收${character.realName}的转账]` : `[${character.myName}退回${character.realName}的转账]`;
-                    const contextMessage = {
-                        id: `msg_${Date.now()}`,
-                        role: 'user',
-                        content: contextMessageContent,
-                        parts: [{ type: 'text', text: contextMessageContent }],
-                        timestamp: Date.now()
-                    };
-                    character.history.push(contextMessage);
-                    await saveData();
-                    renderChatList();
-                }
-                receiveTransferActionSheet.classList.remove('visible');
-                currentTransferMessageId = null;
-            }
-
-            function setupGiftSystem() {
-
-                sendGiftForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    sendMyGift(giftDescriptionInput.value.trim());
-                });
-            }
-            
-             // --- Other Sub-systems Setup (Stickers, Voice, etc.) ---
-            function setupImageRecognition() {
-                imageRecognitionBtn.addEventListener('click', () => {
-                    imageUploadInput.click();
-                });
-                imageUploadInput.addEventListener('change', async (e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                        try {
-                            const compressedUrl = await compressImage(file, {
-                                quality: 0.8,
-                                maxWidth: 1024,
-                                maxHeight: 1024
-                            });
-                            sendImageForRecognition(compressedUrl);
-                        } catch (error) {
-                            console.error('Image compression failed:', error);
-                            showToast('图片处理失败，请重试');
-                        } finally {
-                            e.target.value = null;
-                        }
-                    }
-                });
-            }

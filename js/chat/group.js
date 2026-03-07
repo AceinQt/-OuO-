@@ -129,9 +129,10 @@ function setupGroupChatSystem() {
             history: [],
             isPinned: false,
             unreadCount: 0,
-            useCustomBubbleCss: false,
-            customBubbleCss: '',
-            worldBookIds: []
+            useCustomBubbleCss: (typeof _getBubblePresets === 'function' && _getBubblePresets().find(p => p.name === '默认')?.css) ? true : false,
+            customBubbleCss: (typeof _getBubblePresets === 'function') ? (_getBubblePresets().find(p => p.name === '默认')?.css || '') : '',
+            bubbleThemeName: 'default',
+            worldBookIds:[]
         };
         db.groups.push(newGroup);
         await saveData();
@@ -145,41 +146,6 @@ function setupGroupChatSystem() {
         e.preventDefault();
         saveGroupSettingsFromSidebar();
         groupSettingsSidebar.classList.remove('open');
-    });
-
-    // 5. 群聊自定义CSS相关
-    const useGroupCustomCssCheckbox = document.getElementById('setting-group-use-custom-css'),
-        groupCustomCssTextarea = document.getElementById('setting-group-custom-bubble-css'),
-        resetGroupCustomCssBtn = document.getElementById('reset-group-custom-bubble-css-btn'),
-        groupPreviewBox = document.getElementById('group-bubble-css-preview');
-
-    useGroupCustomCssCheckbox.addEventListener('change', (e) => {
-        groupCustomCssTextarea.disabled = !e.target.checked;
-        const group = db.groups.find(g => g.id === currentChatId);
-        if (group) {
-            const theme = colorThemes[group.theme || 'white_blue'];
-            updateBubbleCssPreview(groupPreviewBox, groupCustomCssTextarea.value, !e.target.checked, theme);
-        }
-    });
-
-    groupCustomCssTextarea.addEventListener('input', (e) => {
-        const group = db.groups.find(g => g.id === currentChatId);
-        if (group && useGroupCustomCssCheckbox.checked) {
-            const theme = colorThemes[group.theme || 'white_blue'];
-            updateBubbleCssPreview(groupPreviewBox, e.target.value, false, theme);
-        }
-    });
-
-    resetGroupCustomCssBtn.addEventListener('click', () => {
-        const group = db.groups.find(g => g.id === currentChatId);
-        if (group) {
-            groupCustomCssTextarea.value = '';
-            useGroupCustomCssCheckbox.checked = false;
-            groupCustomCssTextarea.disabled = true;
-            const theme = colorThemes[group.theme || 'white_blue'];
-            updateBubbleCssPreview(groupPreviewBox, '', true, theme);
-            showToast('样式已重置为默认');
-        }
     });
 
     // 6. 群头像上传
@@ -441,15 +407,7 @@ function renderMemberSelectionList() {
 function loadGroupSettingsToSidebar() {
     const group = db.groups.find(g => g.id === currentChatId);
     if (!group) return;
-    const themeSelect = document.getElementById('setting-group-theme-color');
-    if (themeSelect.options.length === 0) {
-        Object.keys(colorThemes).forEach(key => {
-            const option = document.createElement('option');
-            option.value = key;
-            option.textContent = colorThemes[key].name;
-            themeSelect.appendChild(option);
-        });
-    }
+    
     document.getElementById('setting-group-avatar-preview').src = group.avatar;
     document.getElementById('setting-group-name').value = group.name;
     
@@ -500,19 +458,24 @@ function loadGroupSettingsToSidebar() {
         });
     }
 
-    themeSelect.value = group.theme || 'white_blue';
     document.getElementById('setting-group-max-memory').value = group.maxMemory;
     renderGroupMembersInSettings(group);
     
-    const useGroupCustomCssCheckbox = document.getElementById('setting-group-use-custom-css'),
-        groupCustomCssTextarea = document.getElementById('setting-group-custom-bubble-css'),
-        groupPreviewBox = document.getElementById('group-bubble-css-preview');
-    useGroupCustomCssCheckbox.checked = group.useCustomBubbleCss || false;
-    groupCustomCssTextarea.value = group.customBubbleCss || '';
-    groupCustomCssTextarea.disabled = !useGroupCustomCssCheckbox.checked;
-    const theme = colorThemes[group.theme || 'white_blue'];
-    updateBubbleCssPreview(groupPreviewBox, group.customBubbleCss, !group.useCustomBubbleCss, theme);
-    populateBubblePresetSelect('group-bubble-preset-select');
+    // 【核心变更】读取当前气泡预设并映射到选择框
+    if (typeof window.populateChatThemeSelects === 'function') {
+        window.populateChatThemeSelects();
+    }
+    const themeSelect = document.getElementById('setting-group-theme-color');
+    if (themeSelect) {
+        // 【修复】如果群聊当前并不是名为 default 或 默认，则去尝试回显它原本的主题名
+        if (group.useCustomBubbleCss && group.bubbleThemeName && group.bubbleThemeName !== 'default' && group.bubbleThemeName !== '默认') {
+            const optExists = Array.from(themeSelect.options).some(o => o.value === `preset:${group.bubbleThemeName}`);
+            themeSelect.value = optExists ? `preset:${group.bubbleThemeName}` : 'default';
+        } else {
+            // 不然全部回显为默认
+            themeSelect.value = 'default';
+        }
+    }
 }
 
 function renderGroupMembersInSettings(group) {
@@ -570,7 +533,7 @@ async function saveGroupSettingsFromSidebar() {
             id: `msg_${Date.now()}_self_rename`,
             role: 'user',
             content: messageContent,
-            parts: [{ type: 'text', text: messageContent }],
+            parts:[{ type: 'text', text: messageContent }],
             timestamp: Date.now()
         };
         group.history.push(message);
@@ -585,11 +548,47 @@ async function saveGroupSettingsFromSidebar() {
         group.me.boundPersonaId = pendingBindId;
     }
     
-    group.theme = document.getElementById('setting-group-theme-color').value;
     group.maxMemory = document.getElementById('setting-group-max-memory').value;
-    group.useCustomBubbleCss = document.getElementById('setting-group-use-custom-css').checked;
-    group.customBubbleCss = document.getElementById('setting-group-custom-bubble-css').value;
-    updateCustomBubbleStyle(currentChatId, group.customBubbleCss, group.useCustomBubbleCss);
+
+    // 【核心变更】保存群聊气泡预设
+        const themeSelect = document.getElementById('setting-group-theme-color');
+    if (themeSelect) {
+        const themeVal = themeSelect.value;
+        if (themeVal === 'default') {
+            // 【修复】让群聊保存 default 时也能够去读取自制的外观！
+            const presets = (typeof _getBubblePresets === 'function') ? _getBubblePresets() :[];
+            const defaultPreset = presets.find(p => p.name === '默认');
+            
+            group.theme = 'white_blue';
+            // 如果外观里的“默认”确实被修改配有CSS了，我们就让它生效
+            if (defaultPreset && defaultPreset.css) {
+                group.useCustomBubbleCss = true;
+                group.customBubbleCss = defaultPreset.css;
+            } else {
+                group.useCustomBubbleCss = false;
+                group.customBubbleCss = '';
+            }
+            group.bubbleThemeName = 'default';
+            
+        } else if (themeVal && themeVal.startsWith('preset:')) {
+            const presetName = themeVal.replace('preset:', '');
+            // 确保读取预设的函数不会报错
+            const presets = (typeof _getBubblePresets === 'function') ? _getBubblePresets() :[];
+            const preset = presets.find(p => p.name === presetName);
+            if (preset) {
+                group.theme = 'white_blue';
+                group.useCustomBubbleCss = true;
+                group.customBubbleCss = preset.css;
+                group.bubbleThemeName = presetName;
+            }
+        }
+    }
+    
+    // 确保调用 updateCustomBubbleStyle 时函数存在，避免保存时报错
+    if (typeof updateCustomBubbleStyle === 'function') {
+        updateCustomBubbleStyle(currentChatId, group.customBubbleCss, group.useCustomBubbleCss);
+    }
+    
     await saveData();
     showToast('群聊设置已保存！');
     chatRoomTitle.textContent = group.name;
