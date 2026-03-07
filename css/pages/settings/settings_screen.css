@@ -127,17 +127,7 @@
     height: 28px;
 }
 
-#safe-area-top-switch {    
-    width: 80px;
-}
-
-#safe-area-top-toggle:checked+.slider:before {
-    -webkit-transform: translateX(26px);
-    -ms-transform: translateX(26px);
-    transform: translateX(26px);
-}
-
-#safe-area-bottom-toggle:checked+.slider:before {
+#settings-screen input:checked +.slider:before {
     -webkit-transform: translateX(26px);
     -ms-transform: translateX(26px);
     transform: translateX(26px);
