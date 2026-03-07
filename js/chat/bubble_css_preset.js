@@ -460,7 +460,7 @@ function setupBubblePresets() {
                 hasChanges = true;
                 
                 // 伪元素智能染色
-                if (!isNarration && cssInput && cssInput.value) {
+                if (baseType === 'normal' && cssInput && cssInput.value) {
                     const customCss = cssInput.value;
                     const sideClass = typeKey.split('_')[1] === 'recv' ? 'received' : typeKey.split('_')[1];
                     const pseudoRegex = new RegExp(`(?:message-bubble[^:{]*${sideClass}|${sideClass}[^:{]*message-bubble)::(after|before)[^:{]*\\{([^}]+)\\}`, 'ig');
