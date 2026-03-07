@@ -4,18 +4,24 @@
 window.applySafeAreaSettings = function() {
     const root = document.documentElement;
     
-    // 如果 db 尚未加载或开关为 true (默认)，则使用系统的 env()，否则设为 0px
-    if (window.db && window.db.enableTopSafeArea !== false) { 
-        root.style.setProperty('--safe-top', 'env(safe-area-inset-top, 0px)');
-    } else {
-        root.style.setProperty('--safe-top', '0px');
-    }
+    // 【修复1】先移除旧变量，打断浏览器的样式缓存
+    root.style.removeProperty('--safe-top');
+    root.style.removeProperty('--safe-bottom');
+    
+    // 利用 requestAnimationFrame 在下一帧重新赋予变量，强制触发页面重排
+    requestAnimationFrame(() => {
+        if (window.db && window.db.enableTopSafeArea !== false) { 
+            root.style.setProperty('--safe-top', 'env(safe-area-inset-top, 0px)');
+        } else {
+            root.style.setProperty('--safe-top', '0px');
+        }
 
-    if (window.db && window.db.enableBottomSafeArea !== false) {
-        root.style.setProperty('--safe-bottom', 'env(safe-area-inset-bottom, 0px)');
-    } else {
-        root.style.setProperty('--safe-bottom', '0px');
-    }
+        if (window.db && window.db.enableBottomSafeArea !== false) {
+            root.style.setProperty('--safe-bottom', 'env(safe-area-inset-bottom, 0px)');
+        } else {
+            root.style.setProperty('--safe-bottom', '0px');
+        }
+    });
 };
 
 // 2. 初始化开关 UI 并绑定事件

@@ -318,6 +318,8 @@ async function importBackupData(data, isCloudPartialRestore = false) {
             await saveData(db);
         }
 
+        if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
+        if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
         const duration = Date.now() - startTime;
         return { success: true, message: `${message} (耗时${duration}ms)` };
 
