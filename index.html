@@ -160,22 +160,191 @@
         <div id="tab-view-me" class="tab-content-view" style="display:none;">
             <div id="my-personas-list"></div>
         </div>
-    </main>
+<!-- Tab 3: 外观及气泡预设管理 -->
+<div id="tab-view-bubbles" class="tab-content-view" style="display:none;">
+    
+    <!-- 上半部分：固定卡片 (预设名称、操作按钮、预览区) -->
+    <div class="appearance-card top-fixed-card" id="bubble-preset-header-card">
+<div class="appearance-header">
+    <!-- 标签 1：选中状态（预设名称） -->
+    <div class="appearance-tab-active">
+        <input type="text" id="global-bubble-preset-name" class="preset-name-input" placeholder="输入预设名称">
+        <button type="button" class="icon-btn add-btn" id="global-bubble-add-btn" title="新建预设">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+    </div>
+    
+    <!-- 标签 2：未选中状态（按钮组，和背景融合） -->
+    <div class="appearance-tab-inactive">
+        <div class="appearance-actions">
+            
+            <button type="button" class="icon-btn" id="global-bubble-save-btn" title="保存外观">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M15 20V15H9V20M18 20H6C4.89543 20 4 19.1046 4 18V6C4 4.89543 4.89543 4 6 4H14.1716C14.702 4 15.2107 4.21071 15.5858 4.58579L19.4142 8.41421C19.7893 8.78929 20 9.29799 20 9.82843V18C20 19.1046 19.1046 20 18 20Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg></button>
+            <button type="button" class="icon-btn" id="global-bubble-export-btn" title="导出">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </button>
+            <button type="button" class="icon-btn" id="global-bubble-import-btn" title="导入">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            </button>          
+            <button type="button" class="icon-btn" id="global-bubble-manage-btn" title="管理">
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+            </button>
+            <input type="file" id="global-bubble-import-input" accept=".json" style="display: none;">
+        </div>
+    </div>
+</div>
+</div>
+    <div class="appearance-card top-fixed-card" id="bubble-css-preview-card">
+        <div id="global-bubble-css-preview" class="bubble-css-preview">
+            <button type="button" id="preview-prev-btn" class="preview-nav-btn left">◀</button>
+            <button type="button" id="preview-next-btn" class="preview-nav-btn right">▶</button>
+            
+            <div id="preview-inner-container" class="preview-inner"></div>
+        </div>
+        <div id="preview-mode-title" class="preview-title">预览：消息气泡</div>
+
+    </div>
+
+<!-- 下半部分：分栏卡片 (侧边Tab + 内容区) -->
+    <div class="appearance-card"  id="bottom-content-card">
+        <div class="bottom-btn-card" id="bottom-btn-card">
+      <div class="bottom-btn">
+         <button class="side-tab-btn active" data-pane="pane-basic">基础</button>
+         <button class="side-tab-btn" data-pane="pane-css">高级</button>
+       </div>
+       <button type="button" class="action-btn" id="reset-basic-css-btn"><svg viewBox="0 0 24 24">
+                            <path
+                                d="M17.65,6.35C16.2,4.9,14.21,4,12,4A8,8,0,0,0,4,12A8,8,0,0,0,12,20C15.73,20,18.84,17.45,19.73,14H17.65C16.83,16.33,14.61,18,12,18A6,6,0,0,1,6,12A6,6,0,0,1,12,6C13.66,6,15.14,6.69,16.22,7.78L13,11H20V4L17.65,6.35Z" />
+                        </svg></button>      
+    </div>
+          <div id="pane-basic" class="content-pane active">
+              <div class="bubble-settings-item row">
+                <label>隐藏头像</label>
+                <label class="switch"><input type="checkbox" id="setting-hide-avatar"><span class="slider round"></span></label>
+              </div>
+              <div class="bubble-settings-item row">
+                 <label>字体：</label>
+                 <input type="text" id="setting-custom-font" placeholder="例如: https://.../font.ttf">
+              </div>
+              <div class="bubble-settings-item row">
+                 <label>气泡类型：</label>
+                        <select id="setting-bubble-type">
+                        <option value="normal">普通气泡</option>                                   <option value="narration">旁白气泡</option>
+                        <option value="transfer">转账气泡</option>
+                        <option value="quote">引用气泡</option>
+                        </select>
+                        <select id="setting-bubble-side">
+                        <option value="sent">我方</option>
+                        <option value="recv">对方</option>
+                        </select>
+              </div>
+
+                    <!-- 分类气泡属性控制框 -->
+              <div id="bubble-type-settings-box">
+                  <div class="bubble-settings-item"><label>当前正在修改：<span style="color:var(--primary-color);" id="current-type-label">普通气泡 - 我方</span></label>
+                  </div>
+                  <hr>      
+                  <div class="bubble-settings-item row">
+                     <label>气泡颜色：</label>
+                     <input type="color" id="setting-bg">
+                     <input type="text" id="setting-bg-text" placeholder="#HEX">
+                  </div>
+                                    <div class="bubble-settings-item col">
+                      <label>不透明度：<span class="val-display" id="val-opacity">1</span></label>
+                      <input type="range" class="bubble-slider" id="setting-opacity" step="0.05" min="0" max="1">                      
+                  </div>
+
+                  <div class="bubble-settings-item col">
+                     <label>模糊度：<span class="val-display" id="val-blur">0</span>px</label>
+                     <input type="range" class="bubble-slider" id="setting-blur" min="0" max="20" step="1">
+                     
+                  </div>
+                  <hr>
+                  <div class="bubble-settings-item row">     
+                    <label>字体颜色：</label>
+                    <input type="color" id="setting-fontcolor">
+                    <input type="text" id="setting-fontcolor-text" placeholder="#HEX">
+                  </div>
+             <div class="bubble-settings-item col">     
+                    <label>字体大小：<span class="val-display" id="val-fontsize">16</span>px</label>
+                    <input type="range" class="bubble-slider" id="setting-fontsize" min="12" max="24" step="1">                   
+                  </div>
+                  <hr>     
+                  <div class="bubble-settings-item row">
+                      <label>描边颜色：</label>
+                      <input type="color" id="setting-stroke-c">
+                      <input type="text" id="setting-stroke-c-text" placeholder="#HEX">
+                  </div>
+                  <div class="bubble-settings-item col">
+                      <label>描边宽度：
+                      <span class="val-display" id="val-stroke-w">0</span>px</label>
+                      <input type="range" class="bubble-slider" id="setting-stroke-w" min="0" max="5" step="1">
+                  </div>
+<div class="bubble-settings-item row">
+   <label>描边方向：</label>
+   <label class="custom-check-label">
+       <input type="checkbox" class="stroke-side-cb" value="top">
+       <span class="custom-check-mark"></span> 上
+   </label>
+   <label class="custom-check-label">
+       <input type="checkbox" class="stroke-side-cb" value="right">
+       <span class="custom-check-mark"></span> 右
+   </label>
+   <label class="custom-check-label">
+       <input type="checkbox" class="stroke-side-cb" value="bottom">
+       <span class="custom-check-mark"></span> 下
+   </label>
+   <label class="custom-check-label">
+       <input type="checkbox" class="stroke-side-cb" value="left">
+       <span class="custom-check-mark"></span> 左
+   </label>
+</div>
+
+                  <div class="bubble-settings-item col">
+                      <label>边角弧度：
+                      <span class="val-display" id="val-radius">8</span>px</label>
+                      <input type="range" class="bubble-slider" id="setting-radius" min="0" max="30" step="1">
+                  </div>
+              </div>
+            </div>
+
+            <!-- 栏目二：自定义 CSS -->
+            <div id="pane-css" class="content-pane">
+                <textarea id="global-bubble-custom-css" placeholder="在此输入高级 CSS 代码..."></textarea>
+            </div>
+    </div>
+</div>
+</main>
+
     <!-- 底部 Tab 切换 (新样式 + SVG) -->
+    <!-- 底部 Tab 切换 -->
     <nav class="bottom-nav-tabs">
         <div class="nav-tab-item active" data-tab="messages">
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M8 12H8.009M11.991 12H12M15.991 12H16"  stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 13.5997 2.37562 15.1116 3.04346 16.4525C3.22094 16.8088 3.28001 17.2161 3.17712 17.6006L2.58151 19.8267C2.32295 20.793 3.20701 21.677 4.17335 21.4185L6.39939 20.8229C6.78393 20.72 7.19121 20.7791 7.54753 20.9565C8.88837 21.6244 10.4003 22 12 22Z"/>
-</svg>
+                <path d="M8 12H8.009M11.991 12H12M15.991 12H16"  stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 13.5997 2.37562 15.1116 3.04346 16.4525C3.22094 16.8088 3.28001 17.2161 3.17712 17.6006L2.58151 19.8267C2.32295 20.793 3.20701 21.677 4.17335 21.4185L6.39939 20.8229C6.78393 20.72 7.19121 20.7791 7.54753 20.9565C8.88837 21.6244 10.4003 22 12 22Z"/>
+            </svg>
             <span>消息</span>
         </div>
         <div class="nav-tab-item" data-tab="me">
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M20.5899 22C20.5899 18.13 16.7399 15 11.9999 15C7.25991 15 3.40991 18.13 3.40991 22" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
+                <path d="M12 12C14.7614 12 17 9.76142 17 7C17 4.23858 14.7614 2 12 2C9.23858 2 7 4.23858 7 7C7 9.76142 9.23858 12 12 12Z" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M20.5899 22C20.5899 18.13 16.7399 15 11.9999 15C7.25991 15 3.40991 18.13 3.40991 22" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
             <span>我</span>
+        </div>
+        <div class="nav-tab-item" data-tab="bubbles">
+ <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M2 6C2 3.79086 3.79086 2 6 2C8.20914 2 10 3.79086 10 6V18C10 20.2091 8.20914 22 6 22C3.79086 22 2 20.2091 2 18V6Z"/>
+<path d="M9.99977 8.24268L13.3134 4.92902C14.8755 3.36692 17.4082 3.36692 18.9703 4.92902C20.5324 6.49112 20.5324 9.02378 18.9703 10.5859L9.30615 20.25"/>
+<path d="M6 22L18 22C20.2091 22 22 20.2091 22 18C22 15.7909 20.2091 14 18 14L15.5 14"/>
+<path d="M7 18C7 18.5523 6.55228 19 6 19C5.44772 19 5 18.5523 5 18C5 17.4477 5.44772 17 6 17C6.55228 17 7 17.4477 7 18Z"/>
+</svg>
+            <span>外观</span>
         </div>
     </nav>
 </div>
@@ -317,7 +486,7 @@
 <!-- === 搜索结果页面 === -->
 <div id="search-results-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" id="exit-search-results-btn">‹</button>
+        <button class="back-btn" id="exit-search-results-btn" data-target="chat-room-screen">‹</button>
         <div class="title-container">
             <h1 class="title">搜索结果</h1>
         </div>
@@ -447,11 +616,44 @@
                 </div>
                 <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
+            <!-- 侧滑返回 (Toggle) -->
+<div class="settings-item toggle-setting" style="cursor: default;">
+    <div class="setting-icon-box">
+        <!-- 一个代表滑动的图标 -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="feather"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
+    </div>
+    <div class="item-details">
+        <span class="item-name">启用侧边滑动返回</span>
+    </div>
+    <div style="display: flex; align-items: center;">
+        <label class="switch">
+            <input type="checkbox" id="swipe-back-toggle">
+            <span class="slider round"></span>
+        </label>
+    </div>
+</div>
         </div>
+        
 
         <!-- 第二组：外观 (壁纸, 字体, 自定义, 主题) -->
         <div class="settings-group-title">外观</div>
         <div class="settings-card">
+        <!-- 屏幕等比自适应 (Toggle) -->
+            <div class="settings-item toggle-setting" style="cursor: default;">
+                <div class="setting-icon-box">
+                    <!-- 一个代表缩放/扩大的图标 -->
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="feather"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg>
+                </div>
+                <div class="item-details">
+                    <span class="item-name">屏幕等比自适应</span>
+                </div>
+                <div style="display: flex; align-items: center;">
+                    <label class="switch">
+                        <input type="checkbox" id="screen-adapt-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
         <!-- 顶部安全区避让 (Toggle) -->
             <div class="settings-item toggle-setting" style="cursor: default;">
                 <div class="setting-icon-box">
@@ -792,61 +994,24 @@
         <textarea id="setting-my-persona" class="readonly-field" placeholder="绑定身份后自动填充" readonly></textarea>
     </div>
 
-
- 
 <hr class="divider">
-                    <div class="form-group">
-                        <button type="button" class="btn btn-secondary" id="link-world-book-btn">关联世界书</button>
-                    </div>
-                    <div class="form-group"
-                        style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #DAF0FC; border-radius: 10px; background-color: #F5FBFF;">
-                        <label for="setting-bilingual-mode"
-                            style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">双语聊天模式</label>
-                        <input type="checkbox" id="setting-bilingual-mode"
-                            style="width: auto; height: 20px; width: 20px;">
-                    </div>
-                    <div class="form-group"><label for="setting-theme-color">主题颜色 (对方/我方)</label><select
-                            id="setting-theme-color"></select></div>
-
+<div class="form-group">
+    <button type="button" class="btn btn-secondary" id="link-world-book-btn">关联世界书</button>
+</div>
+<div class="form-group" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #DAF0FC; border-radius: 10px; background-color: #F5FBFF;">
+    <label for="setting-bilingual-mode" style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">双语聊天模式</label>
+    <input type="checkbox" id="setting-bilingual-mode" style="width: auto; height: 20px; width: 20px;">
+</div>
+<div class="form-group">
+    <label for="setting-theme-color">聊天气泡外观</label>
+    <select id="setting-theme-color"></select>
+</div>
 <hr class="divider">
-                    <div class="form-group">
-                        <div
-                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <label for="setting-use-custom-css" style="margin-bottom:0;">自定义气泡样式</label>
-                            <input type="checkbox" id="setting-use-custom-css" style="width: auto;">
-                        </div>
-                        <div id="private-bubble-css-preview" class="bubble-css-preview"
-                            style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px;">
-                        </div>
-                        <textarea id="setting-custom-bubble-css" rows="6"
-                            placeholder="在此输入CSS代码...&#10;例如：&#10;.message-bubble.sent { background-color: #A5D6A7; }&#10;.message-bubble.received { background-color: #E1E1E1; }"
-                            disabled></textarea>
-                        <button type="button" class="btn btn-neutral" id="reset-custom-bubble-css-btn"
-                            style="margin-top: 10px; width: auto; padding: 5px 15px; font-size: 14px;">恢复默认
-                        </button>
-                    </div>
-                    <div class="panel panel-sm"
-                        style="padding:12px;border-radius:10px;border:1px solid var(--border-color,#e8e8ef);background:var(--panel-bg,#fff);box-shadow:var(--panel-shadow,0 4px 12px rgba(20,20,30,0.04));margin:10px 0;">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><label
-                                for="bubble-preset-select"
-                                style="width:88px;color:var(--muted,#667);font-size:13px;">气泡</label><select
-                                id="bubble-preset-select"
-                                style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--input-border,#e6e6ea);background:var(--input-bg,#fff);font-size:14px;">
-                                <option value="">— 选择预设 —</option>
-                            </select><button type="button" id="apply-preset-btn" class="btn btn-primary"
-                                style="margin-left:8px;padding:7px 10px;border-radius:8px;">应用</button></div>
-                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><label
-                                style="width:88px;color:var(--muted,#667);font-size:13px;">外观操作</label><button
-                                type="button" id="save-preset-btn" class="btn"
-                                style="padding:7px 10px;border-radius:8px;">另存为</button><button type="button"
-                                id="manage-presets-btn" class="btn"
-                                style="padding:7px 10px;border-radius:8px;">管理</button></div>
-                    </div>
-                    <div class="form-group"><label for="setting-max-memory">最大记忆轮数</label><input type="number"
-                            id="setting-max-memory" value="10" min="1">
-                    </div>
-                    <div class="form-group"><label for="setting-chat-bg-upload"
-                            class="btn btn-primary">更换聊天背景</label><input type="file" id="setting-chat-bg-upload"
+<div class="form-group">
+    <label for="setting-max-memory">最大记忆轮数</label>
+    <input type="number" id="setting-max-memory" value="10" min="1">
+</div>
+                    <div class="form-group"><label for="setting-chat-bg-upload" class="btn btn-primary" style="font-weight: bold;">更换聊天背景</label><input type="file" id="setting-chat-bg-upload"
                             accept="image/*" style="display:none;"></div>
                     <button type="submit" class="btn btn-primary">保存设置</button>
                 </form>
@@ -907,48 +1072,18 @@
                         <div class="group-members-list" id="group-members-list-container"></div>
                     </div>
                     <hr style="border:none; border-top:1px solid #eee; margin: 20px 0;">
-                    <div class="form-group">
-                        <button type="button" class="btn btn-secondary" id="link-group-world-book-btn">关联世界书</button>
-                    </div>
-                    <div class="form-group"><label for="setting-group-theme-color">主题颜色 (对方/我方)</label><select
-                            id="setting-group-theme-color"></select></div>
-
-                    <hr style="border:none; border-top:1px solid #eee; margin: 20px 0;">
-                    <div class="form-group">
-                        <div
-                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                            <label for="setting-group-use-custom-css" style="margin-bottom:0;">自定义气泡样式</label>
-                            <input type="checkbox" id="setting-group-use-custom-css" style="width: auto;">
-                        </div>
-                        <div id="group-bubble-css-preview" class="bubble-css-preview"
-                            style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px;">
-                        </div>
-                        <textarea id="setting-group-custom-bubble-css" rows="6"
-                            placeholder="在此输入CSS代码...&#10;例如：&#10;.message-bubble.sent { background-color: #A5D6A7; }&#10;.message-bubble.received { background-color: #E1E1E1; }"
-                            disabled></textarea>
-                        <button type="button" class="btn btn-neutral" id="reset-group-custom-bubble-css-btn"
-                            style="margin-top: 10px; width: auto; padding: 5px 15px; font-size: 14px;">恢复默认
-                        </button>
-                    </div>
-                    <div class="panel panel-sm"
-                        style="padding:12px;border-radius:10px;border:1px solid var(--border-color,#e8e8ef);background:var(--panel-bg,#fff);box-shadow:var(--panel-shadow,0 4px 12px rgba(20,20,30,0.04));margin:10px 0;">
-                        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;"><label
-                                for="group-bubble-preset-select"
-                                style="width:88px;color:var(--muted,#667);font-size:13px;">气泡预设</label><select
-                                id="group-bubble-preset-select"
-                                style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid var(--input-border,#e6e6ea);background:var(--input-bg,#fff);font-size:14px;">
-                                <option value="">— 选择预设 —</option>
-                            </select><button type="button" id="group-apply-preset-btn" class="btn btn-primary"
-                                style="margin-left:8px;padding:7px 10px;border-radius:8px;">应用</button></div>
-                        <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;"><label
-                                style="width:88px;color:var(--muted,#667);font-size:13px;">外观操作</label><button
-                                type="button" id="group-save-preset-btn" class="btn"
-                                style="padding:7px 10px;border-radius:8px;">另存为</button><button type="button"
-                                id="group-manage-presets-btn" class="btn"
-                                style="padding:7px 10px;border-radius:8px;">管理</button></div>
-                    </div>
-                    <div class="form-group"><label for="setting-group-max-memory">最大记忆轮数</label><input type="number"
-                            id="setting-group-max-memory" value="10" min="1"></div>
+<div class="form-group">
+    <button type="button" class="btn btn-secondary" id="link-group-world-book-btn">关联世界书</button>
+</div>
+<div class="form-group">
+    <label for="setting-group-theme-color">聊天气泡外观</label>
+    <select id="setting-group-theme-color"></select>
+</div>
+<hr style="border:none; border-top:1px solid #eee; margin: 20px 0;">
+<div class="form-group">
+    <label for="setting-group-max-memory">最大记忆轮数</label>
+    <input type="number" id="setting-group-max-memory" value="10" min="1">
+</div>
                     <div class="form-group"><label for="setting-group-chat-bg-upload"
                             class="btn btn-primary">更换聊天背景</label><input type="file" id="setting-group-chat-bg-upload"
                             accept="image/*" style="display:none;">
@@ -2544,33 +2679,7 @@
                 </form>
             </div>
         </div>
-        <!-- 线下模式设置弹窗 -->
-        <div id="offline-mode-modal" class="modal-overlay">
-            <div class="modal-window">
-                <h3>线下模式设置</h3>
-                <form id="offline-mode-form">
-                    <div class="form-group"
-                        style="display: flex; justify-content: space-between; align-items: center;margin-bottom: 5px;">
-                        <label for="offline-mode-toggle" style="margin-bottom: 10px;">线下模式是否开启</label>
-                        <label class="switch">
-                            <input type="checkbox" id="offline-mode-toggle">
-                            <span class="slider round"></span>
-                        </label>
-                    </div>
-                    <div class="form-group">
-                        <label for="offline-narration-css">行动气泡自定义CSS</label>
-                        <textarea id="offline-narration-css"
-                            placeholder=".narration-bubble { background: #f0f0f0; ... }"
-                            style="height: 120px; font-family: monospace; font-size: 12px;"></textarea>
-                        <p style="font-size: 12px; color: #888; margin-top: 5px;">针对 .narration-bubble 类进行样式修改。</p>
-                    </div>
-                    <div style="display: flex; gap: 10px;">
-                        <button type="button" class="btn btn-neutral" id="cancel-offline-mode-btn">取消</button>
-                        <button type="submit" class="btn btn-primary">保存</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+
         
  <!-- === 新增：搜索设置弹窗 === -->
 <div id="search-config-modal" class="modal-overlay">
@@ -3272,13 +3381,15 @@
     <script src="js/settings/font_settings.js"></script>
     <script src="js/settings/customize.js"></script>
     <script src="js/settings/safe_toggle.js"></script>
+    <script src="js/settings/screen_adapt.js"></script>
+    <script src="js/settings/swipe_back.js"></script>
 
 
 <!-- 世界书 -->    
     <script src="js/world_book.js"></script>
     
 <!-- 聊天室 -->            
-    <script src="js/chat/chat_room.js"></script>
+
     <script src="js/chat/group.js"></script>
     <script src="js/chat/private_prompt.js"></script>
     <script src="js/chat/group_prompt.js"></script>
@@ -3287,6 +3398,9 @@
     <script src="js/chat/chat_list.js"></script>
     <script src="js/chat/chat_settings.js"></script>
     <script src="js/chat/chat_search.js"></script>
+    <script src="js/chat/sticker_system.js"></script>
+    <script src="js/chat/chat_feature.js"></script>
+    <script src="js/chat/chat_room.js"></script>
 
     <script src="js/chat/summary.js"></script>
     <script src="js/peek.js"></script>
