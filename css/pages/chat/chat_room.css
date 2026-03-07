@@ -306,7 +306,7 @@
     background-color: transparent; /* 强制透明背景 */
     box-shadow: none;              /* 去除阴影 */
     padding: 0;                    /* 去除内边距 */
-    max-width: 140px;                         /* 表情包最大宽度，比普通图片小 */
+    max-width: 100px;                         /* 表情包最大宽度，比普通图片小 */
     overflow: hidden;
 }
 
@@ -471,47 +471,40 @@
 
 
 /* =========================================
-           核心逻辑：仅针对“旁白”进行无缝拼接
-           ========================================= */
+   核心逻辑：仅针对“旁白”进行无缝拼接
+   ========================================= */
 
 /* 
-           步骤 1: 处理【上方气泡】(我是旁白，且后面也是旁白)
-           目标: 1. 去掉底部圆角
-                 2. 【核心修复】强制把底部间距设为 0 (覆盖默认的 12px)
-        */
+   步骤 1: 处理【上方气泡】(我是旁白，且后面也是旁白)
+   - 这个气泡可能是“第一个”，也可能是“中间的”
+   - 目标: 强制把底部变平（去掉底部圆角和底部边框），并且拉近底部间距
+*/
 .message-wrapper.narration-wrapper:has(+ .message-wrapper.narration-wrapper) {
-    margin-bottom: 0;
-    /* 关键！不再撑开距离 */
+    margin-bottom: 0 !important; /* 强制覆盖原生间距 */
 }
 
 .message-wrapper.narration-wrapper:has(+ .message-wrapper.narration-wrapper) .narration-bubble {
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
-    border-bottom: none;
-    padding-bottom: 4px;
-    /* 减少内部留白，让文字更紧凑 */
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-bottom: none !important;
+    padding-bottom: 4px !important;
     z-index: 2;
 }
 
 /* 
-           步骤 2: 处理【下方气泡】(我是旁白，且前面也是旁白)
-           目标: 1. 去掉顶部圆角
-                 2. 设置微小的负边距，仅用于重叠边框 (防止出现双边框粗线)
-        */
-.message-wrapper.narration-wrapper+.message-wrapper.narration-wrapper {
-    /* 
-               因为上方气泡的 margin-bottom 已经是 0 了，
-               这里只需要 -1px 让边框重叠即可，不需要 -15px 那么大了 
-            */
-    margin-top: 0;
+   步骤 2: 处理【下方气泡】(我是旁白，且前面也是旁白)
+   - 这个气泡可能是“最后一个”，也可能是“中间的”
+   - 目标: 强制把顶部变平（去掉顶部圆角和顶部边框），防止双重边框
+*/
+.message-wrapper.narration-wrapper + .message-wrapper.narration-wrapper {
+    margin-top: 0 !important; 
 }
 
-.message-wrapper.narration-wrapper+.message-wrapper.narration-wrapper .narration-bubble {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    border-top: none;
-    padding-top: 4px;
-    /* 减少内部留白 */
+.message-wrapper.narration-wrapper + .message-wrapper.narration-wrapper .narration-bubble {
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+    border-top: none !important;
+    padding-top: 4px !important;
 }
 
 /* 2. 修正 p 标签的显示逻辑 */

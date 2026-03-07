@@ -12,6 +12,9 @@
     background-color: var(--gray-color);
     overflow: hidden;
     flex-grow: 1;
+    /* 关键修复 1：必须变成 flex 容器，才能让内部的 100% 高度真正生效 */
+    display: flex; 
+    flex-direction: column;
 }
 
 #chat-list-screen .app-header .action-btn svg {
@@ -140,8 +143,10 @@
 
 /* 4. Tab 内容视图控制 */
 #chat-list-screen .tab-content-view {
+    flex-grow: 1;
+    min-height: 0; /* 关键修复 2：防止子元素撑破父容器 */
     height: 100%;
-    overflow-y: auto; /* 允许内部滚动 */
+    overflow-y: auto; 
     display: none;
     background-color: transparent;
 }
@@ -387,3 +392,401 @@ color: var(--primary-color);
     line-height: 1.5;
     margin-bottom: 6px;    
 }
+
+/* ================= 外观页面专属样式 ================= */
+
+/* 1. 整体容器：Flex布局，保证上下分配合理 */
+#tab-view-bubbles {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;  
+    padding: 0;
+    box-sizing: border-box;
+    background-color: var(--gray-color);
+    overflow: hidden; /* 防止整个页面滚动，内部滑动 */    
+}
+
+#chat-list-screen #tab-view-bubbles.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 2. 基础卡片样式 */
+#tab-view-bubbles .appearance-card {
+    background: var(--white-color);
+    overflow: hidden;
+    display: flex;
+    border-radius: 0;
+    padding: 15px 15px 5px;
+}
+
+/* 3. 上半部分：固定高度不滚动 */
+#tab-view-bubbles .top-fixed-card {
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+/* ================= 文件夹标签页风格 (Tab Style) ================= */
+
+
+/* 1. 整体头部：设置灰色背景底底，按钮组在这个图层里 */
+#tab-view-bubbles .appearance-header {
+    display: flex;
+    align-items: flex-end; /* 关键：让活跃标签贴着底部对齐 */
+    background-color: var(--gray-color, #EEEDF2); /* 浅灰底色 */
+    
+    /* 抵消父元素 top-fixed-card 的 15px 内边距，使其填满顶部 */
+    margin: -15px -15px 0 -15px; 
+    padding: 0; /* 上方留出空间，底部无边距 */
+    border-radius: 0;
+    min-width:0;
+    position: relative;
+}
+
+/* 2. 选中的标签（预设名称）：白底色，悬浮于前面 */
+#tab-view-bubbles .appearance-tab-active {
+    background-color: var(--white-color, #FFFFFF);
+    padding: 16px 20px 0;
+    border-radius: 18px 32px 0 0; /* 顶部的圆角 */
+    position: relative;
+    z-index: 2; /* 确保显示在最前 */
+    display: flex;
+    align-items: center;
+ 
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.02);
+}
+
+/* 🚀 核心魔法：使用 box-shadow 绘制右侧向下凹陷的弧形 */
+#tab-view-bubbles .appearance-tab-active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: -20px; /* 放到标签右侧外边 */
+    width: 22px;
+    height: 20px;
+    border-bottom-left-radius: 64px; /* 左下角倒圆角 */
+    /* 用白色的阴影去填满空隙，形成视觉上的反向弧线 */
+    box-shadow: -4px 4px 0 4px var(--white-color, #FFFFFF);
+    pointer-events: none;
+}
+
+/* 取消输入框原本的框体，使其完全融入白色的活跃标签 */
+#tab-view-bubbles .appearance-tab-active .preset-name-input {
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0;
+    width: 120px; /* 限制宽度，给右侧按钮留空间 */
+    color: var(--text-color, #333);
+    outline: none;
+    box-shadow: none;
+    text-align: center;
+}
+
+#tab-view-bubbles .appearance-tab-active .preset-name-input:focus {
+    color: var(--primary-color); /* 聚焦时文字变色作为提示 */
+    border: none;
+    background: transparent;
+}
+
+/* 3. 未选中的标签区域（按钮组），与灰色背景融合 */
+#tab-view-bubbles .appearance-tab-inactive {
+    flex-grow: 1;
+    display: flex;
+    justify-content: flex-start; /* 按钮靠右对齐 */
+    padding: 5px 0 5px 12px; /* 左侧多留一点 padding 给弧线避让 */
+    background-color: transparent;
+}
+
+#tab-view-bubbles .appearance-actions .icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #555;
+    cursor: pointer;
+    transition: all 0.2s;
+    stroke-width:1.5;
+    z-index: 3;
+}
+
+
+/* 微调按钮样式使其在灰底上更好看 */
+#tab-view-bubbles .appearance-tab-inactive .appearance-actions {
+    display: flex;
+    gap: 7px;
+}
+
+#tab-view-bubbles .appearance-tab-inactive .appearance-actions .icon-btn {
+    
+    background-color: rgba(255, 255, 255, 0.5);
+}
+
+#tab-view-bubbles .appearance-tab-inactive .appearance-actions .icon-btn:active {
+    background-color: rgba(0, 0, 0, 0.05); /* 点击时的微弱反馈 */
+}
+
+#tab-view-bubbles .add-btn {
+    color: var(--primary-color);
+    width: 24px;
+    height: 24px; 
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 153, 255, 0.05);
+}
+
+/* 预览区重构 */
+#bubble-css-preview-card  {
+    padding-bottom: 0;
+}
+
+#tab-view-bubbles .bubble-css-preview {
+    background: #EEEDF2;
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    position: relative;
+    height: 200px; /* 固定一个合适的高度 */
+    display: flex;
+    flex-direction: column;
+    z-index: 2; 
+}
+
+#tab-view-bubbles .preview-title {
+    text-align: center; 
+    font-size: 12px; 
+    color: #888; 
+    margin-top: 8px;
+    z-index: 5;
+}
+
+#tab-view-bubbles .preview-nav-btn {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,0.9); border: none; border-radius: 50%;
+    width: 30px; height: 30px; cursor: pointer; z-index: 10;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: #555; font-size: 12px;
+}
+#tab-view-bubbles .preview-nav-btn.left { left: 5px; }
+#tab-view-bubbles .preview-nav-btn.right { right: 5px; }
+#tab-view-bubbles .preview-inner { flex: 1; border-radius: 8px; overflow: hidden; position: relative; }
+
+#bottom-content-card {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 修复 4：禁止外层卡片滚动，防止出现双滚动条 */
+    background: var(--white-color);
+    min-height: 0; /* 修复 5：锁死自身高度，逼迫子元素产生滚动条 */
+    border-radius: 0; /* 确保底部方正，不漏出灰色底 */
+    padding: 0;
+}
+
+.bottom-btn-card {
+    padding: 0 5px 5px; 
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between; 
+    align-items: center;
+    overflow: visible;
+}
+
+.bottom-btn-card .bottom-btn {
+    padding: 0; 
+    display: flex;
+    justify-content: flex-start;
+    gap: 15px;
+    flex-shrink: 0;
+}
+
+/* 圆形 Tab 按钮 */
+#tab-view-bubbles .side-tab-btn {
+    border-radius: 20px;
+    border: none;
+    padding: 6px 20px;
+    background: var(--white-color);
+    color: #888;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    flex-shrink: 0; /* 关键：确保不被其他元素挤压变形 */
+    white-space: nowrap;
+}
+
+#tab-view-bubbles .side-tab-btn.active {
+    background: var(--primary-color);
+    color: var(--white-color);
+    transform: scale(1.05);
+}
+
+
+
+/* 内容面板的基础样式 */
+#tab-view-bubbles .content-pane {
+    display: none;
+    flex-grow: 1;
+    overflow-y: auto;
+    box-sizing: border-box;
+    /* 修复白屏：千万不要在这里使用未定义的 fadeIn 动画 */
+    gap:15px;
+    padding: 10px 10px 15px;
+}
+
+/* 激活态：使用 Flex 布局避免内部元素高度塌陷 */
+#tab-view-bubbles .content-pane.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* CSS 输入框：高度自动撑满 */
+#global-bubble-custom-css {
+    flex-grow: 1;  /* 替代 height: 100%，彻底防止高度塌陷 */
+    width: 100%;
+    min-height: 150px;
+    padding: 12px;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 13px;
+    resize: none;
+    color: #333;
+    outline: none;
+    margin: 0;
+    border: 1px solid var(--bg-color);
+}
+
+#global-bubble-custom-css:focus {
+    border-color: var(--primary-color);
+    background: #fff;
+}
+
+/* 基础设置内部元素 */
+#tab-view-bubbles label { font-size: 15px;
+    color: #333; }
+#tab-view-bubbles span { font-size: 15px;
+    color: #333; }
+#tab-view-bubbles select { width: 100%; border: 1px solid var(--bg-color);background-color: transparent;border-radius: 8px;padding:8px 15px;}
+#tab-view-bubbles .bubble-settings-item { display: flex; margin-bottom:0; white-space: nowrap;}
+#tab-view-bubbles .bubble-settings-item.row { flex-direction: row; justify-content: space-between; align-items: center;gap: 8px; }
+#tab-view-bubbles .bubble-settings-item.col { flex-direction: column; gap: 5px; }
+#tab-view-bubbles .bubble-settings-item input[type="text"] {width: 100%; border: 1px solid var(--bg-color);background-color: transparent;border-radius: 8px;padding:8px 15px;}
+#tab-view-bubbles .bubble-settings-item input[type="range"] { width: 100%; border:none;}
+#tab-view-bubbles .bubble-settings-item input[type="color"] { border: 3px solid var(--white-color); width: 30px; height: 30px; border-radius: 50%; cursor: pointer; padding: 0; background: none; box-shadow: 0 2px 6px rgba(0,0,0,0.1);flex-shrink: 0;}
+#tab-view-bubbles .bubble-settings-item input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+#tab-view-bubbles .bubble-settings-item input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+#tab-view-bubbles .setting-hint { font-size: 12px; color: #999; margin-top: 10px; line-height: 1.4; }
+#tab-view-bubbles .bubble-settings-item input[type="range"] {
+    width: 100%;
+    cursor: pointer;
+    
+    /* 核心魔法：一行代码自动实现进度条左侧填色，右侧留灰 */
+    accent-color: var(--primary-color, #0099FF); 
+    pointer-events: none;
+}
+
+/* 核心魔法 2：单独给滑块(Thumb)重新开启点击事件，确保只能拖拽滑块 */
+#tab-view-bubbles .bubble-settings-item input[type="range"]::-webkit-slider-thumb {
+    pointer-events: auto; 
+}
+
+#tab-view-bubbles .bubble-settings-item input[type="range"]::-moz-range-thumb {
+    pointer-events: auto; 
+}
+
+/* --- 1. 复选框美化 --- */
+#tab-view-bubbles .custom-check-label {
+    position: relative;
+    padding-left: 26px; /* 留出圆圈的空间 */
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
+    user-select: none; /* 防止连击时选中文字 */
+}
+
+/* 隐藏原生复选框，但保留它以便 JS 读取 value */
+#tab-view-bubbles .custom-check-label input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+/* 未选中：灰色空心圆 */
+#tab-view-bubbles .custom-check-mark {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ccc;
+    border-radius: 50%;
+    background-color: transparent;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+}
+
+/* 选中：背景变蓝，边框变蓝 */
+#tab-view-bubbles .custom-check-label input:checked ~ .custom-check-mark {
+    background-color: var(--primary-color, #0099FF);
+    border-color: var(--primary-color, #0099FF);
+}
+
+/* 选中：显示白色对勾和动画 */
+#tab-view-bubbles .custom-check-label input:checked ~ .custom-check-mark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+#bubble-type-settings-box {
+     display: flex;
+     flex-direction: column;
+     border: 1px dashed var(--bg-color);
+     border-radius: 16px; 
+     padding: 15px;
+     gap: 15px;  
+}
+
+#bubble-type-settings-box hr {
+     width:100%;
+     border:none; 
+     border-top:1px solid #eee;
+     margin: 0;
+}
+
+#reset-basic-css-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--white-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+#reset-basic-css-btn svg{
+    width: 24px;
+    height: 24px; 
+    fill: var(--primary-color); 
+}
+

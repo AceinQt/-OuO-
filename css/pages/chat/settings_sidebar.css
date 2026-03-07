@@ -348,3 +348,7 @@
     border-color: var(--gray-color);
     background: var(--gray-color);
 }
+
+.btn-primary label{
+    font-weight: bold;
+}
