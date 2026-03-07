@@ -14,6 +14,8 @@ syncChannel.onmessage = (event) => {
         // 如果当前页面可见,自动重新加载数据
         if (document.visibilityState === 'visible') {
             loadData().then(() => {
+                if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
+                if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
                 showToast('已同步最新数据');
                 shouldSaveOnHide = true;
             }).catch(e => {
@@ -113,7 +115,9 @@ window.init = async () => {
         if (typeof applySafeAreaSettings === 'function') {
             applySafeAreaSettings();
         }
-
+        if (typeof applyScreenAdaptation === 'function') {
+         applyScreenAdaptation(); 
+     }
         // 设置状态栏颜色
         if (typeof setAndroidThemeColor === 'function') {
             setAndroidThemeColor(db.homeStatusBarColor || '#FFFFFF');
@@ -136,12 +140,35 @@ window.init = async () => {
             }
             if (typeof removeContextMenu === 'function') removeContextMenu();
 
-            // B. 处理导航点击
+// B. 处理导航点击
             const navTarget = e.target.closest('[data-target]');
             if (navTarget) {
                 e.preventDefault();
                 const targetId = navTarget.getAttribute('data-target');
+                
+                // ★ 提取判断条件
+                const isFromHome = navTarget.classList.contains('app-icon') && navTarget.closest('#home-screen');
+
+                // ★★★ 修复1：先执行跳转函数，让目标页面加上 .active，脱离 display: none 状态
                 navigateTo(targetId);
+                
+                // ★★★ 修复2：页面显示后，再执行置顶操作（加上极短的延迟确保 DOM 已渲染计算高度）
+                if (isFromHome) {
+                    setTimeout(() => {
+                        const targetScreen = document.getElementById(targetId);
+                        if (targetScreen) {
+                            // 1. 将屏幕自身的滚动条置顶
+                            targetScreen.scrollTop = 0;
+                            
+                            // 2. 将目标屏幕内所有的子滚动容器置顶
+                            const scrollContainers = targetScreen.querySelectorAll('.content, .message-area, .tab-content-view, .forum-content-area, .rpg-scroll-col, .world-content-wrapper, #favorites-list-container, #detail-content-area, #chat-list-container, #my-personas-list');
+                            
+                            scrollContainers.forEach(container => {
+                                container.scrollTop = 0;
+                            });
+                        }
+                    }, 10); // 10毫秒延迟足以让浏览器完成重绘
+                }
             }
 
             // C. 关闭弹窗逻辑
@@ -183,6 +210,12 @@ window.init = async () => {
         if (typeof setupSafeAreaToggles === 'function') {
             setupSafeAreaToggles();
         }
+        if (typeof setupScreenAdaptToggle === 'function') {
+         setupScreenAdaptToggle();
+     }
+     if (typeof setupSwipeBackToggle === 'function') {
+            setupSwipeBackToggle();
+        }
         
 
         // 预设相关
@@ -204,7 +237,6 @@ window.init = async () => {
         // 独立功能页
         if (typeof checkForUpdates === 'function') checkForUpdates();
         if (typeof setupPeekFeature === 'function') setupPeekFeature();
-        if (typeof setupOfflineModeLogic === 'function') setupOfflineModeLogic();
         if (typeof setupChatExpansionPanel === 'function') setupChatExpansionPanel();
         if (typeof setupMemoryJournalScreen === 'function') setupMemoryJournalScreen();
         if (typeof setupDeleteHistoryChunk === 'function') setupDeleteHistoryChunk();
@@ -352,6 +384,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     if (storedMeta?.lastUpdateTime > (window.dbLoadTimestamp || 0)) {
                         console.log('🔄 检测到新数据,重新加载...');
                         await loadData();
+                        if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
+                        if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
                         showToast('已加载最新数据');
                     }
                 } catch (e) {

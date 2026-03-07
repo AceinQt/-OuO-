@@ -668,10 +668,15 @@ function setupMePageFeature() {
                     const item = document.createElement('div');
                     item.className = 'hot-post-item';
                     item.onclick = () => {
+                        const scrollArea = document.getElementById('detail-content-area');
+                        if (scrollArea) {
+                            savedForumScrollY = scrollArea.scrollTop;
+                        }
+                        
                         currentSourceScreen = 'forum-screen';
                         renderPostDetail(post);
                         switchScreen('forum-post-detail-screen');
-                        const detailContent = document.querySelector('#forum-post-detail-screen .detail-content-area');
+                        const detailContent = document.getElementById('detail-content-area');
                         if (detailContent) detailContent.scrollTop = 0;
                     };
 
@@ -797,7 +802,7 @@ function setupMePageFeature() {
                                 currentSourceScreen = 'favorites-screen';
                                 renderPostDetail(post);
                                 switchScreen('forum-post-detail-screen');
-                                const detailContent = document.querySelector('#forum-post-detail-screen .detail-content-area');
+                                const detailContent = document.getElementById('detail-content-area');
                                 if (detailContent) detailContent.scrollTop = 0;
                             }
                         };
@@ -1269,7 +1274,7 @@ const scrollableArea = document.querySelector('#forum-screen .forum-content-area
                             if (post) {
                                 renderPostDetail(post);
                                 switchScreen('forum-post-detail-screen');
-                                const detailContent = document.querySelector('#forum-post-detail-screen .detail-content-area');
+                                const detailContent = document.getElementById('detail-content-area');
                                 if (detailContent) {
                                     detailContent.scrollTop = 0;
                                 }
@@ -1436,7 +1441,7 @@ const observer = new MutationObserver((mutations) => {
 
                     renderPostDetail(post);
 
-                    const area = document.querySelector('.detail-content-area');
+                    const area = document.getElementById('detail-content-area');
                     if (area) area.scrollTop = area.scrollHeight;
 
                     showToast('回复成功');
@@ -2394,7 +2399,7 @@ ${commentsHistoryStr}
                             renderHotPosts();
                             // ------------------------------------
 
-                            const area = document.querySelector('.detail-content-area');
+                            const area = document.getElementById('detail-content-area');
                             if (area) area.scrollTop = area.scrollHeight;
 
                             showToast(`已更新 ${newComments.length} 条评论`);
