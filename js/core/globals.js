@@ -10,6 +10,8 @@ window.db = {
     homeScreenMode: 'day',
     enableTopSafeArea: true,
     enableBottomSafeArea: true,
+    enableScreenAdaptation: false,
+    enableSwipeBack: false,
     homeStatusBarColor: '#ffffff',
     worldBooks: [],
     fontUrl: '',

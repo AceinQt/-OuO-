@@ -1,71 +1,70 @@
- // js/core/utils.js 追加内容：
-
 // --- js/core/utils.js ---
 
 function switchScreen(targetId) {
-    // 获取所有屏幕元素
-    const screens = document.querySelectorAll('.screen');
-    screens.forEach(screen => screen.classList.remove('active'));
-    
     const targetScreen = document.getElementById(targetId);
-    if (targetScreen) {
-        targetScreen.classList.add('active');
-        
-        // 动态处理状态栏颜色 (Theme Color)
-        if (typeof setAndroidThemeColor === 'function') {
-            // 主页没有标准的 app-header，特殊处理，依然走设置里的自定义颜色
-            if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
-                setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
-            } else {
-                // 使用 requestAnimationFrame 确保页面已经被赋予 display: flex 并渲染后，再计算颜色
-                // （因为 display: none 的元素获取计算样式可能不准确）
-                requestAnimationFrame(() => {
-    const header = targetScreen.querySelector('.app-header');
-    if (header) {
-        const bgColor = window.getComputedStyle(header).backgroundColor;
-        
-        if (bgColor === 'rgba(0, 0, 0, 0)' || bgColor === 'transparent') {
-             setAndroidThemeColor('#FFFFFF');
-             document.body.style.backgroundColor = '#FFFFFF';
-        } else {
-             setAndroidThemeColor(bgColor);
-             document.body.style.backgroundColor = bgColor;
+    if (!targetScreen) return;
+
+    // 检查是否是滑动返回触发的切换
+    const isSwipeBack = targetScreen.dataset.swipeBack === 'true';
+
+    // ── 屏幕切换逻辑 ──
+    document.querySelectorAll('.screen').forEach(s => {
+        s.classList.remove('active');
+        // 清理非当前目标页面的 no-anim，确保下次正常进入它们时有动画
+        if (s.id !== targetId) {
+            s.classList.remove('no-anim');
         }
+    });
+
+    // 核心修复：如果是滑动返回，保留 no-anim 从而彻底阻止闪烁；普通切换则移除。
+    if (isSwipeBack) {
+        delete targetScreen.dataset.swipeBack;
+        // 注意：这里不再去 remove('no-anim')，让它安安静静待在屏幕上
     } else {
-        setAndroidThemeColor('#FFFFFF');
-        document.body.style.backgroundColor = '#FFFFFF';
-    }
-});
-            }
-        }
-        
-        // 更新底部导航栏高亮
-        document.querySelectorAll('.bottom-tab-bar .tab-item').forEach(t => {
-            if (t.dataset.target === targetId) {
-                t.classList.add('active');
-            } else {
-                t.classList.remove('active');
-            }
-        });
-        
-        // 控制全局底部导航栏的显示/隐藏
-        const globalNav = document.querySelector('.bottom-tab-bar');
-        if (globalNav) {
-            if (targetScreen.classList.contains('has-bottom-nav')) {
-                globalNav.style.display = 'flex';
-            } else {
-                globalNav.style.display = 'none';
-            }
-        }    
+        targetScreen.classList.remove('no-anim');
     }
 
-    // 关闭所有的遮罩层和侧边栏
-    const overlays = document.querySelectorAll('.modal-overlay, .action-sheet-overlay, .settings-sidebar');
-    overlays.forEach(o => o.classList.remove('visible', 'open'));
-}
-            
-                       
-                                  
+    targetScreen.classList.add('active');
+
+    // 关闭所有遮罩层和侧边栏
+    document.querySelectorAll('.modal-overlay, .action-sheet-overlay, .settings-sidebar')
+        .forEach(o => o.classList.remove('visible', 'open'));
+
+    // 更新底部导航栏高亮
+    document.querySelectorAll('.bottom-tab-bar .tab-item').forEach(t => {
+        t.classList.toggle('active', t.dataset.target === targetId);
+    });
+
+    // 控制底部导航栏显示/隐藏
+    const globalNav = document.querySelector('.bottom-tab-bar');
+    if (globalNav) {
+        globalNav.style.display = targetScreen.classList.contains('has-bottom-nav') ? 'flex' : 'none';
+    }
+
+    // 动态处理状态栏颜色
+    if (typeof setAndroidThemeColor === 'function') {
+        if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
+            setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
+        } else {
+            requestAnimationFrame(() => {
+                const header = targetScreen.querySelector('.app-header');
+                if (header) {
+                    const bgColor = window.getComputedStyle(header).backgroundColor;
+                    if (bgColor === 'rgba(0, 0, 0, 0)' || bgColor === 'transparent') {
+                        setAndroidThemeColor('#FFFFFF');
+                        document.body.style.backgroundColor = '#FFFFFF';
+                    } else {
+                        setAndroidThemeColor(bgColor);
+                        document.body.style.backgroundColor = bgColor;
+                    }
+                } else {
+                    setAndroidThemeColor('#FFFFFF');
+                    document.body.style.backgroundColor = '#FFFFFF';
+                }
+            });
+        }
+    }
+}             
                                                         function processToastQueue() {
                 if (isToastVisible || notificationQueue.length === 0) {
                     return;

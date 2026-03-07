@@ -7,7 +7,9 @@ const globalSettingKeys = [
     'globalCssPresets', 'homeSignature',
     'homeWidgetSettings', 'insWidgetSettings', 'homeStatusBarColor',
     'pomodoroTasks', 'pomodoroSettings' ,
-    'enableTopSafeArea', 'enableBottomSafeArea'
+    'enableTopSafeArea', 'enableBottomSafeArea', 
+    'enableScreenAdaptation',
+    'enableSwipeBack'
 ];
 
 // 2. 初始化内存数据库对象 (db)
@@ -37,6 +39,8 @@ window.db = {
     favoritePostIds: [],
     enableTopSafeArea: true,
     enableBottomSafeArea: true,
+    enableScreenAdaptation: false,
+    enableSwipeBack: false,
     homeStatusBarColor: '#ffffff',
 
     // --- 基础设置 ---
