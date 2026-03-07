@@ -449,9 +449,17 @@
 .browser-history-item:last-child { border-bottom: none; }
 
 .history-item-title {
-    font-weight: 500; font-size: 16px; color: #0056b3;
+    font-weight: 500;
+    font-size: 16px;
+    color: #0056b3;
     margin: 0 0 4px 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* 移除 white-space: nowrap; 文本自动换行 */
+    white-space: normal;       /* 默认值，可省略 */
+    overflow: visible;         /* 或直接移除 overflow 属性 */
+    text-overflow: clip;       /* 或直接移除 text-overflow 属性 */
+    /* 可选：防止长单词撑破容器 */
+    word-wrap: break-word;     /* 兼容旧浏览器 */
+    overflow-wrap: break-word; /* 现代标准 */
 }
 
 .history-item-url {
