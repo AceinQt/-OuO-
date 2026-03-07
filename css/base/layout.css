@@ -111,6 +111,11 @@
     padding-bottom: calc(70px + var(--safe-bottom));
 }
 
+#tab-view-bubbles .content-pane {
+    padding-bottom: calc(85px + var(--safe-bottom, 15px));
+}
+
+
 #chat-list-screen .bottom-nav-tabs {
     bottom: max(15px , var(--safe-bottom));
 }

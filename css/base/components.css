@@ -23,10 +23,15 @@
     animation: fadeIn 0.5s ease;
     position: relative;
     /* 修改：确保内部屏幕也是定位上下文 */
+    will-change: transform, opacity;
 }
 
 .screen.active {
     display: flex;
+}
+
+.no-anim {
+    animation: none !important;
 }
 
 .app-header {
