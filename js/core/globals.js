@@ -13,6 +13,7 @@ window.db = {
     enableScreenAdaptation: false,
     enableSwipeBack: false,
     homeStatusBarColor: '#ffffff',
+    homeNavigationBarColor: '#ffffff',
     worldBooks: [],
     fontUrl: '',
     customIcons: {},

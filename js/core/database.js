@@ -5,7 +5,7 @@ const globalSettingKeys = [
     'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons',
     'apiPresets', 'bubbleCssPresets', 'globalCss',
     'globalCssPresets', 'homeSignature',
-    'homeWidgetSettings', 'insWidgetSettings', 'homeStatusBarColor',
+    'homeWidgetSettings', 'insWidgetSettings', 'homeStatusBarColor','homeNavigationBarColor',
     'pomodoroTasks', 'pomodoroSettings' ,
     'enableTopSafeArea', 'enableBottomSafeArea', 
     'enableScreenAdaptation',
@@ -42,6 +42,7 @@ window.db = {
     enableScreenAdaptation: false,
     enableSwipeBack: false,
     homeStatusBarColor: '#ffffff',
+    homeNavigationBarColor: '#ffffff',
 
     // --- 基础设置 ---
     apiSettings: {},
@@ -277,7 +278,7 @@ window.saveData = async () => {
         console.error("❌ 聊天保存失败:", e);
         await AppUI.alert("严重警告：聊天保存失败！");
     }
-
+    
     // 2. 用户档案
     try {
         if (db.userPersonas && db.userPersonas.length > 0) {
@@ -320,21 +321,6 @@ window.saveData = async () => {
         }
     } catch (e) { console.error("❌ 论坛帖子保存失败:", e); }
 
-    // ★★★ 6. 新增：保存 Peek 数据 (独立表) ★★★
-    try {
-        // 将内存中的字典对象转为数组存入数据库
-        const peekArray = Object.entries(db.peekData).map(([charId, data]) => ({
-            charId: charId,
-            data: data
-        }));
-        if(peekArray.length > 0) {
-            const safePeek = JSON.parse(JSON.stringify(peekArray));
-            await dexieDB.peekData.bulkPut(safePeek);
-        }
-    } catch (e) {
-        console.error("❌ Peek数据保存失败:", e);
-    }
-
     // 7. 论坛设置
     try {
         const metaKeys = ['forumUserIdentity', 'forumBindings', 'watchingPostIds', 'favoritePostIds'];
@@ -374,4 +360,35 @@ window.saveData = async () => {
     }
     
     console.log('✅ 数据保存完成, 时间戳:', now);
+};
+
+ // --- 专门用于聊天时的高效保存机制 ---
+window.saveSingleChat = async (chatId, chatType) => {
+    try {
+        if (chatType === 'private') {
+            const chat = db.characters.find(c => c.id === chatId);
+            if (chat) await dexieDB.characters.put(chat); // 只覆写当前这一个角色
+        } else if (chatType === 'group') {
+            const group = db.groups.find(g => g.id === chatId);
+            if (group) await dexieDB.groups.put(group);   // 只覆写当前这一个群聊
+        }
+    } catch (e) {
+        console.error("❌ 聊天保存失败:", e);
+    }
+};   
+
+// --- 专门用于高效保存 Peek 数据的机制 ---
+window.savePeekData = async (charId) => {
+    try {
+        if (!charId || !db.peekData[charId]) return;
+        
+        // Dexie的 put 会自动根据主键(charId)进行插入或更新，速度极快
+        await dexieDB.peekData.put({
+            charId: charId,
+            data: db.peekData[charId]
+        });
+        console.log(`✅ [Peek] 角色 ${charId} 的应用数据已独立保存`);
+    } catch (e) {
+        console.error("❌ Peek数据独立保存失败:", e);
+    }
 };

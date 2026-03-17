@@ -45,6 +45,7 @@ function switchScreen(targetId) {
     if (typeof setAndroidThemeColor === 'function') {
         if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
             setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
+            document.body.style.backgroundColor = window.db.homeNavigationBarColor || '#FFFFFF';
         } else {
             requestAnimationFrame(() => {
                 const header = targetScreen.querySelector('.app-header');
