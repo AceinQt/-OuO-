@@ -1,0 +1,28 @@
+#dev-console-screen .content {
+  padding:10px;
+}
+
+#dev-console-output {
+  font-family: 'Courier New', Courier, monospace; 
+  font-size: 13px; 
+  font-weight: bold; 
+  line-height: 1.5; 
+  word-wrap: break-word; 
+  white-space: pre-wrap;
+  height: 100%; 
+  overflow-y: auto; 
+  padding:10px 20px;
+  border:1px solid var(--gray-color);
+  border-radius: 20px;
+  background-color: var(--paper-color);
+}
+
+.output-item {
+      border-bottom:1px dashed var(--line-color);
+      padding: 4px 0;
+      margin-bottom: 2px;
+}
+
+.output-item:last-child{
+      border-bottom:none;
+}

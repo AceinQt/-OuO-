@@ -18,7 +18,8 @@
 /* --- 颜色选择器美化样式 (全局生效) --- */
 
 /* 1. 隐藏原生外观 */
-#home-status-bar-color-picker {
+#home-status-bar-color-picker,
+#home-navigation-bar-color-picker {
     -webkit-appearance: none;
     appearance: none;
     border: none;
@@ -40,6 +41,18 @@
 }
 
 #home-status-bar-color-picker::-webkit-color-swatch {
+    border: 2px solid #fff;
+    /* 白色描边 */
+    border-radius: 50%;
+    /* 必须和外层保持一致 */
+    box-sizing: border-box;
+}
+
+#home-navigation-bar-color-picker::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+
+#home-navigation-bar-color-picker::-webkit-color-swatch {
     border: 2px solid #fff;
     /* 白色描边 */
     border-radius: 50%;
