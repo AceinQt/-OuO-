@@ -252,6 +252,7 @@ img[src=""], img:not([src]) {
     cursor: pointer;
     text-decoration: none;
     color: rgba(0, 0, 0, 0.9);
+    position: relative;
 }
 
 .icon-img {
@@ -534,4 +535,26 @@ img[src=""], img:not([src]) {
     color: var(--text-color);
     font-size: 14px;
     font-weight: bold;
+}
+
+/* --- 主页 APP 未读角标 --- */
+.home-unread-badge {
+    position: absolute;
+    top: -2px;      /* 根据你的图标实际大小微调 */
+    right: 5px;     /* 根据你的图标实际大小微调 */
+    background-color: var(--red-color);
+    color: var(--white-color);
+    font-size: 11px;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+    padding: 0 4px;
+    min-width: 18px;
+    height: 18px;
+    border-radius: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    line-height: 1;
+    pointer-events: none; /* 防止遮挡点击 */
 }

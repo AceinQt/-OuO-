@@ -270,7 +270,6 @@
     padding: 0 0 15px;
 }
 
-#peek-messages-screen .list-item:hover,
 #peek-conversation-screen {
     background-color: #EEEDF2;
 }
@@ -308,8 +307,6 @@
     cursor: pointer;
     transition: background-color 0.2s;
 }
-
-.memo-item:hover { background-color: #f0f0f0; }
 
 .memo-item-title {
     font-weight: 600; font-size: 16px; color: #333;
@@ -595,4 +592,172 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
     font-size: 14px; color: #555;
     line-height: 1.6; font-style: italic;
+}
+
+.peek-new-badge {
+    display: inline-block;
+    color: var(--primary-color);
+    background-color: transparent;
+    padding: 1px 4px;
+    /* 稍微撑开一点内边距 */
+    margin-right: 2px;
+    /* 和标题的间距 */
+    vertical-align: text-top;
+    /* 关键：让它靠上对齐，像角标一样 */
+    line-height: 1.2;
+    font-weight: bold;
+    font-size: 12px;
+    font-style: italic;
+    transform: translateY(1px);
+    /* 微调位置 */
+}
+
+/* =========================================
+   12. Peek Multi-select Delete Styles 
+   ========================================= */
+
+.peek-bottom-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    border-top: 1px solid #e0e0e0;
+    z-index: 1000;
+    animation: slideUp 0.3s ease-out;
+}
+
+.peek-bottom-bar .btn-group {
+    margin:0;
+    height:40px;
+}
+
+.is-selecting {
+    cursor: pointer;
+    position: relative;
+}
+
+/* Styles for list items (messages, memos, browser, cart) */
+.chat-item.selected, 
+.memo-item.selected, 
+.browser-history-item.selected, 
+.cart-item.selected {
+    background-color: #EBF5FF !important;
+}
+
+.chat-item.selected::after, 
+.memo-item.selected::after, 
+.browser-history-item.selected::after, 
+.cart-item.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    background-color: var(--primary-color);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 10;
+}
+
+/* Album grid item selected state */
+.album-photo.selected::after {
+    content: '✓';
+    position: absolute;
+    bottom: 5px; 
+    left: 5px;
+    background-color: var(--primary-color);
+    color: white;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+}
+
+.album-photo.selected img {
+    opacity: 0.6;
+    border: 2px solid var(--primary-color);
+    box-sizing: border-box;
+}
+
+/* Transfer item selected state */
+.transfer-item.selected {
+    opacity: 0.9;
+}
+
+.transfer-item.selected .message-bubble {
+    background-color: #cce4ff !important;
+    border: 1px solid var(--primary-color);
+}
+
+.transfer-item.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 10px; 
+    transform: translateY(-50%);
+    background-color: var(--primary-color);
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+/* Unlock post selected state */
+.unlock-post-card.selected {
+    background-color: #EBF5FF;
+}
+
+.unlock-post-card.selected::before {
+    content: '✓';
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background-color: var(--primary-color);
+    color: white;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    z-index: 10;
+}
+
+/* hide the new badge if selected so they don't overlap */
+.unlock-post-card.selected .new-badge {
+    display: none !important;
+}
+
+/* 核心优化：进入编辑模式时，隐藏原本的底部组件，避免双重安全区叠加和遮挡 */
+body.peek-editing-mode .cart-footer,
+body.peek-editing-mode .transfer-station-input-area {
+    display: none !important;
 }
