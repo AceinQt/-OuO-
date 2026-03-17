@@ -840,26 +840,39 @@ async function performGeneration(chat, start, end, type) {
     const startIndex = start - 1;
     const endIndex = end;
     
-    // 消息拼接 (群聊/私聊 通用逻辑)
-    const messagesToSummarize = chat.history.slice(startIndex, endIndex).map(m => {
-        let name = '';
-        if (m.role === 'user') {
-            name = (currentChatType === 'private' ? '我' : (chat.me.realName || '我'));
-        } else {
-            if (currentChatType === 'private') {
-                name = chat.realName;
+    const messagesToSummarize = chat.history.slice(startIndex, endIndex)
+        .filter(m => {
+            // 1. 过滤掉被显式标记为隐身或忽略的消息 (如开启线下模式、主动消息的系统提示)
+            if (m.isAiIgnore || m.isHidden) return false;
+            // 2. 过滤掉纯粹的系统通知 (role === 'system')
+            if (m.role === 'system') return false;
+            // 3. 过滤掉自动插入的底层时间流逝提示
+            if (m.id && m.id.includes('msg_context_timesense')) return false;
+            // 4. 双重保险：文本内容包含 system-display 或者是强制系统指令的
+            if (m.content && m.content.includes('[system-display:')) return false;
+            if (m.content && m.content.trim().startsWith('[system:')) return false;
+            
+            return true; // 只有通过层层筛选的真实对话才保留
+        })
+        .map(m => {
+            let name = '';
+            if (m.role === 'user') {
+                name = (currentChatType === 'private' ? '我' : (chat.me.realName || '我'));
             } else {
-                // 群聊查找发送者
-                const sender = chat.members.find(mem => mem.id === m.senderId);
-                name = sender ? sender.realName : '未知成员';
+                if (currentChatType === 'private') {
+                    name = chat.realName;
+                } else {
+                    // 群聊查找发送者
+                    const sender = chat.members.find(mem => mem.id === m.senderId);
+                    name = sender ? sender.realName : '未知成员';
+                }
             }
-        }
-        return `${name}: ${m.content}`;
-    }).join('\n');
+            return `${name}: ${m.content}`;
+        }).join('\n');
 
     // === 1. 获取并拆分世界书 ===
     // 确定使用哪一组绑定ID
-    const boundIds = type === 'summary' ? (chat.summaryWorldBookIds || []) : (chat.journalWorldBookIds || []);
+    const boundIds = type === 'summary' ? (chat.summaryWorldBookIds || []) : (chat.journalWorldBookIds ||[]);
     
     // 获取所有绑定的世界书对象
     const allBoundWbs = boundIds.map(id => db.worldBooks.find(w => w.id === id)).filter(Boolean);
@@ -889,14 +902,14 @@ async function performGeneration(chat, start, end, type) {
     
    // === 3. 新增：构建【已总结剧情】上下文 ===
     // 3.1 获取收藏的长期总结 (按开始时间排序)
-    const longFavs = (chat.longTermSummaries || [])
+    const longFavs = (chat.longTermSummaries ||[])
         .filter(s => s.isFavorited)
         .sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime())
         .map(s => `[长期回顾 ${s.startDate}~${s.endDate}] ${s.title}\n${s.content}`)
         .join('\n\n');
 
     // 3.2 获取收藏的短期总结 (按发生时间排序)
-    const shortFavs = (chat.memorySummaries || [])
+    const shortFavs = (chat.memorySummaries ||[])
         .filter(s => s.isFavorited)
         .sort((a, b) => {
             const tA = a.occurredAt || a.createdAt;
@@ -909,7 +922,7 @@ async function performGeneration(chat, start, end, type) {
         })
         .join('\n\n');
         
-           // 3.3 组合文本
+    // 3.3 组合文本
     let summaryContext = "";
     if (longFavs || shortFavs) {
         summaryContext = `【已总结剧情】\n这是过去发生的重要事件回顾，请基于这些背景来理解当前的对话：\n`;
@@ -929,6 +942,11 @@ async function performGeneration(chat, start, end, type) {
 1. **标题**：根据对话内容起一个有具体意义的标题。
 2. **格式**：必须包含【标题】和【内容】这两个标记，否则无法识别。
 `;
+    
+    // 判断是否在总结“最新记录”（如果不是最新进度，绝不触发主动消息）
+    const isLatest = (end === chat.history.length);
+    let nextSlots =[];
+    
     if (type === 'summary') {
         systemPrompt = `你是一个专业的剧情记录员。
 
@@ -953,11 +971,73 @@ ${wbWriting ? `特别指导：\n${wbWriting}\n` : ''}
 ${summaryContext}
 
 ${outputInstruction}`;
-    } else {
-            if (currentChatType === 'group') throw new Error("群聊不支持生成日记");
-            // === 日记 Prompt 修改 ===
+
+        function getNextTwoSlots(hour) {
+            const slots =[
+                { id: 'night', name: '深夜(22:00-次日6:00)' },
+                { id: 'morning', name: '早晨(6:00-10:00)' },
+                { id: 'noon', name: '中午(10:00-14:00)' },
+                { id: 'afternoon', name: '下午(14:00-18:00)' },
+                { id: 'evening', name: '晚上(18:00-22:00)' }
+            ];
+            let currIdx = 0;
+            if (hour >= 22 || hour < 6) currIdx = 0;
+            else if (hour >= 6 && hour < 10) currIdx = 1;
+            else if (hour >= 10 && hour < 14) currIdx = 2;
+            else if (hour >= 14 && hour < 18) currIdx = 3;
+            else currIdx = 4;
             
-    systemPrompt = `你正在扮演角色“${chat.realName}”。
+            return [slots[currIdx], slots[(currIdx + 1) % 5]];
+        }
+
+        if (type === 'summary' && isLatest) {
+            nextSlots = getNextTwoSlots(new Date().getHours());
+            
+            // ★ 新增：判断是否处于线下模式
+            const isOffline = (currentChatType === 'private' && chat.offlineModeEnabled);
+            const actionPromptText = isOffline ? "做什么事" : "主动发消息";
+            
+            let senderInstruction = '';
+            let exampleFormat = '';
+            
+            // ★ 修改：针对顺风车，给出对应的线上/线下格式示例，且保持每个时段只发1个组（块）
+            if (currentChatType === 'private') {
+                senderInstruction = `私聊必须是你自己的名字（${charName}）`;
+                if (isOffline) {
+                    exampleFormat = `#SECRET_CHAT_${nextSlots[0].id.toUpperCase()}_5%#\n[02:15|${charName}的动作:他在床上翻来覆去睡不着。]\n\n#SECRET_CHAT_${nextSlots[1].id.toUpperCase()}_80%#\n[07:30|${charName}的动作:他在餐厅看到你，走上前拍了拍你。]\n[07:31|${charName}的语言:居然扔下我，一个人跑出来吃早餐……！]`;
+                } else {
+                    exampleFormat = `#SECRET_CHAT_${nextSlots[0].id.toUpperCase()}_5%#\n[02:15|${charName}的消息:睡不着，你在干嘛……]\n\n#SECRET_CHAT_${nextSlots[1].id.toUpperCase()}_80%#\n[08:20|${charName}的消息:起床了吗？]\n[08:21|${charName}的语音:大懒虫快起来！]`;
+                }
+            } else {
+                const m1 = (chat.members && chat.members.length > 0) ? chat.members[0].realName : '群成员A';
+                const m2 = (chat.members && chat.members.length > 1) ? chat.members[1].realName : m1;
+                senderInstruction = `群聊必须严格使用群成员的真名（当前成员名单：${(chat.members ||[]).map(m => m.realName).join('、')}）`;
+                exampleFormat = `#SECRET_CHAT_${nextSlots[0].id.toUpperCase()}_5%#\n[02:15|${m1}的消息:大半夜的有人没睡吗？]\n\n#SECRET_CHAT_${nextSlots[1].id.toUpperCase()}_80%#\n[07:30|${m2}的消息:早安！今天天气真好！]\n[07:32|${m1}的语音:早上好！]`;
+            }
+
+            systemPrompt += `\n\n【最后的一项绝对指令】：
+在完成上面的总结任务后，请你立刻脱离“总结员”身份，切换回情境中。
+因为你们刚聊完，请你预先想好在接下来的两个时间段（${nextSlots[0].name} 和 ${nextSlots[1].name}），你可能会${actionPromptText}。
+要求：
+1. 每个时段支持生成 1~3 条连贯的互动。
+2. 根据你们刚才聊天的氛围和人设，评估在这两个时间段主动发起的**概率（0到100的整数）**。
+3. 每条消息必须独占一行，严格使用格式：[HH:MM|发送者名字的动作或消息:具体内容]
+   - HH:MM 是你根据情境决定的合理时间（例如睡不着可能是 23:30，吃午饭可能是 12:15）。
+   - 发送者：${senderInstruction}。
+   - 动作支持：${isOffline ? "的动作、的语言" : "的消息、发来的照片/视频、的语音、的转账:xx元；备注、送来的礼物"}。
+4. 严格使用以下标签独占一行包裹这些消息：
+#SECRET_CHAT_${nextSlots[0].id.toUpperCase()}_概率%#[HH:MM|发送者名字的...:内容1]
+[HH:MM|发送者名字的...:内容2]
+#SECRET_CHAT_${nextSlots[1].id.toUpperCase()}_概率%#[HH:MM|发送者名字的...:内容1]
+
+例如：
+${exampleFormat}`;
+        }
+    } else {
+        if (currentChatType === 'group') throw new Error("群聊不支持生成日记");
+        // === 日记 Prompt 修改 ===
+            
+        systemPrompt = `你正在扮演角色“${chat.realName}”。
     
 【世界观/背景设定】
 ${wbBefore}
@@ -1008,12 +1088,12 @@ ${outputInstruction}
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
         body: JSON.stringify({
             model: model,
-            messages: [
+            messages:[
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: `请根据以下对话生成内容：\n\n${messagesToSummarize}` }
             ],
             // 总结需要准确（0.3-0.5），日记需要情感和文笔（0.8-0.95）
-temperature: type === 'summary' ? 0.3 : 0.9
+            temperature: type === 'summary' ? 0.3 : 0.9
         })
     });
 
@@ -1021,36 +1101,114 @@ temperature: type === 'summary' ? 0.3 : 0.9
     const result = await response.json();
     const rawContent = result.choices[0].message.content;
 
-    // === 2. 优化解析逻辑：基于固定标记提取 ===
+    let processedContent = rawContent; 
+    
+    // ★ 原汁原味的单块匹配，仅做了动作的分离
+    if (type === 'summary' && isLatest) {
+        let proactiveOptions = {};
+        const isOffline = (currentChatType === 'private' && chat.offlineModeEnabled);
+        
+        const slotsToMatch = [nextSlots[0].id, nextSlots[1].id];
+
+        slotsToMatch.forEach(slotId => {
+            const tagRegex = new RegExp(`#SECRET_CHAT_${slotId.toUpperCase()}(?:_(\\d+)%?)?#\\s*([\\s\\S]*?)(?=#SECRET_CHAT_|$)`, 'i');
+            const match = processedContent.match(tagRegex);
+            
+            if (match) {
+                let prob = match[1] ? parseInt(match[1], 10) : null;
+                let textBlock = match[2].trim();
+                console.log(`[奖池预打印]`,textBlock);
+                
+                let messages =[];
+                // 正则匹配[07:30|小明的消息:早安]
+                const lineRegex = /\[(\d{1,2}:\d{2})\|([^:：]+)[:：](.*?)\]/g;
+                let lineMatch;
+                
+                while ((lineMatch = lineRegex.exec(textBlock)) !== null) {
+                    let prefix = lineMatch[2].trim();
+                    let senderName = prefix;
+                    let actionType = "的消息"; // 默认动作
+
+                    // 核心：剥离特殊动作后缀（新版核心渲染必需）
+                    const actionKeywords =[
+    "的消息", "的表情包", 
+    "发来的照片/视频", "的照片/视频", "发来的照片", "的照片", 
+    "的语音", "发来的语音", "撤回了一条消息","撤回了上一条消息",
+    "的转账", "发来的转账", 
+    "送来的礼物", "的礼物", 
+    "的动作", "的语言"
+];
+                    for (const kw of actionKeywords) {
+                        if (prefix.endsWith(kw)) {
+                            senderName = prefix.slice(0, -kw.length); // 留下纯名字
+                            actionType = kw; // 记录真实动作
+                            break;
+                        }
+                    }
+
+                    messages.push({
+                        time: lineMatch[1],
+                        sender: senderName,
+                        action: actionType, // ★ 保存剥离出的动作
+                        text: lineMatch[3].trim()
+                    });
+                }
+                
+                // 兜底：如果 AI 没按格式输出，整体抓取
+                if (messages.length === 0 && textBlock.length > 0) {
+                    let defaultSender = currentChatType === 'private' ? charName : ((chat.members && chat.members.length > 0) ? chat.members[0].realName : '系统');
+                    messages.push({
+                        time: null,
+                        sender: defaultSender,
+                        action: isOffline ? "的动作" : "的消息",
+                        text: textBlock.replace(/^[（(]|[）)]$/g, '').trim() 
+                    });
+                }
+
+                if (messages.length > 0) {
+                    // ★ 依旧存入原原本本的 slotId (不切分 morning_0 之类)，保持一组互相覆盖的单发特性
+                    proactiveOptions[slotId] = {
+                        probability: prob !== null ? prob : 100,
+                        messages: messages
+                    };
+                }
+            }
+        });
+
+        // 强力切割：只要遇到秘密标签，后面的全部砍掉，绝对不会污染正文
+        processedContent = processedContent.replace(/#SECRET_CHAT_[A-Z]+(?:_\d+%?)?#[\s\S]*/gi, "").trim();
+
+        // ★ 修改存入类型为 time_window_summary，这是新框架识别的“顺风车”类型
+        if (Object.keys(proactiveOptions).length > 0 && typeof pushProactiveMessage === 'function') {
+            pushProactiveMessage(chat.id, 'time_window_summary', proactiveOptions, 24); 
+            console.log("[赠品] 已将赠品放入奖池，等待开奖！");
+        }
+    }
+    
     let title = "无题";
-    let content = rawContent;
+    let content = processedContent;
 
     // 查找标记的位置
-    const titleIndex = rawContent.indexOf('【标题】');
-    const contentIndex = rawContent.indexOf('【内容】');
+    const titleIndex = processedContent.indexOf('【标题】');
+    const contentIndex = processedContent.indexOf('【内容】');
 
     if (titleIndex !== -1 && contentIndex !== -1 && contentIndex > titleIndex) {
-        // 提取标题：在 【标题】 和 【内容】 之间
-        const rawTitle = rawContent.substring(titleIndex + 4, contentIndex).trim();
-        // 清理可能存在的 Markdown 符号
+        const rawTitle = processedContent.substring(titleIndex + 4, contentIndex).trim();
         title = rawTitle.replace(/\*\*/g, '').replace(/^#+\s*/, '').replace(/[:：]/g, '').trim();
-        
-        // 提取内容：在 【内容】 之后的所有文本
-        content = rawContent.substring(contentIndex + 4).trim();
+        content = processedContent.substring(contentIndex + 4).trim();
     } else {
-    // 兜底逻辑优化：尝试去除思考脉络
-        let cleanContent = rawContent;
+        // 兜底逻辑优化：尝试去除思考脉络
+        let cleanContent = processedContent;
         // 如果包含 "###"，通常是思考部分，尝试截取掉
-        if (cleanContent.includes('### 📖')) {
-             cleanContent = cleanContent.split('### 📖')[1];
+        if (cleanContent.includes('### 📖') || cleanContent.includes('### 🧠')) {
+             cleanContent = cleanContent.split(/###[📖🧠]/)[1];
         } else if (cleanContent.includes('【内容】')) {
-             // 应该不会进这里，但为了保险
              cleanContent = cleanContent.split('【内容】')[1];
         }
+        
         // 兜底：如果 AI 没听话，尝试用正则提取，或者直接取第一行
         const lines = cleanContent.split('\n').filter(l => l.trim() !== '');
         if (lines.length > 0) {
-            // 假设第一行是标题
             const firstLine = lines[0].replace(/^(标题|Title)[:：]?\s*/i, '').replace(/\*\*/g, '');
             if (firstLine.length < 50) { // 如果第一行不太长，就当做标题
                 title = firstLine;
@@ -1066,6 +1224,7 @@ temperature: type === 'summary' ? 0.3 : 0.9
     }
 
     // 5. 默认发生时间为当前生成时间
+    const pad = (n) => n < 10 ? '0' + n : n;
     const now = new Date();
     const formattedNow = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
@@ -1081,16 +1240,16 @@ temperature: type === 'summary' ? 0.3 : 0.9
 
     if (currentChatType === 'group') {
         if (type === 'summary') {
-             if (!chat.memorySummaries) chat.memorySummaries = [];
+             if (!chat.memorySummaries) chat.memorySummaries =[];
              chat.memorySummaries.push(newItem);
         }
     } else {
         // 私聊存 db.characters (实际上是在内存对象改，最后 save)
         if (type === 'summary') {
-            if (!chat.memorySummaries) chat.memorySummaries = [];
+            if (!chat.memorySummaries) chat.memorySummaries =[];
             chat.memorySummaries.push(newItem);
         } else {
-            if (!chat.memoryJournals) chat.memoryJournals = [];
+            if (!chat.memoryJournals) chat.memoryJournals =[];
             chat.memoryJournals.push(newItem);
         }
     }

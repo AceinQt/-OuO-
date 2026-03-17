@@ -477,6 +477,9 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
 
                     chatListContainer.appendChild(li);
                 });
+                if (typeof updateHomeChatBadge === 'function') {
+                    updateHomeChatBadge();
+                }
             }
             
 
