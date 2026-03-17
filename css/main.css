@@ -36,6 +36,7 @@
 @import './pages/settings/customize.css';
 @import './pages/settings/tutorial.css';
 @import './pages/settings/api.css';
+@import './pages/settings/console.css';
 
 @import './base/layout.css';
 @import './base/app_splash.css';
