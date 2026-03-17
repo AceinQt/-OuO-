@@ -333,6 +333,19 @@
     color: #fff;
 }
 
+#proactive-away-modal .form-group input {     
+     margin-bottom: 0;
+     padding: 0;
+}
+
+#proactive-away-modal #pa-frequency-span {
+     display: flex; 
+     justify-content: space-between; 
+     font-size: 14px; 
+     color: #888; 
+     margin-top: 0;
+}
+
 /* --- Group Chat Specific Styles --- */
 #member-selection-list {
     list-style: none;
@@ -511,3 +524,4 @@
     box-shadow: 0 0 5px rgba(56, 155, 244, 0.3);
     /* 可选：加一点发光效果 */
 }
+

@@ -1167,3 +1167,26 @@
     width: auto;
     height: auto;
 }
+
+/* 时间分割线的外壳：强制居中且不可点击 */
+.time-divider-wrapper {
+    display: flex;
+    flex-direction: row; /* 强制改回横向排列，抵消 message-wrapper 的 column */
+    justify-content: center; /* 水平居中 */
+    align-items: center;
+    width: 100%;
+    margin: 12px 0;
+    pointer-events: none; /* 防止误触长按/点击 */
+}
+
+/* 时间分割线的文字气泡样式 */
+.chat-time-divider {
+    font-size: 12px;
+    color: #999;
+    background-color: transparent; /* 类似微信的浅灰色小背景 */
+    padding: 3px 10px;
+    border-radius: 6px;
+    text-align: center;
+    line-height: 1.5;
+    /* 如果背景是深色主题，可以把背景改成 rgba(255,255,255,0.1)，文字改成 #ccc */
+}
