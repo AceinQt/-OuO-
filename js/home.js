@@ -74,12 +74,9 @@ function setupHomeScreen() {
         'world-book-screen'
     ];
     appKeys.forEach(key => updateOneAppIcon(key));
+    updateHomeChatBadge();
 
-    // 6. 应用拍立得照片样式 (如果有)
-    const polaroidImage = db.homeWidgetSettings?.polaroidImage;
-    if (polaroidImage) {
-        updatePolaroidImage(polaroidImage);
-    }
+
 
     // 7. 更新通用状态
     if(typeof updateClock === 'function') updateClock();
@@ -211,17 +208,6 @@ async function applyHomeScreenMode(mode) {
     await saveData();
 }
 
-function updatePolaroidImage(imageUrl) {
-    const styleId = 'polaroid-image-style';
-    let styleElement = document.getElementById(styleId);
-    if (!styleElement) {
-        styleElement = document.createElement('style');
-        styleElement.id = styleId;
-        document.head.appendChild(styleElement);
-    }
-    styleElement.innerHTML = `.heart-photo-widget::after { background-image: url('${imageUrl}'); }`;
-}
-
 // 电池状态
 async function updateBatteryStatus() {
     if ('getBattery' in navigator) {
@@ -337,4 +323,37 @@ function setupInsWidgetAvatarModal() {
         modal.classList.remove('visible');
         showToast('头像已更新');
     });
+}
+
+// --- 新增：更新主页聊天图标的未读消息角标 ---
+function updateHomeChatBadge() {
+    const chatAppIcon = document.getElementById('app-icon-chat-list-screen');
+    if (!chatAppIcon) return;
+    
+    // 计算私聊和群聊的总未读数
+    let totalUnread = 0;
+    if (db && db.characters) {
+        totalUnread += db.characters.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+    }
+    if (db && db.groups) {
+        totalUnread += db.groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0);
+    }
+    
+    let badge = chatAppIcon.querySelector('.home-unread-badge');
+    
+    // 如果有未读消息
+    if (totalUnread > 0) {
+        if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'home-unread-badge';
+            chatAppIcon.appendChild(badge);
+        }
+        badge.textContent = totalUnread > 99 ? '99+' : totalUnread;
+        badge.style.display = 'flex';
+    } else {
+        // 如果没有未读消息，隐藏/移除角标
+        if (badge) {
+            badge.style.display = 'none';
+        }
+    }
 }

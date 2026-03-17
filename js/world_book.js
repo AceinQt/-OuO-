@@ -202,7 +202,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
 `;
                             delBtn.addEventListener('click', async (ev) => {
                                 ev.stopPropagation();
-                                if (!confirm('确定要删除这个世界书条目吗？')) return;
+                                if (!await AppUI.confirm('确定要删除这个世界书条目吗？', "系统提示", "确认", "取消")) return;
                                 const bookIdToDelete = book.id;
                                 await dexieDB.worldBooks.delete(bookIdToDelete);
                                 db.worldBooks = db.worldBooks.filter(wb => wb.id !== bookIdToDelete);
@@ -362,7 +362,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                 const count = selectedWorldBookIds.size;
                 if (count === 0) return;
 
-                if (confirm(`确定要删除这 ${count} 个世界书条目吗？此操作不可恢复。`)) {
+                if (await AppUI.confirm(`确定要删除这 ${count} 个世界书条目吗？此操作不可恢复。`, "系统提示", "确认", "取消")) {
                     const idsToDelete = Array.from(selectedWorldBookIds);
 
                     await dexieDB.worldBooks.bulkDelete(idsToDelete);

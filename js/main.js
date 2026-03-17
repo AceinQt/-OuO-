@@ -1,8 +1,112 @@
 // --- js/main.js ---
+// --- 开发者控制台拦截逻辑 ---
+(function initDevConsole() {
+    const originalLog = console.log;
+    const originalWarn = console.warn;
+    const originalError = console.error;
 
+    // 缓存尚未渲染的日志（防止在DOM加载前输出的日志丢失）
+    const logQueue =[];
+    let outputElement = null;
+
+    // 格式化输出参数
+    function formatArgs(args) {
+        return Array.from(args).map(arg => {
+            if (arg === null) return 'null';
+            if (arg === undefined) return 'undefined';
+            if (typeof arg === 'object') {
+                if (arg instanceof Error) return arg.stack || arg.message;
+                try {
+                    return JSON.stringify(arg, null, 2);
+                } catch (e) {
+                    return String(arg);
+                }
+            }
+            return String(arg);
+        }).join(' ');
+    }
+
+    // 渲染单行日志到页面
+    function renderLog(type, msg, color) {
+        // 获取时间戳[HH:MM:SS.mmm]
+        const now = new Date();
+        const timeStr = `[${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}.${now.getMilliseconds().toString().padStart(3, '0')}]`;
+
+        if (!outputElement) {
+            outputElement = document.getElementById('dev-console-output');
+        }
+
+        if (outputElement) {
+            const line = document.createElement('div');
+            line.className = 'output-item';
+            line.style.color = color;
+            line.textContent = `${timeStr} [${type.toUpperCase()}] ${msg}`;
+            outputElement.appendChild(line);
+
+            // 自动滚动到最新一条
+            outputElement.scrollTop = outputElement.scrollHeight;
+        } else {
+            // 如果 DOM 还没准备好，加入队列
+            logQueue.push({ type, msg, color });
+        }
+    }
+
+    // 拦截方法
+    console.log = function(...args) {
+        renderLog('log', formatArgs(args), '#2c3e50'); // 白色（暗色主题下）/黑色改为白色以适应黑色背景更好看
+        originalLog.apply(console, args);
+    };
+
+    console.warn = function(...args) {
+        renderLog('warn', formatArgs(args), '#ff9800'); // 橙色
+        originalWarn.apply(console, args);
+    };
+
+    console.error = function(...args) {
+        renderLog('error', formatArgs(args), '#f44336'); // 红色
+        originalError.apply(console, args);
+    };
+
+    // DOM加载后，处理积压的日志，并绑定清空按钮
+    document.addEventListener('DOMContentLoaded', () => {
+        outputElement = document.getElementById('dev-console-output');
+        
+        // 渲染积压在队列中的日志
+        if (outputElement && logQueue.length > 0) {
+            logQueue.forEach(item => renderLog(item.type, item.msg, item.color));
+            logQueue.length = 0; 
+        }
+
+        // 绑定清空按钮
+        const clearBtn = document.getElementById('clear-console-btn');
+        if (clearBtn) {
+            clearBtn.addEventListener('click', () => {
+                if (outputElement) outputElement.innerHTML = '';
+            });
+        }
+    });
+})();
 // ⭐ 创建广播频道(放在最顶部)
 const syncChannel = new BroadcastChannel('qchat_sync');
 let shouldSaveOnHide = true;
+
+// --- 核心修复：重新加载数据后，自动刷新当前页面 UI ---
+function refreshUIAfterSync() {
+    // 1. 刷新首页和聊天列表状态
+    if (typeof updateClock === 'function') updateClock();
+    if (typeof setupHomeScreen === 'function') setupHomeScreen();
+    if (typeof renderChatList === 'function') renderChatList();
+    if (typeof updateHomeChatBadge === 'function') updateHomeChatBadge();
+
+    // 2. 如果用户正好停留在聊天室，强制重新渲染消息列表，并滚到底部！
+    const chatRoomScreen = document.getElementById('chat-room-screen');
+    if (chatRoomScreen && chatRoomScreen.style.display !== 'none' && typeof currentChatId !== 'undefined' && currentChatId) {
+        if (typeof renderMessages === 'function') {
+            console.log("🔄 强制刷新聊天室 UI...");
+            renderMessages(false, true); 
+        }
+    }
+}
 
 // ⭐ 监听其他标签页的消息
 syncChannel.onmessage = (event) => {
@@ -16,6 +120,7 @@ syncChannel.onmessage = (event) => {
             loadData().then(() => {
                 if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
                 if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
+                refreshUIAfterSync();
                 showToast('已同步最新数据');
                 shouldSaveOnHide = true;
             }).catch(e => {
@@ -83,6 +188,13 @@ function navigateTo(targetId) {
         showToast('该应用正在开发中，敬请期待！');
         return;
     }
+    
+if (targetId === 'chat-list-screen') {
+    try {
+        currentChatId = null;
+        currentChatType = null;
+    } catch(e) {}
+}
 
     // 调用 utils.js 里的切换函数
     if (typeof switchScreen === 'function') {
@@ -121,6 +233,7 @@ window.init = async () => {
         // 设置状态栏颜色
         if (typeof setAndroidThemeColor === 'function') {
             setAndroidThemeColor(db.homeStatusBarColor || '#FFFFFF');
+            document.body.style.backgroundColor = window.db.homeNavigationBarColor || '#FFFFFF';
         }
 
         // 确保默认配置存在 (依赖 globals.js 中的 defaultWidgetSettings)
@@ -141,10 +254,18 @@ window.init = async () => {
             if (typeof removeContextMenu === 'function') removeContextMenu();
 
 // B. 处理导航点击
-            const navTarget = e.target.closest('[data-target]');
-            if (navTarget) {
-                e.preventDefault();
-                const targetId = navTarget.getAttribute('data-target');
+        const navTarget = e.target.closest('[data-target]');
+        if (navTarget) {
+            e.preventDefault();
+
+            // === 修复1：拦截 Peek 编辑模式下的返回操作 ===
+            // 如果处于多选删除模式，且点击的是返回按钮，则优先退出多选，不跳转页面
+            if (window.PeekDeleteManager && window.PeekDeleteManager.isEditMode && navTarget.classList.contains('back-btn')) {
+                window.PeekDeleteManager.exitMode();
+                return; 
+            }
+
+            const targetId = navTarget.getAttribute('data-target');
                 
                 // ★ 提取判断条件
                 const isFromHome = navTarget.classList.contains('app-icon') && navTarget.closest('#home-screen');
@@ -271,6 +392,12 @@ window.init = async () => {
         }
 
         console.log("✅ 初始化流程执行完毕");
+        
+         if (typeof checkAndDeliverProactiveMessages === 'function') {
+            // 延迟一点点执行，确保 UI 已经渲染完毕
+            setTimeout(checkAndDeliverProactiveMessages, 50);
+        }
+        
 const splash = document.getElementById('app-splash-screen');
         if (splash) {
             // 稍微延迟 500 毫秒，让用户看清启动画面，同时确保 DOM 渲染彻底完成
@@ -320,13 +447,48 @@ async function runDailyBackupCheck() {
 // --- 8. 启动与生命周期管理 ---
 // ==========================================
 
-// A. Service Worker 注册
+// A. Service Worker 注册与后台唤醒监听
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('./js/sw.js')
-            .then(reg => console.log('SW 注册成功:', reg.scope))
-            .catch(err => console.log('SW 注册失败:', err));
+            .then(async reg => {
+                console.log('✅ SW 注册成功:', reg.scope);
+                
+                // 尝试注册周期性后台同步 (Periodic Background Sync)
+                if ('periodicSync' in reg) {
+                    try {
+                        const status = await navigator.permissions.query({ name: 'periodic-background-sync' });
+                        if (status.state === 'granted') {
+                            // 注册后台唤醒任务 (这里的 minInterval 只是建议值，浏览器会自行决定真实频率)
+                            await reg.periodicSync.register('check-proactive', {
+                                minInterval: 30 * 60 * 1000 // 建议最小 30 分钟唤醒一次
+                            });
+                            console.log('✅ 周期性后台唤醒(Periodic Sync)注册成功！');
+                        } else {
+                            console.log('⚠️ 浏览器未授予后台唤醒权限');
+                        }
+                    } catch (e) {
+                        console.log('周期性后台唤醒不可用或报错:', e);
+                    }
+                }
+            })
+            .catch(err => console.log('❌ SW 注册失败:', err));
         
+        // 【核心】：监听 Service Worker 在后台发来的唤醒暗号！
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data && event.data.type === 'PERIODIC_CHECK') {
+                console.log('🔔 [后台唤醒] 收到 Service Worker 信号，开始执行主动消息检测！');
+                
+                // 收到暗号后，立刻执行那两个核心的主动消息函数
+                if (typeof checkAndDeliverProactiveMessages === 'function') {
+                    checkAndDeliverProactiveMessages();
+                }
+                if (typeof triggerIdleProactiveGeneration === 'function') {
+                    triggerIdleProactiveGeneration();
+                }
+            }
+        });
+
         setTimeout(runDailyBackupCheck, 2000);
     });
 } else {
@@ -373,10 +535,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // 生产环境建议注释掉 alert
                 await AppUI.alert("后台保存出错: " + e.message);
             }
-        } else if (document.visibilityState === 'visible') {
+ } else if (document.visibilityState === 'visible') {
             // 页面重新可见时,检查是否需要重新加载
             console.log('📱 页面重新可见,检查数据同步...');
             shouldSaveOnHide = true;
+            if (typeof checkAndDeliverProactiveMessages === 'function') {
+                checkAndDeliverProactiveMessages();
+            }
             
             if (typeof dexieDB !== 'undefined') {
                 try {
@@ -386,6 +551,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                         await loadData();
                         if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
                         if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
+                        
+                        // 🌟 【修复代码】：调用重新渲染UI
+                        refreshUIAfterSync();
+                        
                         showToast('已加载最新数据');
                     }
                 } catch (e) {
