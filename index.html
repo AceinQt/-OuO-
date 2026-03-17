@@ -616,6 +616,16 @@
                 </div>
                 <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
             </div>
+                        <!-- ★ 新增：开发者控制台入口 -->
+            <div class="settings-item" data-target="dev-console-screen">
+                <div class="setting-icon-box">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-terminal"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                </div>
+                <div class="item-details">
+                    <span class="item-name">系统日志</span>
+                </div>
+                <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
             <!-- 侧滑返回 (Toggle) -->
 <div class="settings-item toggle-setting" style="cursor: default;">
     <div class="setting-icon-box">
@@ -885,6 +895,17 @@
                 <input type="text" id="home-status-bar-color-input" placeholder="#FFFFFF">
             </div>
         </div>
+                <div class="form-group">
+            <label for="home-navigation-bar-color">首页底部导航栏颜色</label>
+            <div class="status-bar-color">
+                <!-- 颜色选择器 -->
+                <div class="status-bar-color-picker">
+                    <input type="color" id="home-navigation-bar-color-picker" title="点击选择颜色">
+                </div>
+                <!-- 文本输入框 -->
+                <input type="text" id="home-navigation-bar-color-input" placeholder="#FFFFFF">
+            </div>
+        </div>
     </main>
     </div>
     
@@ -932,7 +953,29 @@
     </header>
     <main class="content" id="tutorial-content-area"></main>
 </div>
-        
+ 
+<!-- ★ 新增：开发者控制台页面 -->
+<div id="dev-console-screen" class="screen">
+    <header class="app-header">
+        <button class="back-btn" data-target="settings-screen">‹</button>
+        <div class="title-container">
+            <h1 class="title">系统日志</h1>
+        </div>
+        <!-- 顶部清空按钮 -->
+        <button class="action-btn" id="clear-console-btn">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"
+                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </button>
+    </header>
+    <main class="content">
+        <!-- 输出区域 -->
+        <div id="dev-console-output">
+        </div>
+    </main>
+</div>        
         
         <div id="toast-notification" class="toast">
             <img class="toast-avatar" src="" alt="avatar">
@@ -1364,6 +1407,14 @@
             </main>
         </div>
 
+<!-- Peek 多选删除的底部悬浮条 -->
+<div id="peek-delete-bottom-bar" class="peek-bottom-bar" style="display:none;">
+    <span id="peek-delete-count">已选择 0 项</span>
+    <div class="btn-group">
+        <button class="btn btn-danger" id="peek-delete-confirm-btn">删除</button>
+    <button class="btn btn-neutral" id="peek-delete-cancel-btn">取消</button>
+    </div>
+</div>
 
        <!-- 论坛页面 -->
         <!-- 1. 发现页 (Forum Home) -->
@@ -2680,7 +2731,55 @@
             </div>
         </div>
 
-        
+
+<!-- 后台消息设置弹窗 -->
+<div id="proactive-away-modal" class="modal-overlay">
+    <div class="modal-window">
+        <h3>后台消息设置</h3>
+        <form id="proactive-away-form">
+            
+            <div class="form-group">
+                <label for="pa-mode-select">模式选择</label>
+                <select id="pa-mode-select" class="form-control">
+                    <option value="random">随机模式</option>
+                    <option value="fixed">主动模式</option>
+                    <option value="dnd">免打扰模式</option>
+                </select>
+            </div>
+
+            <div id="pa-fixed-settings" class="form-group" style="display: none;">
+                
+                <!-- 【新增】发送频率/粘人度设置 (仅固定模式专属) -->
+                <div class="form-group">
+                    <label for="pa-frequency-slider">
+                        发送频率: <span id="pa-frequency-val">普通</span>
+                    </label>
+                    <input type="range" id="pa-frequency-slider" min="0" max="2" value="1" class="form-control">
+                    <div id="pa-frequency-span">
+                        <span>佛系</span>
+                        <span>普通</span>
+                        <span>粘人</span>
+                    </div>
+                </div>
+
+                <label for="pa-daily-limit-slider">
+                    每日最大静默调用: <span id="pa-daily-limit-val">10</span> 次
+                </label>
+                <input type="range" id="pa-daily-limit-slider" min="1" max="30" value="10" class="form-control">
+                
+                <p id="pa-fixed-hint" style="font-size: 12px; color: #888; margin-top: 10px; line-height: 1.5;">
+                    * 主动模式下，允许闲暇时主动调用api发送消息。可调整发送消息频率及允许调用次数来影响角色主动发消息频率。<br>
+                    * 达到设定的每日上限后当天不再主动调用。<br>
+                </p>
+            </div>
+
+            <div class="btn-group">
+                <button type="submit" id="pa-submit-btn" class="btn btn-primary">保存设置</button>
+                <button type="button" id="pa-cancel-btn" class="btn btn-neutral">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
  <!-- === 新增：搜索设置弹窗 === -->
 <div id="search-config-modal" class="modal-overlay">
     <div class="modal-window">
@@ -3389,17 +3488,23 @@
     <script src="js/world_book.js"></script>
     
 <!-- 聊天室 -->            
-
-    <script src="js/chat/group.js"></script>
+    <script src="js/chat/chat_store.js"></script>
+    <script src="js/chat/group_settings.js"></script>
     <script src="js/chat/private_prompt.js"></script>
+    <script src="js/chat/proactive_prompt.js"></script>
     <script src="js/chat/group_prompt.js"></script>
     <script src="js/chat/char_import.js"></script>
     <script src="js/chat/bubble_css_preset.js"></script>
     <script src="js/chat/chat_list.js"></script>
     <script src="js/chat/chat_settings.js"></script>
     <script src="js/chat/chat_search.js"></script>
-    <script src="js/chat/sticker_system.js"></script>
-    <script src="js/chat/chat_feature.js"></script>
+    <script src="js/chat/chat_feature_sticker.js"></script>
+    <script src="js/chat/chat_feature_basic.js"></script>
+    <script src="js/chat/chat_feature_offline.js"></script>
+        <script src="js/chat/chat_feature_proactive.js"></script>
+    <script src="js/chat/chat_ai_service.js"></script>
+    <script src="js/chat/chat_bubble_factory.js"></script>
+        <script src="js/chat/chat_actions.js"></script>
     <script src="js/chat/chat_room.js"></script>
 
     <script src="js/chat/summary.js"></script>
