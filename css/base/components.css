@@ -786,10 +786,17 @@ input:checked+.slider:before {
     flex-grow: 1;
 }
 
+input[type="range"] {    
+    cursor: pointer;
+    accent-color: var(--primary-color, #0099FF); 
+    pointer-events: none;
+}
 
+/* 核心魔法 2：单独给滑块(Thumb)重新开启点击事件，确保只能拖拽滑块 */
+input[type="range"]::-webkit-slider-thumb {
+    pointer-events: auto; 
+}
 
-
-
-
-
-
+input[type="range"]::-moz-range-thumb {
+    pointer-events: auto; 
+}

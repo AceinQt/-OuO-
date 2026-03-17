@@ -129,6 +129,18 @@
     padding-bottom: max(8px , var(--safe-bottom));
 }
 
+/* === 新增：Peek 多选删除底部悬浮条及其内容避让 === */
+.peek-bottom-bar {
+    /* 让悬浮条自身避让底部小黑条，默认 12px，遇到全面屏则使用 safe-bottom */
+    padding-bottom: max(12px , var(--safe-bottom)) !important;
+}
+
+body.peek-editing-mode .screen.active .content,
+body.peek-editing-mode .screen.active .transfer-station-messages {
+    /* 强行给列表撑开空间：悬浮条基础高度(约70px) + 安全区高度 + 额外20px留白 */
+    padding-bottom: calc(65px + var(--safe-bottom)) !important; 
+}
+
 /* 番茄钟 */
 .focus-bottom-controls {
     padding-bottom: max(20px , var(--safe-bottom));
