@@ -37,8 +37,6 @@ function setupWallpaperApp() {
         colorInput.value = val;
         db.homeStatusBarColor = val;
         await saveData();
-        // 实时应用颜色，让用户立刻看到顶部栏变化
-        setAndroidThemeColor(val);
     });
 
     // 3. 输入框变动 -> 更新选择器 & 保存
@@ -52,7 +50,37 @@ function setupWallpaperApp() {
             colorPicker.value = val;
             db.homeStatusBarColor = val;
             await saveData();
-            setAndroidThemeColor(val);
         }
     });
+    
+    const navColorPicker = document.getElementById('home-navigation-bar-color-picker');
+    const navColorInput = document.getElementById('home-navigation-bar-color-input');
+
+    if (navColorPicker && navColorInput) {
+        // 1. 初始化值
+        const savedNavColor = db.homeNavigationBarColor || '#FFFFFF';
+        navColorPicker.value = savedNavColor;
+        navColorInput.value = savedNavColor;
+
+        // 2. 颜色选择器变动 -> 更新输入框 & 保存 & 立刻生效
+        navColorPicker.addEventListener('input', async (ev) => {
+            const val = ev.target.value;
+            navColorInput.value = val;
+            db.homeNavigationBarColor = val;
+            await saveData();
+        });
+
+        // 3. 输入框变动 -> 更新选择器 & 保存 & 立刻生效
+        navColorInput.addEventListener('change', async (ev) => {
+            let val = ev.target.value.trim();
+            if (!val.startsWith('#')) {
+                val = '#' + val;
+            }
+            if (/^#[0-9A-F]{6}$/i.test(val)) {
+                navColorPicker.value = val;
+                db.homeNavigationBarColor = val;
+                await saveData();
+            }
+        });
+    }
 }
