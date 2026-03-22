@@ -466,8 +466,7 @@ function renderPeekSettings() {
     iconsContainer.querySelectorAll('input[type="file"]').forEach(uploadInput => {
         uploadInput.addEventListener('change', handlePeekIconUpload);
     });
-
-    document.getElementById('peek-unlock-avatar-url').value = peekSettings.unlockAvatar || '';
+    
     document.getElementById('peek-context-limit').value = peekSettings.contextLimit !== undefined ? peekSettings.contextLimit : 50;
 }
 
@@ -578,9 +577,7 @@ function setupPeekFeature() {
             } else {
                 if (character.peekScreenSettings.customIcons) delete character.peekScreenSettings.customIcons[appId];
             }
-        });
-
-        character.peekScreenSettings.unlockAvatar = document.getElementById('peek-unlock-avatar-url').value.trim();
+        });        
 
         const contextInput = document.getElementById('peek-context-limit');
         let limit = parseInt(contextInput.value);
@@ -617,21 +614,25 @@ function setupPeekFeature() {
                         const badge = chatItem.querySelector('.new-badge');
                         if (badge) badge.remove();
                     }
-                    renderPeekConversation(conversation.history, conversation.partnerName);
                     switchScreen('peek-conversation-screen');
+renderPeekConversation(conversation.history, conversation.partnerName);
                 } else {
                     showToast('找不到对话记录');
                 }
             }
-        } else if (e.target.closest('.action-btn')) {
-            generateAndRenderPeekMessages({ forceRefresh: true });
         }
     });
 
-    const peekConversationScreen = document.getElementById('peek-conversation-screen');
-    peekConversationScreen.addEventListener('click', (e) => {
-        if (e.target.closest('.action-btn')) generateAndRenderPeekMessages({ forceRefresh: true });
-    });
+    // 消息列表：刷新 & 新增联系人按钮
+    document.getElementById('peek-messages-refresh-btn')
+        ?.addEventListener('click', () => generateAndRenderPeekMessages({ forceRefresh: true }));
+    document.getElementById('peek-messages-add-btn')
+        ?.addEventListener('click', () => addPeekContact());
+
+    // 详情页目前无 action-btn 操作（刷新按钮仅在列表页）
+    // TODO 需求3：未来可在此处绑定"旁观模式"入口
+    // const peekConversationScreen = document.getElementById('peek-conversation-screen');
+    // peekConversationScreen.addEventListener('click', (e) => { ... });
 
     const refreshAlbumBtn = document.getElementById('refresh-album-btn');
     if (refreshAlbumBtn) refreshAlbumBtn.addEventListener('click', () => generateAndRenderPeekAlbum({ forceRefresh: true }));
@@ -644,6 +645,11 @@ function setupPeekFeature() {
         photoModal.addEventListener('click', (e) => {
             if (e.target === photoModal) photoModal.classList.remove('visible');
         });
+    }
+
+    // 初始化Unlock小号的静态事件绑定
+    if (typeof initPeekUnlock === 'function') {
+        initPeekUnlock();
     }
 
     // 绑定长按多选删除

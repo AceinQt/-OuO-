@@ -14,8 +14,10 @@ function renderPeekChatList(conversations = []) {
     conversations.forEach((convo) => {
         if (!convo.id) convo.id = 'msg_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
         const isSelected = isEdit && PeekDeleteManager.selectedIds.has(convo.id);
+
+        // 最后一条实际消息（跳过 time-divider）
         const history = convo.history || [];
-        const lastMessage = history.length > 0 ? history[history.length - 1] : null;
+        const lastMessage = [...history].reverse().find(m => m.type !== 'time-divider') || null;
         const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息：([\s\S]+)\]/, '$1') : '...';
 
         const li = document.createElement('li');
@@ -42,13 +44,27 @@ function renderPeekConversation(history, partnerName) {
 
     titleEl.textContent = partnerName;
     messageAreaEl.innerHTML = '';
+    messageAreaEl.scrollTop = 0; 
 
     if (!history || history.length === 0) {
-        messageAreaEl.innerHTML = '<p class="placeholder-text">正在生成对话...</p>';
+        messageAreaEl.innerHTML = '<p class="placeholder-text">这里空空如也...</p>';
         return;
     }
 
     history.forEach(msg => {
+        // ── 时间分隔符：复用普通聊天的 chat-time-divider ────────────────
+        if (msg.content === '[time-divider]') {
+            const dividerWrapper = document.createElement('div');
+            dividerWrapper.className = 'message-wrapper time-divider-wrapper';
+            const label = (typeof formatSmartTime === 'function' && msg.timestamp)
+                ? formatSmartTime(msg.timestamp)
+                : (msg.label || '');
+            dividerWrapper.innerHTML = `<div class="chat-time-divider">${label}</div>`;
+            messageAreaEl.appendChild(dividerWrapper);
+            return;
+        }
+
+        // ── 普通消息气泡 ─────────────────────────────────────────────────
         const isSentByChar = msg.sender === 'char';
         const wrapper = document.createElement('div');
         wrapper.className = `message-wrapper ${isSentByChar ? 'sent' : 'received'}`;
@@ -73,7 +89,26 @@ function renderPeekConversation(history, partnerName) {
         wrapper.appendChild(bubbleRow);
         messageAreaEl.appendChild(wrapper);
     });
-    messageAreaEl.scrollTop = messageAreaEl.scrollHeight;
+
+    // 确保 DOM 完全渲染后再滚底
+    requestAnimationFrame(() => {
+        // 尝试让外部的 .content 容器滚到底部（通常这是真正的滚动容器）
+        const contentContainer = messageAreaEl.closest('.content');
+        if (contentContainer) {
+            contentContainer.scrollTop = contentContainer.scrollHeight;
+        }
+        // 兼容原逻辑
+        messageAreaEl.scrollTop = messageAreaEl.scrollHeight;
+    });
+
+    // 增加延时兜底：防止因 switchScreen 的页面切换动画导致初次滚动失效
+    setTimeout(() => {
+        const contentContainer = messageAreaEl.closest('.content');
+        if (contentContainer) {
+            contentContainer.scrollTop = contentContainer.scrollHeight;
+        }
+        messageAreaEl.scrollTop = messageAreaEl.scrollHeight;
+    }, 150); // 150ms 后再次确认滚底
 }
 
 async function generateAndRenderPeekMessages(options = {}) {
@@ -107,11 +142,26 @@ async function generateAndRenderPeekMessages(options = {}) {
         const senderName = char.realName || char.name;
         const baseContextPrompt = getPeekBasePromptContext(char, mainChatContext);
 
+        // ── 已有联系人名单注入 ──────────────────────────────────────────
+        const existingNames = (peekContentCache['messages']?.conversations || [])
+            .map(c => c.partnerName)
+            .filter(Boolean);
+
         let systemPrompt = `你正在模拟角色 ${char.realName} 的手机聊天/消息应用。\n`;
         systemPrompt += baseContextPrompt;
         systemPrompt += `
-【任务1：消息记录】
-请为 ${char.realName} 编造3-5个最近的对话。对话内容需要强烈反映Ta的人设以及和最近聊天上下文。
+【任务1：消息记录】`;
+
+        if (existingNames.length > 0) {
+            systemPrompt += `
+请为 ${char.realName} 编造3-5个最近的对话。\n当前手机里已有以下联系人：
+${existingNames.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n但联系人不仅仅局限于这些人。你应该根据聊天上下文情况，尽可能积极创造**新的联系人**进行对话。`;
+        } else {
+            systemPrompt += `
+请为 ${char.realName} 编造3-5个最近的对话。\n`;
+        }
+
+        systemPrompt += `对话内容需要强烈反映Ta的人设以及和最近聊天上下文。
 每段对话需要提供对话对象的称呼(#PARTNER#)以及具体的聊天记录(#HISTORY#)。
 在 #HISTORY# 中，请严格使用以下格式记录每条消息：
 如果是 ${char.realName} 发送的，以 "char: " 开头；
@@ -188,7 +238,38 @@ char: ${char.realName}发送的消息内容
 
         if (parsedConversations.length > 0) {
             if (!peekContentCache['messages']) peekContentCache['messages'] = { conversations: [] };
-            peekContentCache['messages'].conversations = [...parsedConversations, ...peekContentCache['messages'].conversations];
+
+            // ── 合并同类项逻辑 ────────────────────────────────────────────
+            // 如果新生成的对话中有和已有对话同名的联系人，
+            // 就把新内容拼到前面，中间插一条时间分隔符，而不是重复创建。
+            const existingConvos = peekContentCache['messages'].conversations;
+            const now = Date.now();
+
+            parsedConversations.forEach(newConvo => {
+                const existingIdx = existingConvos.findIndex(c => c.partnerName === newConvo.partnerName);
+
+                if (existingIdx !== -1) {
+                    // 同名联系人：旧内容在上，分隔符居中，新内容在下（正序）
+                    const divider = {
+                        content: '[time-divider]',
+                        timestamp: now
+                    };
+                    existingConvos[existingIdx].history = [
+                        ...existingConvos[existingIdx].history,
+                        divider,
+                        ...newConvo.history
+                    ];
+                    existingConvos[existingIdx].isNew = true;
+                    // 把合并后的对话提到列表最前面（最近）
+                    const [merged] = existingConvos.splice(existingIdx, 1);
+                    existingConvos.unshift(merged);
+                } else {
+                    // 新联系人：直接插到最前面
+                    existingConvos.unshift(newConvo);
+                }
+            });
+            // ─────────────────────────────────────────────────────────────
+
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
             renderPeekChatList(peekContentCache['messages'].conversations);
         } else {
@@ -216,3 +297,38 @@ char: ${char.realName}发送的消息内容
         hideLoading();
     }
 }
+
+// ── 新增联系人 ─────────────────────────────────────────────────────────────
+async function addPeekContact() {
+    const name = await AppUI.prompt(
+        '请输入新增的联系人名称。',
+        '例如：c喵、g喵…',
+        '新增联系人'
+    );
+    if (!name || !name.trim()) return;
+
+    const trimmedName = name.trim();
+    if (!peekContentCache['messages']) peekContentCache['messages'] = { conversations: [] };
+
+    const exists = peekContentCache['messages'].conversations.some(c => c.partnerName === trimmedName);
+    if (exists) { showToast(`"${trimmedName}" 已在联系人列表中`); return; }
+
+    const newConvo = {
+        id: `msg_manual_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        partnerName: trimmedName,
+        history: [],   // 空对话，等下次刷新时 AI 填充
+        isNew: false
+    };
+
+    peekContentCache['messages'].conversations.push(newConvo);
+    savePeekData(window.activePeekCharId).catch(e => console.error('Peek保存失败:', e));
+    renderPeekChatList(peekContentCache['messages'].conversations);
+    showToast(`已添加"${trimmedName}"✓`);
+}
+
+// ── TODO: 需求3 预留位 ─────────────────────────────────────────────────────
+// 未来可以在 renderPeekConversation 底部加一个"进入旁观模式"按钮。
+// 点击后以 partnerName 为对方角色创建一个临时对话视图，
+// 复用普通聊天功能的消息渲染 + AI 回复，让用户旁观角色和朋友的实时对话。
+// 可能的入口：peek-conversation-screen 的 header action-btn。
+// ─────────────────────────────────────────────────────────────────────────
