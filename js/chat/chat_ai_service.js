@@ -305,8 +305,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         messageToWithdraw.originalContent = cleanContentMatch ? cleanContentMatch[1] : messageToWithdraw.content;
                         messageToWithdraw.content = `[system: ${characterName} withdrew a message. Original: ${originalContent}]`;
                         renderMessages(false, true);
-                    }
-                    await saveMessageToDB(messageToWithdraw, targetChatId, targetChatType); 
+                    await saveMessageToDB(messageToWithdraw, targetChatId, targetChatType);     
+                    }                    
                     continue;
                 }
 
