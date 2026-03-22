@@ -12,7 +12,6 @@
 #peek-screen .app-header .action-btn,
 #peek-unlock-screen .app-header .title,
 #peek-unlock-screen .app-header .back-btn,
-#peek-unlock-screen .app-header .action-btn,
 #peek-album-screen .app-header .title,
 #peek-album-screen .app-header .back-btn,
 #peek-album-screen .app-header .action-btn,
@@ -51,7 +50,6 @@
    使用 fill: currentColor 让图标颜色自动跟随上面的文字颜色
 */
 #peek-screen .app-header .action-btn svg,
-#peek-unlock-screen .app-header .action-btn svg,
 #peek-album-screen .app-header .action-btn svg,
 #peek-messages-screen .app-header .action-btn svg,
 #peek-conversation-screen .app-header .action-btn svg,
@@ -760,4 +758,35 @@
 body.peek-editing-mode .cart-footer,
 body.peek-editing-mode .transfer-station-input-area {
     display: none !important;
+}
+
+#peek-unlock-settings-modal .form-group {
+    margin-bottom:8px;
+}
+
+#peek-unlock-settings-modal .btn-group {
+    margin-top:0;
+}
+
+#peek-unlock-avatar-preview {
+     width: 80px; 
+     height: 80px; 
+     border-radius: 50%; 
+     object-fit: cover; 
+     background: #f0f0f0; 
+     border: 2px dashed #ddd; 
+     display: inline-block;
+}
+
+#refresh-unlock-btn svg {
+    fill: #212529;
+    width: 28px;
+    height: 28px;
+}
+
+#unlock-settings-btn svg {
+    fill: none;
+    color: #212529;
+    width: 24px;
+    height: 24px;
 }
