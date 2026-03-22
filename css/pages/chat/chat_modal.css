@@ -346,6 +346,16 @@
      margin-top: 0;
 }
 
+#pa-mode-hints {
+    font-size: 12px; 
+    color: #888; 
+    margin-bottom: 10px; 
+    line-height: 1.5; 
+    background: #f0f0f0; 
+    padding: 10px; 
+    border-radius: 6px;
+}
+
 /* --- Group Chat Specific Styles --- */
 #member-selection-list {
     list-style: none;
