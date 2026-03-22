@@ -160,7 +160,7 @@ function triggerBackAction() {
             toggle.checked = !!(window.db && window.db.enableSwipeBack === true);
             toggle.addEventListener('change', function () {
                 if (window.db) window.db.enableSwipeBack = this.checked;
-                if (typeof window.saveData === 'function') window.saveData();
+                saveGlobalKeys(['enableSwipeBack']);
             });
         }
     };

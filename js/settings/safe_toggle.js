@@ -35,7 +35,7 @@ window.setupSafeAreaToggles = function() {
         safeTopToggle.addEventListener('change', function() {
             window.db.enableTopSafeArea = this.checked;
             window.applySafeAreaSettings();
-            if (typeof saveData === 'function') saveData(); // 保存到数据库
+            saveGlobalKeys(['enableTopSafeArea', 'enableBottomSafeArea']);
         });
     }
 
@@ -45,7 +45,7 @@ window.setupSafeAreaToggles = function() {
         safeBottomToggle.addEventListener('change', function() {
             window.db.enableBottomSafeArea = this.checked;
             window.applySafeAreaSettings();
-            if (typeof saveData === 'function') saveData(); // 保存到数据库
+            saveGlobalKeys(['enableTopSafeArea', 'enableBottomSafeArea']);
         });
     }
 };

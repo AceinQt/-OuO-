@@ -10,6 +10,12 @@
                 db.apiSettings && (n.value = db.apiSettings.provider || 'newapi', r.value = db.apiSettings.url || '', s.value = db.apiSettings.key || '', db.apiSettings.model && (a.innerHTML = `<option value="${db.apiSettings.model}">${db.apiSettings.model}</option>`));
                 if (db.apiSettings && typeof db.apiSettings.timePerceptionEnabled !== 'undefined') { document.getElementById('time-perception-switch').checked = db.apiSettings.timePerceptionEnabled; }
                 if (db.apiSettings && typeof db.apiSettings.streamEnabled !== 'undefined') { document.getElementById('stream-switch').checked = db.apiSettings.streamEnabled; } else { document.getElementById('stream-switch').checked = true; } // 默认开启
+                // 在 stream-switch 后面添加
+if (db.apiSettings && typeof db.apiSettings.compatibilityModeEnabled !== 'undefined') { 
+    document.getElementById('compatibility-mode-switch').checked = db.apiSettings.compatibilityModeEnabled; 
+} else { 
+    document.getElementById('compatibility-mode-switch').checked = false; // 默认关闭
+}
 
                 populateApiSelect();
                 n.addEventListener('change', () => {
@@ -52,9 +58,10 @@
                         key: s.value,
                         model: a.value,
                         timePerceptionEnabled: document.getElementById('time-perception-switch').checked,
-                        streamEnabled: document.getElementById('stream-switch').checked // 新增这一行
+                        streamEnabled: document.getElementById('stream-switch').checked,
+    compatibilityModeEnabled: document.getElementById('compatibility-mode-switch').checked // 新增这一行
                     };
-                    await saveData();
+                    await saveGlobalKeys(['apiSettings']);
                     showToast('API设置已保存！')
                 })
             }
@@ -81,8 +88,7 @@
                 return db.apiPresets || [];
             }
             function _saveApiPresets(arr) {
-                db.apiPresets = arr || [];
-                saveData();
+                db.apiPresets = arr || [];               saveGlobalKeys(['apiPresets']);
             }
 
             function populateApiSelect() {
@@ -103,6 +109,8 @@
                 const apiUrlEl = document.querySelector('#api-url');
                 const providerEl = document.querySelector('#api-provider');
                 const modelEl = document.querySelector('#api-model');
+                
+
 
                 const data = {
                     apiKey: apiKeyEl ? apiKeyEl.value : '',
@@ -131,6 +139,7 @@
                     const apiUrlEl = document.querySelector('#api-url');
                     const providerEl = document.querySelector('#api-provider');
                     const modelEl = document.querySelector('#api-model');
+                    const compModeEl = document.querySelector('#compatibility-mode-switch');
 
                     if (apiKeyEl && p.data && typeof p.data.apiKey !== 'undefined') apiKeyEl.value = p.data.apiKey;
                     if (apiUrlEl && p.data && typeof p.data.apiUrl !== 'undefined') apiUrlEl.value = p.data.apiUrl;
@@ -139,6 +148,9 @@
                         modelEl.innerHTML = `<option value="${p.data.model}">${p.data.model}</option>`;
                         modelEl.value = p.data.model;
                     }
+                    if (compModeEl && p.data && typeof p.data.compatibilityModeEnabled !== 'undefined') {
+    compModeEl.checked = p.data.compatibilityModeEnabled;
+}
 
                     (window.showToast && showToast('已应用 API 预设')) || console.log('已应用 API 预设');
                 } catch (e) {

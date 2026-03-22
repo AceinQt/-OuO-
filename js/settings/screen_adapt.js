@@ -35,9 +35,7 @@ window.setupScreenAdaptToggle = function() {
             }
             window.applyScreenAdaptation(); // 立即改变屏幕缩放
             
-            if (typeof window.saveData === 'function') {
-                window.saveData(); // 保存到数据库
-            }
+            saveGlobalKeys(['enableScreenAdaptation']);
         });
     }
 };

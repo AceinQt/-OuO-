@@ -10,14 +10,14 @@ function setupFontSettingsApp() {
                     e.preventDefault();
                     const newFontUrl = fontUrlInput.value.trim();
                     db.fontUrl = newFontUrl;
-                    await saveData();
+                    await saveGlobalKeys(['fontUrl']);
                     applyGlobalFont(newFontUrl);
                     showToast('新字体已应用！');
                 });
                 restoreDefaultFontBtn.addEventListener('click', async () => {
                     fontUrlInput.value = '';
                     db.fontUrl = '';
-                    await saveData();
+                    await saveGlobalKeys(['fontUrl']);
                     applyGlobalFont('');
                     showToast('已恢复默认字体！');
                 });

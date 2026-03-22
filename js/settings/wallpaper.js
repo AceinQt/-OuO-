@@ -14,7 +14,7 @@ function setupWallpaperApp() {
                 db.wallpaper = r;
                 applyWallpaper(r);
                 t.style.backgroundImage = `url(${r})`;
-                await saveData();
+                await saveGlobalKeys(['wallpaper']);
                 showToast('壁纸更换成功！');
             } catch (s) {
                 showToast('壁纸压缩失败，请重试');
@@ -36,7 +36,7 @@ function setupWallpaperApp() {
         const val = ev.target.value;
         colorInput.value = val;
         db.homeStatusBarColor = val;
-        await saveData();
+        await saveGlobalKeys(['homeStatusBarColor']);
     });
 
     // 3. 输入框变动 -> 更新选择器 & 保存
@@ -49,7 +49,7 @@ function setupWallpaperApp() {
         if (/^#[0-9A-F]{6}$/i.test(val)) {
             colorPicker.value = val;
             db.homeStatusBarColor = val;
-            await saveData();
+            await saveGlobalKeys(['homeStatusBarColor']);
         }
     });
     
@@ -67,7 +67,7 @@ function setupWallpaperApp() {
             const val = ev.target.value;
             navColorInput.value = val;
             db.homeNavigationBarColor = val;
-            await saveData();
+            await saveGlobalKeys(['homeNavigationBarColor']);
         });
 
         // 3. 输入框变动 -> 更新选择器 & 保存 & 立刻生效
@@ -79,7 +79,7 @@ function setupWallpaperApp() {
             if (/^#[0-9A-F]{6}$/i.test(val)) {
                 navColorPicker.value = val;
                 db.homeNavigationBarColor = val;
-                await saveData();
+                await saveGlobalKeys(['homeNavigationBarColor']);
             }
         });
     }

@@ -99,7 +99,7 @@ window.exportPartialData = async function(categoryKey) {
     try {
         showToast(`正在导出: ${categoryKey}...`);
         const partialData = {
-            _exportVersion: '3.0',
+            _exportVersion: '4.0',
             _exportTimestamp: Date.now(),
             _partialType: categoryKey 
         };
@@ -136,6 +136,11 @@ window.exportPartialData = async function(categoryKey) {
                 partialData.homeScreenMode = db.homeScreenMode;
                 partialData.fontUrl = db.fontUrl;
                 partialData.homeStatusBarColor = db.homeStatusBarColor;
+                partialData.homeNavigationBarColor = db.homeNavigationBarColor;
+    partialData.enableTopSafeArea = db.enableTopSafeArea;
+    partialData.enableBottomSafeArea = db.enableBottomSafeArea;
+    partialData.enableScreenAdaptation = db.enableScreenAdaptation;
+    partialData.enableSwipeBack = db.enableSwipeBack;
                 break;
             case 'characters':
                 partialData.characters = db.characters || [];
@@ -191,7 +196,7 @@ async function handleImport(event) {
 // --- 5. 核心数据构造函数 (全量备份) ---
 async function createFullBackupData() {
     const backupData = JSON.parse(JSON.stringify(db));
-    backupData._exportVersion = '3.0';
+    backupData._exportVersion = '4.0';
     backupData._exportTimestamp = Date.now();
     return backupData;
 }
@@ -218,108 +223,115 @@ async function downloadData(dataObj, filenameSuffix) {
 }
 
 // --- 7. 数据合并/恢复核心逻辑 ---
-/**
- * ★★★ 修复版本:支持完整替换模式,避免数据残留 ★★★
- * @param {Object} data - 导入的数据
- * @param {boolean} isCloudPartialRestore - 是否是云端分片恢复(需要完整替换对应字段)
- */
 async function importBackupData(data, isCloudPartialRestore = false) {
     const startTime = Date.now();
     try {
         const isPartial = !!data._partialType;
         let message = "";
 
-        // ★★★ 修复1: 云端分片恢复时,完整替换对应字段,避免旧数据残留 ★★★
+        // === 核心修复：标准化 PeekData 防止旧版数组格式导致崩溃 ===
+        const normalizePeek = (pd) => {
+            if (!pd) return {};
+            if (Array.isArray(pd)) {
+                let res = {};
+                pd.forEach(item => { if(item.charId && item.data) res[item.charId] = item.data; });
+                return res;
+            }
+            return JSON.parse(JSON.stringify(pd));
+        };
+
         if (isCloudPartialRestore && isPartial) {
             message = `云端数据 (${data._partialType}) 已完整恢复`;
-            
-            // 直接完整替换,不做增量合并
             Object.keys(data).forEach(key => {
-                if (key.startsWith('_')) return; // 跳过元数据
-                if (data[key] !== undefined) {
-                    db[key] = JSON.parse(JSON.stringify(data[key])); // 深拷贝避免引用问题
+                if (key.startsWith('_')) return; 
+                // 针对 peekData 单独洗数据
+                if (key === 'peekData') {
+                    db.peekData = normalizePeek(data.peekData);
+                } else if (data[key] !== undefined) {
+                    db[key] = JSON.parse(JSON.stringify(data[key])); 
                 }
             });
         }
-        // 普通全量导入
         else if (!isPartial) {
-            // 全量导入才清空表
             if (typeof dexieDB !== 'undefined') {
                 await Promise.all([
-                    dexieDB.characters.clear(),
-                    dexieDB.groups.clear(),
-                    dexieDB.worldBooks.clear(),
-                    dexieDB.myStickers.clear(),
-                    dexieDB.userPersonas.clear(),
-                    dexieDB.globalSettings.clear(),
-                    dexieDB.forumPosts.clear(),
-                    dexieDB.peekData.clear(),
-                    dexieDB.rpgProfiles.clear(),
-                    dexieDB.forumMetadata.clear() 
+                    dexieDB.characters.clear(), dexieDB.groups.clear(), dexieDB.worldBooks.clear(),
+                    dexieDB.myStickers.clear(), dexieDB.userPersonas.clear(), dexieDB.globalSettings.clear(),
+                    dexieDB.forumPosts.clear(), dexieDB.peekData.clear(), dexieDB.rpgProfiles.clear(),
+                    dexieDB.forumMetadata.clear(),
+                    dexieDB.messages.clear() // 全量恢复时清空消息表
                 ]);
             }
             message = "全量数据已恢复";
-            
-            // 完整替换所有字段
-            Object.keys(db).forEach(key => {
+            Object.keys(db).forEach(key => { 
                 if (data[key] !== undefined) {
-                    db[key] = data[key];
+                    if (key === 'peekData') {
+                        db.peekData = normalizePeek(data[key]);
+                    } else {
+                        db[key] = JSON.parse(JSON.stringify(data[key])); // ★ 修复：深拷贝防止引用污染，与其他分支保持一致
+                    }
                 }
             });
         }
-        // 本地部分导入(增量合并模式)
         else {
             message = `部分数据 (${data._partialType}) 已合并`;
-            
             Object.keys(db).forEach(key => {
                 if (data[key] !== undefined) {
-                    if (Array.isArray(db[key]) && key !== 'characters' && key !== 'groups') {
+                    // 安全合并 peekData，防止覆盖其他角色
+                    if (key === 'peekData') {
+                        if (!db.peekData) db.peekData = {};
+                        Object.assign(db.peekData, normalizePeek(data.peekData));
+                    }
+                    else if (Array.isArray(db[key]) && key !== 'characters' && key !== 'groups') {
                         const existingIds = new Set(db[key].map(i => i.id));
                         data[key].forEach(item => {
                             if (!existingIds.has(item.id)) db[key].push(item);
-                            else {
-                                const idx = db[key].findIndex(i => i.id === item.id);
-                                if (idx !== -1) db[key][idx] = item;
-                            }
+                            else { const idx = db[key].findIndex(i => i.id === item.id); if (idx !== -1) db[key][idx] = item; }
                         });
                     } 
                     else if (key === 'characters' || key === 'groups') {
                         data[key].forEach(newItem => {
                             const existingItem = db[key].find(i => i.id === newItem.id);
-                            if (existingItem) {
-                                Object.assign(existingItem, newItem);
-                            } else {
-                                db[key].push(newItem);
-                            }
+                            if (existingItem) Object.assign(existingItem, newItem);
+                            else db[key].push(newItem);
                         });
                     } 
-                    else {
-                        db[key] = data[key];
-                    }
+                    else db[key] = data[key];
                 }
             });
         }
 
+        // =================================================================
+        // ★★★ 数据导入后：把老备份文件包含的 History 对象抽取为独立的消息行入库 ★★★
+        // =================================================================
+        let importMsgs =[];
+        if (db.characters) db.characters.forEach(c => { if(c.history) c.history.forEach((m, idx) => {
+            if (!m.id) m.id = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${idx}`; // ★ 兜底：老备份消息可能没有 id，强制补全防止 bulkPut 报错
+            importMsgs.push({...m, chatId: c.id, chatType: 'private'});
+        })});
+        if (db.groups) db.groups.forEach(g => { if(g.history) g.history.forEach((m, idx) => {
+            if (!m.id) m.id = `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${idx}`; // ★ 同上
+            importMsgs.push({...m, chatId: g.id, chatType: 'group'});
+        })});
+        
+        if (importMsgs.length > 0) {
+            // 如果导入数据包含这些角色，清理掉数据库中旧的消息以免冗余叠加
+            if (data.characters) await dexieDB.messages.where('chatId').anyOf(data.characters.map(c=>c.id)).delete();
+            if (data.groups) await dexieDB.messages.where('chatId').anyOf(data.groups.map(g=>g.id)).delete();
+            
+            await dexieDB.messages.bulkPut(importMsgs);
+            window.isMessageMigrated = true; // ★ 修复：导入后标记迁移完成，防止 saveData 把 history 写回 IndexedDB 导致下次加载重复触发升级弹窗
+        }
+
         // 兜底补全
-        if (!db.pomodoroTasks) db.pomodoroTasks = [];
-        if (!db.forumUserIdentity) db.forumUserIdentity = { 
-            nickname: '新用户', 
-            avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', 
-            persona: '',
-            realName: '',
-            anonCode: '0311',
-            customDetailCss: '' 
-        };
-        if (!db.homeWidgetSettings && typeof defaultWidgetSettings !== 'undefined') {
-            db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
-        }
+        if (!db.pomodoroTasks) db.pomodoroTasks =[];
+        if (!db.forumUserIdentity) db.forumUserIdentity = { nickname: '新用户', avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', persona: '', realName: '', anonCode: '0311', customDetailCss: '' };
+        if (!db.homeWidgetSettings && typeof defaultWidgetSettings !== 'undefined') db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
 
-        if (typeof saveData === 'function') {
-            await saveData(db);
-        }
-
+        if (typeof saveData === 'function') await saveData(db);
         if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
         if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
+        
         const duration = Date.now() - startTime;
         return { success: true, message: `${message} (耗时${duration}ms)` };
 
@@ -538,7 +550,7 @@ async function performOptimizedCloudBackup() {
     
     // 1. 系统数据 (包含设置、个性化、论坛、RPG等)
     const systemData = {
-        _exportVersion: '3.0',
+        _exportVersion: '4.0',
         _exportTimestamp: timestamp,
         _partialType: 'system_core',
         
@@ -574,12 +586,17 @@ async function performOptimizedCloudBackup() {
         pomodoroTasks: db.pomodoroTasks || [],
         homeScreenMode: db.homeScreenMode,
         fontUrl: db.fontUrl,
-        homeStatusBarColor: db.homeStatusBarColor
+        homeStatusBarColor: db.homeStatusBarColor,
+        homeNavigationBarColor: db.homeNavigationBarColor,
+    enableTopSafeArea: db.enableTopSafeArea,
+    enableBottomSafeArea: db.enableBottomSafeArea,
+    enableScreenAdaptation: db.enableScreenAdaptation,
+    enableSwipeBack: db.enableSwipeBack
     };
 
     // 2. 聊天数据 (聊天、群组、Peek)
     const chatData = {
-        _exportVersion: '3.0',
+        _exportVersion: '4.0',
         _exportTimestamp: timestamp,
         _partialType: 'chats_only', 
         
@@ -691,4 +708,5 @@ async function performOptimizedCloudRestore() {
     console.log('- 群组数:', db.groups?.length || 0);
     console.log('- 世界书数:', db.worldBooks?.length || 0);
     console.log('- 论坛帖子数:', db.forumPosts?.length || 0);
+    try { console.log('- 消息数:', await dexieDB.messages.count()); } catch(e) {}
 }

@@ -23,7 +23,7 @@ function setupCustomizeApp() {
             if (prop) db.homeWidgetSettings[part][prop] = newValue;
             else db.homeWidgetSettings[part] = newValue;
         }
-        await saveData();
+        await saveGlobalKeys(['customIcons', 'homeWidgetSettings']);
         setupHomeScreen(); // 实时刷新主页
     });
 
@@ -32,7 +32,7 @@ function setupCustomizeApp() {
         if (e.target.matches('.reset-icon-btn')) {
             const iconId = e.target.dataset.id;
             if (db.customIcons) delete db.customIcons[iconId];
-            await saveData();
+            await saveGlobalKeys(['customIcons']);
             renderCustomizeForm();
             setupHomeScreen();
             showToast('图标已重置');
@@ -41,7 +41,7 @@ function setupCustomizeApp() {
         if (e.target.matches('#reset-widget-btn')) {
             if (await AppUI.confirm('确定要将小部件恢复为默认设置吗？', "系统提示", "确认", "取消")) {
                 db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
-                await saveData();
+                await saveGlobalKeys(['homeWidgetSettings']);
                 renderCustomizeForm();
                 setupHomeScreen();
                 showToast('小部件已恢复默认');
@@ -381,7 +381,7 @@ function renderCustomizeForm() {
                         const newCss = globalCssTextarea.value;
                         db.globalCss = newCss;
                         applyGlobalCss(newCss);
-                        await saveData();
+                        await saveGlobalKeys(['globalCss']);
                         showToast('全局样式已应用');
                     });
                 }
@@ -396,7 +396,7 @@ function renderCustomizeForm() {
                             globalCssTextarea.value = preset.css;
                             db.globalCss = preset.css;
                             applyGlobalCss(preset.css);
-                            saveData();
+                            saveGlobalKeys(['globalCss']);
                             showToast('全局CSS预设已应用');
                         }
                     });
@@ -415,7 +415,7 @@ function renderCustomizeForm() {
                         } else {
                             db.globalCssPresets.push({ name, css });
                         }
-                        saveData();
+                         saveGlobalKeys(['globalCssPresets']);
                         populateGlobalCssPresetSelect();
                         showToast('全局CSS预设已保存');
                     });
@@ -487,7 +487,7 @@ function renderCustomizeForm() {
                         const newName = await AppUI.prompt('输入新名称：', p.name, "重命名");
                         if (!newName || newName === p.name) return;
                         db.globalCssPresets[idx].name = newName;
-                        saveData();
+                        saveGlobalKeys(['globalCssPresets']);
                         openGlobalCssManageModal();
                         populateGlobalCssPresetSelect();
                     };
@@ -498,7 +498,7 @@ function renderCustomizeForm() {
                     delBtn.onclick = async function () {
                         if (!await AppUI.confirm('确定删除预设 "' + p.name + '" ?', "系统提示", "确认", "取消")) return;
                         db.globalCssPresets.splice(idx, 1);
-                        saveData();
+                        saveGlobalKeys(['globalCssPresets']);
                         openGlobalCssManageModal();
                         populateGlobalCssPresetSelect();
                     };
