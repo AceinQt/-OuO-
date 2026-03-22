@@ -166,33 +166,68 @@ window.loadData = async () => {
             }
             const statusEl = document.getElementById('splash-status-text');
 
-            // 3. 如果用户点击了右侧的 "一键备份(推荐)" (choice === false)
+// 3. 如果用户点击了右侧的 "一键备份(推荐)" (choice === false)
             if (choice === false) {
                 if (statusEl) statusEl.textContent = "正在生成全量备份文件，请稍候...";
                 try {
-                    // 调用已有的全局备份函数
-                    if (typeof createFullBackupData === 'function') {
-                        const backupData = await createFullBackupData();
-                        const jsonString = JSON.stringify(backupData);
-                        const blob = new Blob([jsonString], { type: "application/json" });
-                        const url = URL.createObjectURL(blob);
+                    // 🌟 核心修复1：此时 window.db 还没被赋值，必须手动拼装刚才从数据库中取出的全量数据
+                    const settingsObj = settingsArray.reduce((acc, item) => { acc[item.key] = item.value; return acc; }, {});
+                    const forumMetaObj = newForumMeta.reduce((acc, item) => { acc[item.key] = item.value; return acc; }, {});
+                    
+                    let peekDataObj = {};
+                    if (newPeekData) { newPeekData.forEach(item => { peekDataObj[item.charId] = item.data; }); }
+
+                    const fullBackupData = {
+                        ...window.db, // 保留基础结构
+                        characters: characters || [],
+                        groups: groups || [],
+                        worldBooks: worldBooks ||[],
+                        myStickers: myStickers ||[],
+                        userPersonas: newUserPersonas.length > 0 ? newUserPersonas : (settingsObj['userPersonas'] || settingsObj['myPersonaPresets'] ||[]),
+                        rpgProfiles: newRpgProfiles.length > 0 ? newRpgProfiles : (settingsObj['rpgProfiles'] ||[]),
+                        forumPosts: newForumPosts.length > 0 ? newForumPosts : (settingsObj['forumPosts'] ||[]),
+                        peekData: peekDataObj,
+                        ...settingsObj,
+                        ...forumMetaObj,
+                        _exportVersion: '4.0',
+                        _exportTimestamp: Date.now()
+                    };
+
+                    const jsonString = JSON.stringify(fullBackupData);
+                    const dataBlob = new Blob([jsonString]);
+                    
+                    let downloadUrl;
+                    let fileName;
+                    const dateStr = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[\/\s:]/g, '');
+
+                    // 🌟 核心修复2：不依赖外部函数，直接使用 Gzip 压缩流，输出标准的 .ee 文件
+                    try {
+                        const compressionStream = new CompressionStream('gzip');
+                        const compressedStream = dataBlob.stream().pipeThrough(compressionStream);
+                        const compressedBlob = await new Response(compressedStream, { headers: { 'Content-Type': 'application/octet-stream' } }).blob();
                         
-                        // 触发系统下载
-                        const a = document.createElement('a');
-                        a.href = url;
-                        const dateStr = new Date().toLocaleString('zh-CN', { hour12: false }).replace(/[\/\s:]/g, '');
-                        a.download = `QChat_Safe_Backup_${dateStr}.json`;
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                        
-                        if (statusEl) statusEl.textContent = "备份文件已生成！准备开始迁移...";
-                        // 稍微停顿 1.5 秒，一方面让下载顺利弹出，一方面让用户看清状态
-                        await new Promise(r => setTimeout(r, 1500)); 
-                    } else {
-                        console.warn("未找到备份函数，跳过备份步骤");
+                        downloadUrl = URL.createObjectURL(compressedBlob);
+                        fileName = `QChat_Safe_Backup_${dateStr}.ee`; // 后缀修复为 .ee
+                    } catch (zipErr) {
+                        // 兜底：如果老旧设备浏览器不支持压缩流，才降级为 json
+                        console.warn("浏览器不支持压缩流，降级导出", zipErr);
+                        downloadUrl = URL.createObjectURL(dataBlob);
+                        fileName = `QChat_Safe_Backup_${dateStr}.json`;
                     }
+                    
+                    // 触发系统下载
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(downloadUrl);
+                    
+                    if (statusEl) statusEl.textContent = "备份文件已生成！准备开始迁移...";
+                    // 停顿 1.5 秒，让下载顺利弹出，让用户看清状态
+                    await new Promise(r => setTimeout(r, 1500)); 
+                    
                 } catch(e) {
                     console.error("备份失败:", e);
                     alert("备份过程遇到错误，将在没有备份的情况下强制继续迁移。");
