@@ -247,10 +247,10 @@ function getPeekBasePromptContext(char, mainChatContext) {
         const longFavs = (char.longTermSummaries ||[]).filter(s => s.isFavorited).map(s => `[长期历史] ${s.title}\n${s.content}`);
         allFavs = [...longFavs, ...shortFavs].join('\n\n');
     }
-    if (allFavs) prompt += `**重要记忆**：\n${allFavs}\n\n`;
+    if (allFavs) prompt += `之前发生的事(仅供你了解背景)：\n${allFavs}\n\n`;
 
     // 注入最近的聊天历史
-    prompt += `**最近聊天记录**（这是人物关系和当前状态的核心参考）：\n---\n${mainChatContext}\n---\n`;
+    prompt += `**最近聊天上下文**（生成内容需围绕聊天记录上下文）：\n---\n${mainChatContext}\n---\n`;
     
     return prompt;
 }
@@ -1396,7 +1396,7 @@ async function generateAndRenderPeekAlbum(options = {}) {
         
         systemPrompt += `
 【任务1：相册数据】
-请为 ${char.realName} 的手机相册生成5-8个Ta拍摄的照片或视频。内容需要与Ta的人设和聊天上下文高度相关。'IMAGE_DESC' 是对这张照片/视频的详细文字描述，它将代替真实的图片展示给用户。'ANNOTATION' 是 ${char.realName} 自己对这张照片/视频的批注，会显示在描述下方。
+请为 ${char.realName} 的手机相册生成5-8个Ta拍摄的照片或视频。内容需要与Ta的人设和最近聊天上下文内容高度相关。'IMAGE_DESC' 是对这张照片/视频的详细文字描述，它将代替真实的图片展示给用户。'ANNOTATION' 是 ${char.realName} 自己对这张照片/视频的批注，会显示在描述下方。
 
 【任务2：话题分享】
 在相册内容生成完毕后，请从你刚刚生成的相册内容中挑选1个你认为最适合分享给${char.myName}的条目。
@@ -1540,7 +1540,7 @@ async function generateAndRenderPeekBrowser(options = {}) {
         
         systemPrompt += `
 【任务1：浏览器记录】
-请生成3-5条浏览记录。记录本身要符合${char.realName}的人设和聊天上下文，'ANNOTATION' 字段则要站在角色自己的视角，记录Ta对这条浏览记录的想法或批注。
+请生成3-5条浏览记录。记录本身要符合${char.realName}的人设和最近聊天上下文，'ANNOTATION' 字段则要站在角色自己的视角，记录Ta对这条浏览记录的想法或批注。
 
 【任务2：话题分享】
 在浏览记录生成完毕后，请从你刚刚生成的内容中挑选1个你认为最适合分享给${char.myName}的网页。
@@ -1685,7 +1685,7 @@ async function generateAndRenderPeekSteps(options = {}) {
         
         systemPrompt += `
 【任务1：步数与轨迹数据】
-请为 ${char.realName} 生成今天的步数信息。你只需要生成Ta的当前步数(CURRENT_STEPS)，Ta的6条运动轨迹(TRAJECTORY)（禁止照搬示例）以及批注(ANNOTATION)。内容需要与${char.realName}的人设和聊天上下文高度相关。
+请为 ${char.realName} 生成今天的步数信息。你只需要生成Ta的当前步数(CURRENT_STEPS)，Ta的6条运动轨迹(TRAJECTORY)（禁止照搬示例）以及批注(ANNOTATION)。内容需要与${char.realName}的人设和最近聊天上下文高度相关。
 
 【任务2：话题分享】
 在步数信息生成完毕后，请结合这部分内容
@@ -1953,7 +1953,7 @@ async function generateAndRenderPeekMemos(options = {}) {
         
         systemPrompt += `
 【任务1：备忘录内容】
-请为 ${char.realName} 生成3-4条备忘录。内容要与${char.realName}的人设和聊天上下文高度相关。备忘录可以反映${char.realName}的计划、灵感、或者是日常琐事，备忘录正文(#CONTENT#)中可以包含换行符。
+请为 ${char.realName} 生成3-4条备忘录。内容要与${char.realName}的人设和最近聊天上下文高度相关。备忘录可以反映${char.realName}的计划、灵感、或者是日常琐事，备忘录正文(#CONTENT#)中可以包含换行符。
 
 【任务2：话题分享】
 在备忘录内容生成完毕后，请从刚刚生成的备忘录中挑选1个最可能引发交流的，预测一下，在未来的某个时间，${senderName}会根据这个备忘录的内容，发送消息给${char.myName}开启话题。
@@ -2106,7 +2106,7 @@ async function generateAndRenderPeekTransfer(options = {}) {
         systemPrompt += `
 【任务1：中转站记录】
 请为 ${char.realName} 生成4-7条Ta发送给自己的、简短零碎的消息。
-这些内容应该像是Ta的临时备忘、灵感闪现或随手保存的链接，要与Ta的人设和聊天上下文相关，但比“备忘录”应用的内容更随意、更口语化。
+这些内容应该像是Ta的临时备忘、灵感闪现或随手保存的链接，要与Ta的人设和最近聊天上下文高度相关，但比“备忘录”应用的内容更随意、更口语化。
 
 【任务2：话题分享】
 在中转站记录生成完毕后，请从刚刚生成的内容中挑选1个灵感/链接/备忘，预测一下，在未来的某个时间，${senderName}会围绕这个灵感/链接，发送消息给${char.myName}开启话题或分享日常。
@@ -2249,7 +2249,7 @@ async function generateAndRenderPeekMessages(options = {}) {
         
         systemPrompt += `
 【任务1：消息记录】
-请为 ${char.realName} 编造3-5个最近的对话。对话内容需要强烈反映Ta的人设以及和聊天上下文。
+请为 ${char.realName} 编造3-5个最近的对话。对话内容需要强烈反映Ta的人设以及和最近聊天上下文。
 每段对话需要提供对话对象的称呼(#PARTNER#)以及具体的聊天记录(#HISTORY#)。
 在 #HISTORY# 中，请严格使用以下格式记录每条消息：
 如果是 ${char.realName} 发送的，以 "char: " 开头；
@@ -2555,7 +2555,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
         
         systemPrompt += `
 【任务1：小号内容记录】
-请为 ${char.realName} 生成一个符合其人设的私密小号。内容要生活化、碎片化，符合小号的风格，并与Ta的人设和聊天上下文高度相关。
+请为 ${char.realName} 生成一个符合其人设的私密小号。内容要生活化、碎片化，符合小号的风格，并与Ta的人设和最近聊天上下文高度相关。
 你需要生成以下信息：
 #NICKNAME#: 小号的昵称
 #HANDLE#: @开头的ID

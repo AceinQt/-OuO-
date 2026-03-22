@@ -127,7 +127,7 @@ function bindHomeScreenEventsOnce() {
                 const newSignature = target.textContent.trim();
                 if (db.homeSignature !== newSignature) {
                     db.homeSignature = newSignature;
-                    await saveData();
+                    await saveGlobalKeys(['homeSignature', 'insWidgetSettings']);
                     showToast('签名已保存');
                 }
             } else if (target.id === 'ins-widget-bubble-1' || target.id === 'ins-widget-bubble-2') { 
@@ -135,7 +135,7 @@ function bindHomeScreenEventsOnce() {
                 const newText = target.textContent.trim();
                 if (db.insWidgetSettings[bubbleId] !== newText) {
                     db.insWidgetSettings[bubbleId] = newText;
-                    await saveData();
+                    await saveGlobalKeys(['homeSignature', 'insWidgetSettings']);
                     showToast('小组件文字已保存');
                 }
             }
@@ -205,7 +205,7 @@ async function applyHomeScreenMode(mode) {
         if (toggle) toggle.checked = false;
     }
     db.homeScreenMode = mode;
-    await saveData();
+    await saveGlobalKeys(['homeScreenMode']);
 }
 
 // 电池状态
@@ -318,7 +318,7 @@ function setupInsWidgetAvatarModal() {
             db.insWidgetSettings.avatar2 = newSrc;
         }
 
-        await saveData();
+        await saveGlobalKeys(['homeWidgetSettings', 'insWidgetSettings']);
         setupHomeScreen(); // 刷新显示
         modal.classList.remove('visible');
         showToast('头像已更新');

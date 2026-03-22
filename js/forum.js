@@ -383,15 +383,13 @@ function setupMePageFeature() {
                     realName: currentRealName?.value.trim() || '',
                     anonCode: finalCode,
                     customDetailCss: currentCss?.value || ''
-                };
-
-                console.log("📝 准备保存的数据:", db.forumUserIdentity);
+                };                
 
                 // ✅ 修复7: 调用保存函数
-                if (typeof saveData === 'function') {
-                    await saveData();
-                    console.log("✅ 数据已保存到 IndexedDB");
-                } else {
+                if (typeof saveForumMeta === 'function') {
+    await saveForumMeta();
+    console.log("✅ 论坛设置已精准保存");
+            } else {
                     console.error("❌ saveData 函数不存在");
                 }
 
@@ -605,8 +603,8 @@ function setupMePageFeature() {
                             historyLimit: limit
                         };
 
-                        await saveData();
-                        showToast('世界设定已保存');
+await saveForumMeta();
+showToast('世界设定已保存');
                     });
                 }
 
@@ -849,9 +847,9 @@ function setupMePageFeature() {
                             db.watchingPostIds = db.watchingPostIds.filter(id => !idsToRemove.includes(id));
                         }
 
-                        await saveData();
-                        renderFavoritesList();
-                        showToast(`已${actionName}`);
+await saveForumMeta();
+renderFavoritesList();
+showToast(`已${actionName}`);
 
                         newManageBtn.click(); // 退出管理模式
                     }
@@ -921,7 +919,7 @@ function setupMePageFeature() {
                             newStarBtn.classList.remove('active');
                             showToast('已取消收藏');
                         }
-                        await saveData();
+                        await saveForumMeta();
                         if (typeof renderFavoritesList === 'function') renderFavoritesList();
                     });
                 }
@@ -993,7 +991,7 @@ function setupMePageFeature() {
                             activeBtn.classList.remove('watching');
                             showToast('已移出“角色在看”列表');
                         }
-                        await saveData();
+                        await saveForumMeta();
                     });
                 }
 
@@ -1251,8 +1249,9 @@ const scrollableArea = document.querySelector('#forum-screen .forum-content-area
                         };
 
                         db.forumPosts.unshift(newPost);
-                        await saveData();
-                        renderForumPosts(db.forumPosts);
+// 使用新函数保存这一条新帖
+await saveSinglePost(newPost.id); 
+renderForumPosts(db.forumPosts);
 
                         createModal.classList.remove('visible');
                         showToast('发送成功');
@@ -1436,8 +1435,9 @@ const observer = new MutationObserver((mutations) => {
                     };
 
                     post.comments.push(newComment);
-                    await saveData();
-                    contentInput.value = '';
+// 只保存当前这条帖子（评论是包含在帖子对象里的）
+await saveSinglePost(post.id); 
+contentInput.value = '';
 
                     renderPostDetail(post);
 
@@ -1457,7 +1457,7 @@ const observer = new MutationObserver((mutations) => {
 
                         if (post && await AppUI.confirm('确定要删除这条评论吗？', "系统提示", "确认", "取消")) {
                             post.comments.splice(index, 1);
-                            await saveData();
+                            await saveSinglePost(post.id);
                             renderPostDetail(post);
                             showToast('评论已删除');
                         }
@@ -1495,7 +1495,7 @@ if (deletePostBtn) {
                 }
                 
                 // 4. 保存收藏和关注的变化
-                await saveData();
+                await saveForumMeta();
 
                 // 5. 清理主页DOM
                 const mainContainer = document.getElementById('forum-posts-container');
@@ -1714,10 +1714,12 @@ if (deletePostBtn) {
                                 timestamp: Date.now()
                             };
                             character.history.push(message);
+                            saveSingleChat(charId, 'private'); 
+                            saveMessageToDB(message, charId, 'private');
                         }
                     });
 
-                    await saveData();
+
                     try { if (typeof renderChatList === 'function') renderChatList(); } catch (e) { }
 
                     modal.classList.remove('visible');
@@ -2092,8 +2094,25 @@ savedForumScrollY = 0;
 
                     const result = await response.json();
                     const contentStr = result.choices[0].message.content;
+ // --- 强力清理：兼容 <think> <thought> thinking 等所有思考标签 ---
+let cleanContent = contentStr;
 
-                    const rawPosts = contentStr.split('===SEP===');
+// 1. 自动删除所有成对的思考标签 (如 <think>...</think>, <thought>...</thought>)
+cleanContent = cleanContent.replace(/<(think|thought|thinking)>[\s\S]*?<\/\1>/gi, '').trim();
+
+// 2. 自动删除以 "Thinking:" 或 "思考：" 开头的一整段废话
+cleanContent = cleanContent.replace(/^(Thinking|思考|thought|think)[:：][\s\S]*?\n\n/i, '').trim();
+
+// 3. 【最核心】直接定位到第一个 #AUTHOR# 标签
+// 这样不管 AI 前面写了多少字思考，只要没带标签，我们直接从正文开始截取
+const firstTag = cleanContent.indexOf('#AUTHOR#');
+if (firstTag !== -1) {
+    cleanContent = cleanContent.substring(firstTag);
+}
+
+// 4. 将清理后的内容交给原有的分割逻辑
+const rawPosts = cleanContent.split('===SEP===');
+
                     const newPostsToAdd = [];
 
                     // 清除旧帖子的 [New!] 标记
@@ -2155,7 +2174,7 @@ savedForumScrollY = 0;
                     if (newPostsToAdd.length > 0) {
                         if (!db.forumPosts) db.forumPosts = [];
                         db.forumPosts.unshift(...newPostsToAdd);
-                        await saveData();
+                        await dexieDB.forumPosts.bulkPut(newPostsToAdd);
 
                         if (loadingDiv && loadingDiv.parentNode) loadingDiv.remove();
 
@@ -2306,7 +2325,7 @@ ${commentsHistoryStr}
 2.评论者网名由你编撰。极少数评论者想要隐藏身份时，可以选择匿名评论，匿名评论的用户名为“喵叽”+论坛随机生成的四位数字。
 3. 禁止刷屏：同一个用户名不要评论超过1次。同一个角色发表评论时，使用的网名应保持一致，上下文逻辑应连续。
 4.如已有的评论列表存在User（${myNickname}）发表的评论，本次生成的评论中，char或者其他网友应至少发表1条评论回复${myNickname}的最新评论。
-5. **直接返回文本**，每行一条，格式必须为 "用户名:评论内容"。无需输出思考过程、思维链或生成内容说明。`;
+5. **直接返回文本**，每行一条，格式必须为 "用户名:评论内容"。`;
 
                     const requestBody = {
                         model: model,
@@ -2325,7 +2344,7 @@ ${commentsHistoryStr}
                     }
 
                     const result = await response.json();
-                    console.log("API 原始返回结果:", result);
+
                     // --- 增强的错误检查 ---
                     if (result.error) {
                         throw new Error('API 返回错误: ' + result.error.message);
@@ -2336,7 +2355,7 @@ ${commentsHistoryStr}
                     }
 
                     const contentStr = result.choices[0].message.content;
-
+                    
                     // 检查是否被内容审查拦截 (返回空内容)
                     if (!contentStr || contentStr.trim() === "") {
                         // 检查结束原因
@@ -2347,7 +2366,16 @@ ${commentsHistoryStr}
                         throw new Error('生成失败：AI 返回了空内容。');
                     }
 
-                    const lines = contentStr.split('\n');
+                    // --- 新增：强制清理评论里的思考过程 ---
+let cleanContentComments = contentStr;
+// 1. 删掉思考标签
+cleanContentComments = cleanContentComments.replace(/<(think|thought|thinking)>[\s\S]*?<\/\1>/gi, '').trim();
+// 2. 评论格式通常是 "用户名:内容"，如果 AI 之前说了废话，尝试找到第一个冒号的位置
+// 但为了保险，我们只清理明显的思考标记
+cleanContentComments = cleanContentComments.replace(/###\s*(🧠|思考|Thinking)[\s\S]*?(?=[\w\u4e00-\u9fa5]+[:：])/i, '').trim();
+
+
+const lines = cleanContentComments.split('\n');
                     const newComments = [];
 
                     let baseTime = Date.now();
@@ -2392,7 +2420,7 @@ ${commentsHistoryStr}
                         const dbPostIndex = db.forumPosts.findIndex(p => p.id === post.id);
                         if (dbPostIndex !== -1) {
                             db.forumPosts[dbPostIndex] = post;
-                            await saveData();
+                            await saveSinglePost(post.id);
 
                             renderPostDetail(post);
 

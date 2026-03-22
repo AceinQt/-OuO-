@@ -1606,7 +1606,7 @@ async function rpgStartNewGame() {
     if (!db.rpgProfiles) db.rpgProfiles = [];
     db.rpgProfiles.push(newProfile);
     currentProfileId = newProfileId; // 锁定当前档案
-    await saveData(); // 立即保存
+    await saveSingleRPGProfile(newProfileId); // 立即保存
 
     switchScreen('rpg-game-screen');
     
@@ -1732,7 +1732,7 @@ window.deleteProfile = async function(id, e) {
     
     if (input === profile.p1Name) {
         db.rpgProfiles = db.rpgProfiles.filter(p => p.id !== id);
-        await saveData(); // 保存更改
+        await dexieDB.rpgProfiles.delete(id);  // 保存更改
         renderProfileList(); // 刷新列表
         showToast("档案已彻底删除");
     } else {
@@ -1851,7 +1851,7 @@ async function handleSlotClick(index) {
             // 更新档案的最后游玩时间
             profile.timestamp = Date.now();
             
-            await saveData(); // 全局保存
+            saveSingleRPGProfile(currentProfileId); // 全局保存
             showToast("游戏已保存");
             requestAnimationFrame(() => renderSaveSlots());
         }

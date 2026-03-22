@@ -36,7 +36,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                     } else {
                         db.worldBooks.push({ id: `wb_${Date.now()}`, name, content, position, category });
                     }
-                    await saveData();
+                    await saveWorldBookData();
                     showToast('世界书条目已保存');
                     renderWorldBookList();
                     switchScreen('world-book-screen');
@@ -212,7 +212,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                                 db.groups.forEach(group => {
                                     if (group.worldBookIds) group.worldBookIds = group.worldBookIds.filter(id => id !== bookIdToDelete);
                                 });
-                                await saveData();
+                                await dexieDB.worldBooks.delete(bookIdToDelete);
                                 renderWorldBookList();
                                 showToast('世界书条目已删除');
                             });
@@ -379,7 +379,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                         }
                     });
 
-                    await saveData();
+                    await dexieDB.worldBooks.delete(bookIdToDelete);
                     showToast(`已成功删除 ${count} 个条目`);
                     exitWorldBookMultiSelectMode();
                 }

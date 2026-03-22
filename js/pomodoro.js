@@ -98,7 +98,7 @@
                 settings.focusBackground = document.getElementById('pomodoro-focus-bg-url').value.trim();
                 settings.taskCardBackground = document.getElementById('pomodoro-task-card-bg-url').value.trim();
 
-                await saveData();
+                await savePomodoroData();
                 applyPomodoroBackgrounds();
 
                 // Update avatar in focus screen if it's active
@@ -165,7 +165,7 @@
                         db.pomodoroSettings = {};
                     }
                     db.pomodoroSettings.globalWorldBookIds = selectedIds;
-                    await saveData();
+                    await saveGlobalKeys(['pomodoroSettings']);
                     modal.classList.remove('visible');
                     showToast('全局专注世界书已更新');
                 });
@@ -369,7 +369,8 @@
                             senderId: 'user_me'
                         };
                         chat.history.push(message);
-                        await saveData();
+                        await saveSingleChat(chat.id, 'private');
+                        await saveMessageToDB(message, chat.id, 'private');
                         showToast('已转发到聊天框！');
                         renderChatList();
                     }
@@ -642,7 +643,7 @@ const userNick = userPersonaObj ? userPersonaObj.nickname : '一个普通人'; /
                             db.pomodoroTasks = [];
                         }
                         db.pomodoroTasks.push(newTask);
-                        await saveData();
+                        await savePomodoroData();
 
                         showToast(`任务 "${taskName}" 已创建`);
                         renderPomodoroTasks();
@@ -769,7 +770,7 @@ const userNick = userPersonaObj ? userPersonaObj.nickname : '一个普通人'; /
                             const taskId = cardWrapper.dataset.id;
                             if (await AppUI.confirm('确定要删除这个任务吗？', "系统提示", "确认", "取消")) {
                                 db.pomodoroTasks = db.pomodoroTasks.filter(t => t.id !== taskId);
-                                await saveData();
+                                await savePomodoroData();
                                 renderPomodoroTasks();
                                 showToast('任务已删除');
                             }
