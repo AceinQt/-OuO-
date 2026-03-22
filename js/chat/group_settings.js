@@ -135,7 +135,7 @@ function setupGroupChatSystem() {
             worldBookIds:[]
         };
         db.groups.push(newGroup);
-        await saveData();
+        await saveSingleChat(newGroup.id, 'group');
         renderChatList();
         createGroupModal.classList.remove('visible');
         showToast(`群聊“${groupName}”创建成功！`);
@@ -173,7 +173,7 @@ function setupGroupChatSystem() {
                 if (group) {
                     group.chatBg = compressedUrl;
                     chatRoomScreen.style.backgroundImage = `url(${compressedUrl})`;
-                    await saveData();
+                    await saveSingleChat(currentChatId, 'group');
                     showToast('聊天背景已更换');
                 }
             } catch (error) {
@@ -188,7 +188,8 @@ function setupGroupChatSystem() {
         if (!group) return;
         if (await AppUI.confirm(`你确定要清空群聊“${group.name}”的所有聊天记录吗？这个操作是不可恢复的！`, "系统提示", "确认", "取消")) {
             group.history = [];
-            await saveData();
+            await clearChatHistoryInDB(currentChatId);
+            await saveSingleChat(currentChatId, 'group');
             renderMessages(false, true);
             renderChatList();
             groupSettingsSidebar.classList.remove('open');
@@ -251,10 +252,11 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
                };
                group.history.push(message);
                addMessageBubble(message, group.id, 'group'); // 立即显示气泡
+               await saveMessageToDB(message, currentChatId, 'group');
                showToast('成员昵称已变更');
            }
             
-            await saveData();
+            await saveSingleChat(currentChatId, 'group');
             renderGroupMembersInSettings(group);
             document.querySelectorAll(`.message-wrapper[data-sender-id="${member.id}"] .group-nickname`).forEach(el => {
                 el.textContent = member.groupNickname;
@@ -317,7 +319,7 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
             }
         });
         if (selectedCharIds.length > 0) {
-            await saveData();
+            await saveSingleChat(currentChatId, 'group');
             renderGroupMembersInSettings(group);
             renderMessages(false, true);
             showToast('已邀请新成员');
@@ -339,7 +341,7 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
         };
         group.members.push(newMember);
         sendInviteNotification(group, newMember.realName);
-        await saveData();
+        await saveSingleChat(currentChatId, 'group');
         renderGroupMembersInSettings(group);
         renderMessages(false, true);
         showToast(`新成员 ${newMember.realName} 已加入`);
@@ -545,6 +547,7 @@ async function saveGroupSettingsFromSidebar() {
             timestamp: Date.now()
         };
         group.history.push(message);
+        await saveMessageToDB(message, currentChatId, 'group'); 
     }
 
     group.me.avatar = document.getElementById('setting-group-my-avatar-preview').src;
@@ -597,7 +600,7 @@ async function saveGroupSettingsFromSidebar() {
         updateCustomBubbleStyle(currentChatId, group.customBubbleCss, group.useCustomBubbleCss);
     }
     
-    await saveData();
+    await saveSingleChat(currentChatId, 'group');
     showToast('群聊设置已保存！');
     chatRoomTitle.textContent = group.name;
     renderChatList();
@@ -674,7 +677,7 @@ function renderInviteSelectionList() {
     });
 }
 
-function sendInviteNotification(group, newMemberRealName) {
+async function sendInviteNotification(group, newMemberRealName) {
     const messageContent = `[${group.me.realName}邀请${newMemberRealName}加入了群聊]`;
     const message = {
         id: `msg_${Date.now()}`,
@@ -685,9 +688,10 @@ function sendInviteNotification(group, newMemberRealName) {
         senderId: 'user_me'
     };
     group.history.push(message);
+    await saveMessageToDB(message, group.id, 'group');
 }
 
-function sendRenameNotification(group, newName) {
+async function sendRenameNotification(group, newName) {
     const myName = group.me.realName;
     const messageContent = `[${myName}修改群名为：${newName}]`;
     const message = {
@@ -698,4 +702,5 @@ function sendRenameNotification(group, newName) {
         timestamp: Date.now()
     };
     group.history.push(message);
+    await saveMessageToDB(message, group.id, 'group');
 }

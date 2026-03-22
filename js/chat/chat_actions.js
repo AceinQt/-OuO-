@@ -342,11 +342,11 @@ async function saveMessageEdit() {
 
     // --- 更新数据 ---
     chat.history[messageIndex].content = newContent;
-    
     if (chat.history[messageIndex].parts) {
-        chat.history[messageIndex].parts = [{ type: 'text', text: newContent }];
+        chat.history[messageIndex].parts =[{ type: 'text', text: newContent }];
     }
 
+    await saveMessageToDB(chat.history[messageIndex], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
     
     // ==========================================
@@ -435,7 +435,8 @@ function enterMultiSelectMode(initialMessageId) {
                 const deletedCount = selectedMessageIds.size;
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
                 chat.history = chat.history.filter(m => !selectedMessageIds.has(m.id));
-                await saveSingleChat(currentChatId, currentChatType);
+                await deleteMessagesFromDB(Array.from(selectedMessageIds));
+    await saveSingleChat(currentChatId, currentChatType);
                 currentPage = 1;
                 renderMessages(false, true);
                 renderChatList();
@@ -486,6 +487,7 @@ async function withdrawMessage(messageId) {
     }
 
     // 保存数据
+    await saveMessageToDB(message, currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
 
     // 重新渲染

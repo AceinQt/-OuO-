@@ -206,7 +206,7 @@ function setupAddCharModal() {
         };
 
         db.characters.push(newChar);
-        await saveData();
+        await saveSingleChat(newChar.id, 'private');
         
         if(typeof renderChatList === 'function') renderChatList();
         addCharModal.classList.remove('visible');
@@ -313,7 +313,7 @@ function openUserPersonaModal(persona = null) {
                     label: chatItem.isPinned ? '取消置顶' : '置顶聊天',
                     action: async () => {
                         chatItem.isPinned = !chatItem.isPinned;
-                        await saveData();
+                        await saveSingleChat(chatId, chatType); 
                         renderChatList();
                     }
                 }, {
@@ -328,8 +328,9 @@ function openUserPersonaModal(persona = null) {
                                 await dexieDB.groups.delete(chatId);
                                 db.groups = db.groups.filter(g => g.id !== chatId);
                             }
-                            // No need to call saveData() as we've directly manipulated the DB and in-memory object.
-                            renderChatList();
+
+                            
+ await clearChatHistoryInDB(chatId);                           renderChatList();
                             showToast('聊天已删除');
                         }
                     }
@@ -588,8 +589,32 @@ function setupUserPersonaModal() {
             showToast('档案创建成功');
         }
         
-        // 保存并刷新
-        await saveData();
+
+await saveUserPersonaTable(); // 1. 保存档案表
+
+        // 2. 如果发生了同步更新（私聊或群聊），需要同步对应的表
+        // ⚠️ 修复：必须安全剥离 history，或者直接调用 saveData()，绝不能直接原样 put
+        try {
+            if (db.characters && db.characters.length > 0) {
+                const safeChars = db.characters.map(c => { 
+                    const o = {...c}; 
+                    if(window.isMessageMigrated) delete o.history; 
+                    return o; 
+                });
+                await dexieDB.characters.bulkPut(safeChars); 
+            }
+            if (db.groups && db.groups.length > 0) {
+                const safeGroups = db.groups.map(g => { 
+                    const o = {...g}; 
+                    if(window.isMessageMigrated) delete o.history; 
+                    return o; 
+                });
+                await dexieDB.groups.bulkPut(safeGroups); 
+            }
+        } catch (e) {
+            console.error("同步角色与群聊信息失败:", e);
+        }
+
         renderUserPersonas();
         
         // 关闭弹窗

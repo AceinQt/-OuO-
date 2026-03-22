@@ -131,7 +131,7 @@ async function setupStickerSystem() {
                     const sCat = s.category || '默认';
                     if (sCat === currentActionCategory) s.category = newName;
                 });
-                await saveData();
+                await saveGlobalKeys(['myStickers']);
                 if (currentStickerCategory === currentActionCategory) {
                     currentStickerCategory = newName;
                 }
@@ -186,7 +186,9 @@ async function setupStickerSystem() {
             });
             
             await dexieDB.myStickers.bulkDelete(Array.from(idsToDelete));
-            await saveData();
+            await saveGlobalKeys(['myStickers']);
+            const safeChars = db.characters.map(c => { const o = {...c}; if(window.isMessageMigrated) delete o.history; return o; });
+            await dexieDB.characters.bulkPut(safeChars);
             
             if (currentStickerCategory === currentActionCategory) {
                 currentStickerCategory = '全部';
@@ -227,7 +229,9 @@ async function setupStickerSystem() {
                 }
             });
             await dexieDB.myStickers.bulkDelete(Array.from(selectedStickerIds));
-            await saveData();
+            await saveGlobalKeys(['myStickers']);
+            const safeChars = db.characters.map(c => { const o = {...c}; if(window.isMessageMigrated) delete o.history; return o; });
+            await dexieDB.characters.bulkPut(safeChars);
             
             showToast('删除成功');
             isStickerManageMode = false;
@@ -287,7 +291,7 @@ async function setupStickerSystem() {
             stickerData.id = `sticker_${Date.now()}`;
             db.myStickers.push(stickerData);
         }
-        await saveData();
+        await saveGlobalKeys(['myStickers']);
         renderStickerGrid();
         addStickerModal.classList.remove('visible');
         showToast('表情包已保存');
@@ -358,7 +362,7 @@ async function setupStickerSystem() {
         
         if (newStickers.length > 0) {
             db.myStickers.push(...newStickers); 
-            await saveData();
+            await saveGlobalKeys(['myStickers']);
             renderStickerGrid();
             batchAddStickerModal.classList.remove('visible');
             showToast(`成功导入 ${newStickers.length} 个新表情！`);
@@ -402,7 +406,9 @@ async function setupStickerSystem() {
                     if (c.stickerIds) c.stickerIds = c.stickerIds.filter(id => id !== currentStickerActionTarget);
                 });
                 await dexieDB.myStickers.delete(currentStickerActionTarget);
-                await saveData();
+                await saveGlobalKeys(['myStickers']);
+                const safeChars = db.characters.map(c => { const o = {...c}; if(window.isMessageMigrated) delete o.history; return o; });
+                await dexieDB.characters.bulkPut(safeChars);
                 renderStickerGrid();
                 showToast('表情已彻底删除');
             }
@@ -638,6 +644,7 @@ function handleStickerLongPress(stickerId) {
                 }
                 chat.history.push(message);
                 addMessageBubble(message, currentChatId, currentChatType);
+                await saveMessageToDB(message, currentChatId, currentChatType);
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
                 stickerModal.classList.remove('visible');

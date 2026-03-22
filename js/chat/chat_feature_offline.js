@@ -50,6 +50,7 @@
                     };
                     chat.history.push(displayMsg);
                     addMessageBubble(displayMsg, currentChatId, currentChatType);
+                    await saveMessagesToDB([instructionMsg, displayMsg], currentChatId, currentChatType); 
                 }
                 // =======================================================
                 // 情况 2: 进入线下模式
@@ -76,6 +77,7 @@
                     };
                     chat.history.push(displayMsg);
                     addMessageBubble(displayMsg, currentChatId, currentChatType);
+                    await saveMessagesToDB([instructionMsg, displayMsg], currentChatId, currentChatType);
                 }
 
                 await saveSingleChat(currentChatId, currentChatType);

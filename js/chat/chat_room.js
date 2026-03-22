@@ -76,7 +76,7 @@ function setupChatRoom() {
             if (currentChatType === 'private' && currentChatId) {
                 const chat = db.characters.find(c => c.id === currentChatId);
                  // 假设我们在角色属性中用 proactiveMessagingEnabled 来控制开关
-                if (chat && chat.proactiveMode === 'fixed') {
+                if (chat && chat.proactiveMode === 'fixed' || chat.proactiveMode === 'timer') {
                     proactiveBtn.classList.add('active');
                 }
             }
@@ -95,7 +95,66 @@ function setupChatRoom() {
     messageInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !isGenerating) sendMessage();
     });
-    getReplyBtn.addEventListener('click', () => getAiReply(currentChatId, currentChatType));
+    getReplyBtn.addEventListener('click', async () => {
+        if (isGenerating) return;
+
+        // 1. 获取当前聊天的实例
+        const chat = (currentChatType === 'private') 
+            ? db.characters.find(c => c.id === currentChatId) 
+            : db.groups.find(g => g.id === currentChatId);
+
+        if (chat) {
+            const lastValidMsg = getLastValidInteractMsg(chat);
+            // 2. 如果最后一条有效消息是 AI 发送的，说明用户没有回复
+            if (lastValidMsg && (lastValidMsg.role === 'assistant' || lastValidMsg.role === 'model')) {
+                const confirmed = await AppUI.confirm("你还没有回复，是否继续？", "确认继续", "继续回复", "取消");
+                if (!confirmed) return; 
+                
+                // === 关键修改：区分线上/线下模式，动态获取角色名称注入 Prompt ===
+                let continueInstruction = '';
+                
+                if (currentChatType === 'private') {
+                    if (chat.offlineModeEnabled) {
+                        // 线下模式：强调动作和续写故事
+                        continueInstruction = `[system: ${chat.myName}暂时没有发起新的动作，请继续实时续写${chat.realName}的故事。]`;
+                    } else {
+                        // 线上模式私聊：强调聊天延续
+                        continueInstruction = `[system: ${chat.myName}暂时没有回复，请自然地延续聊天内容。]`;
+                    }
+                } else {
+                    // 线上模式群聊：获取群聊中我的真名或昵称
+                    const myNameInGroup = chat.me.realName || chat.me.nickname || "我";
+                    continueInstruction = `[system: ${myNameInGroup}暂时没有回复，请自然地延续聊天内容。]`;
+                }
+
+                const instructionMsg = {
+                    id: `msg_ins_continue_${Date.now()}`, 
+                    role: 'user', 
+                    content: continueInstruction,
+                    parts:[{ type: 'text', text: continueInstruction }],
+                    timestamp: Date.now(),
+                    isHidden: true, // 在界面中隐身
+                    isAiIgnore: false // 提交给 AI 接口
+                };
+                
+                if (currentChatType === 'group') {
+                    instructionMsg.senderId = 'user_me';
+                }
+                
+                // 推入历史并保存
+                chat.history.push(instructionMsg);
+                await saveMessageToDB(instructionMsg, currentChatId, currentChatType);
+            }
+        }
+        
+        // 3. 时间感知检查（与 sendMessage 一致，补上点击按钮时也能触发）
+        if (chat) {
+            await processTimePerception(chat, currentChatId, currentChatType, true);
+        }
+
+        // 4. 正常调用获取 AI 回复
+        getAiReply(currentChatId, currentChatType);
+    });
     regenerateBtn.addEventListener('click', handleRegenerate);
 
 // ==========================================
@@ -632,6 +691,7 @@ if (!invisibleRegex.test(message.content)) {
                             if (giftCardOnScreen) {
                                 giftCardOnScreen.classList.add('received');
                             }
+                            await saveMessageToDB(giftMsg, currentChatId, currentChatType);
                             await saveSingleChat(currentChatId, currentChatType);
                         }
                         return;
@@ -651,6 +711,7 @@ if (!invisibleRegex.test(message.content)) {
                                 const statusElem = transferCardOnScreen.querySelector('.transfer-status');
                                 if (statusElem) statusElem.textContent = statusToSet === 'received' ? '已收款' : '已退回';
                             }
+                            await saveMessageToDB(transferMsg, currentChatId, currentChatType);
                             await saveSingleChat(currentChatId, currentChatType);
                         }
                     } else {
@@ -704,7 +765,7 @@ function getLastValidInteractMsg(chat) {
     return null;
 }
 
-async function processTimePerception(chat, chatId, chatType) {
+async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = false) {
     if (!db.apiSettings || !db.apiSettings.timePerceptionEnabled) return;
 
     // 1. 直接调用提取出来的公共函数
@@ -727,8 +788,13 @@ async function processTimePerception(chat, chatId, chatType) {
 
         let contextContent = '';
         if (lastValidMsg.role === 'assistant') {
+            // 上条是AI发的：AI自己沉默了很久后被触发回复
             contextContent = `[系统情景通知：距离你上一条发送的消息已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。请注意时间流逝带来的情境变化。]`;
+        } else if (isAiReplyTrigger) {
+            // 上条是用户发的，但用户没有发新消息，而是手动点击了AI回复按钮
+            contextContent = `[系统情景通知：距离用户的上一条消息已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。用户一直没有继续说话，请注意这段时间流逝带来的情境变化。]`;
         } else {
+            // 上条是用户发的，用户刚刚发送了新消息才触发
             contextContent = `[系统情景通知：距离用户的上一条消息已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。用户刚才打破了沉默，请注意时间流逝带来的情境变化。]`;
         }
         
@@ -747,6 +813,7 @@ async function processTimePerception(chat, chatId, chatType) {
 
         chat.history.push(visualMessage, contextMessage);
         addMessageBubble(visualMessage, chatId, chatType);
+        await saveMessagesToDB([visualMessage, contextMessage], chatId, chatType);
     }
 }
 
@@ -817,11 +884,12 @@ async function processTimePerception(chat, chatId, chatType) {
                 }
                 chat.history.push(message);
                 addMessageBubble(message, currentChatId, currentChatType);
+                
 
                 if (chat.history.length > 0 && chat.history.length % 100 === 0) {
                     promptForBackupIfNeeded('history_milestone');
                 }
-
+await saveMessageToDB(message, currentChatId, currentChatType);
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
 
@@ -964,7 +1032,7 @@ function formatSmartTime(timestamp) {
                                 itemEl.classList.add('active');
                             }
                             // ====== 【新增：判断主动发消息的激活状态】 ======
-                            if (item.id === 'proactive-messaging-settings' && chat.proactiveMode === 'fixed') {
+                            if (item.id === 'proactive-messaging-settings' && chat.proactiveMode === 'fixed'|| chat.proactiveMode === 'timer') {
     itemEl.classList.add('active');
 }
                             // ==============================================

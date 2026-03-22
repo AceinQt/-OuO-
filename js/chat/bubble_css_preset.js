@@ -124,7 +124,7 @@ function _getBubblePresets() {
 
 function _saveBubblePresets(arr) {
     db.bubbleCssPresets = arr ||[];
-    saveData();
+   saveGlobalKeys(['bubbleCssPresets']);
 }
 // =================================== 更新预览区域核心逻辑 ===================================
 
@@ -957,7 +957,7 @@ function syncBasicUiFromCss(css) {
                 return updated;
             };
             let updatedP = updateChats(db.characters ||[]); let updatedG = updateChats(db.groups ||[]);
-            if (updatedP || updatedG) await saveData();
+            if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
 
             showToast('外观保存成功！');
             if (typeof window.populateChatThemeSelects === 'function') window.populateChatThemeSelects();
@@ -998,7 +998,7 @@ function syncBasicUiFromCss(css) {
                     return updated;
                 };
                 let updatedP = resetChats(db.characters ||[]); let updatedG = resetChats(db.groups ||[]);
-                if (updatedP || updatedG) await saveData();
+                if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
 
                 if(window.showToast) showToast('预设删除成功');
                 if(addBtn) document.getElementById('global-bubble-add-btn').click();
@@ -1062,7 +1062,7 @@ function syncBasicUiFromCss(css) {
                         return updated;
                     };
                     let updatedP = updateChats(db.characters ||[]); let updatedG = updateChats(db.groups ||[]);
-                    if (updatedP || updatedG) await saveData();
+                    if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
 
                     openManagePresetsModal(); 
                     if (typeof window.populateChatThemeSelects === 'function') window.populateChatThemeSelects();
@@ -1097,7 +1097,7 @@ function syncBasicUiFromCss(css) {
                         return updated;
                     };
                     let updatedP = resetChats(db.characters ||[]); let updatedG = resetChats(db.groups ||[]);
-                    if (updatedP || updatedG) await saveData();
+                    if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
 
                     openManagePresetsModal(); 
                     if (typeof window.populateChatThemeSelects === 'function') window.populateChatThemeSelects();

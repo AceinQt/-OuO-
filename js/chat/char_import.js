@@ -273,7 +273,12 @@
                 // --- 新增逻辑结束 ---
 
                 db.characters.push(newChar);
-                await saveData();
+// 1. 保存新角色到角色表
+await dexieDB.characters.put(newChar);
+// 2. 如果导入了世界书，保存整个世界书表（因为 unshift 了新条目）
+if (importedWorldBookIds.length > 0) {
+    await saveWorldBookTable();
+}
                 renderChatList();
                 showToast(`角色“${newChar.remarkName}”导入成功！`);
             }

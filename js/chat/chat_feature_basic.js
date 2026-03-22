@@ -48,6 +48,7 @@
                 }
                 chat.history.push(message);
                 addMessageBubble(message, currentChatId, currentChatType);
+                await saveMessageToDB(message, currentChatId, currentChatType);
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
             }                            
@@ -71,6 +72,7 @@
                 }
                 chat.history.push(message);
                 addMessageBubble(message, currentChatId, currentChatType);
+                await saveMessageToDB(message, currentChatId, currentChatType);
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
             }
@@ -95,6 +97,7 @@
                 }
                 chat.history.push(message);
                 addMessageBubble(message, currentChatId, currentChatType);
+                await saveMessageToDB(message, currentChatId, currentChatType);
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
             }                           
@@ -117,8 +120,10 @@
                     };
                     chat.history.push(message);
                     addMessageBubble(message, currentChatId, currentChatType);
+  await saveMessageToDB(message, currentChatId, currentChatType);                  
                 } else { // Group chat
-                    currentGroupAction.recipients.forEach(recipientId => {
+                let msgs =[];
+        currentGroupAction.recipients.forEach(recipientId => {
                         const recipient = chat.members.find(m => m.id === recipientId);
                         if (recipient) {
                             const content = `[${chat.me.realName} 向 ${recipient.realName} 转账：${amount}元；备注：${remark}]`;
@@ -132,8 +137,10 @@
                             };
                             chat.history.push(message);
                             addMessageBubble(message, currentChatId, currentChatType);
+                            msgs.push(message); 
                         }
                     });
+                    await saveMessagesToDB(msgs, currentChatId, currentChatType);
                 }
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
@@ -158,8 +165,10 @@
                     };
                     chat.history.push(message);
                     addMessageBubble(message, currentChatId, currentChatType);
+                    await saveMessageToDB(message, currentChatId, currentChatType);
                 } else { // Group chat
-                    currentGroupAction.recipients.forEach(recipientId => {
+                    let msgs =[];
+        currentGroupAction.recipients.forEach(recipientId => {
                         const recipient = chat.members.find(m => m.id === recipientId);
                         if (recipient) {
                             const content = `[${chat.me.realName} 向 ${recipient.realName} 送来了礼物：${description}]`;
@@ -173,8 +182,10 @@
                             };
                             chat.history.push(message);
                             addMessageBubble(message, currentChatId, currentChatType);
+                            msgs.push(message); 
                         }
                     });
+                    await saveMessagesToDB(msgs, currentChatId, currentChatType);
                 }
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
@@ -234,6 +245,7 @@
 
     chat.history.push(visualMessage, contextMessage);
     addMessageBubble(visualMessage, currentChatId, currentChatType);
+    await saveMessagesToDB([visualMessage, contextMessage], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
     // renderChatList(); // 不需要调用
 }
@@ -313,6 +325,8 @@
                         timestamp: Date.now()
                     };
                     character.history.push(contextMessage);
+                    await saveMessageToDB(message, currentChatId, currentChatType); // ★ (状态更新)
+        await saveMessageToDB(contextMessage, currentChatId, currentChatType); // ★ (系统通知)
                     await saveSingleChat(currentChatId, currentChatType);
                     renderChatList();
                 }
@@ -374,7 +388,8 @@
                 const confirmModal = document.getElementById('delete-chunk-confirm-modal');
                 const previewBox = document.getElementById('delete-chunk-preview');
 
-                let startRange, endRange;
+                // 🌟 修复1：在这里提前声明 messagesToDelete，让下面两个步骤都能共享这个变量
+                let startRange, endRange, messagesToDelete;
 
                 deleteChunkForm.addEventListener('submit', (e) => {
                     e.preventDefault();
@@ -391,7 +406,7 @@
 
                     const startIndex = startRange - 1;
                     const endIndex = endRange;
-                    const messagesToDelete = chat.history.slice(startIndex, endIndex);
+                    messagesToDelete = chat.history.slice(startIndex, endIndex);
 
                     // --- NEW PREVIEW LOGIC ---
                     let previewHtml = '';
@@ -435,6 +450,7 @@
                     const count = endRange - startIndex;
 
                     chat.history.splice(startIndex, count);
+                    await deleteMessagesFromDB(messagesToDelete.map(m=>m.id));
                     await saveSingleChat(currentChatId, currentChatType);
 
                     confirmModal.classList.remove('visible');

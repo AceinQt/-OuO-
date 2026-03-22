@@ -45,7 +45,6 @@ function generateProactivePrivatePrompt(character) {
         if (character.myPersona) prompt += `**对方背景**：${character.myPersona}\n\n`;
         
         if (worldBooksAfter) prompt += `**重要事项**：\n${worldBooksAfter}\n\n`;
-        
         prompt += `## 💡 线下模式专用格式（必须严格遵循前缀）：\n`;
         prompt += `线下互动直接描写物理动作和说话内容，不再使用手机聊天的格式。为了让系统能切割并按顺序发送，你的每一条行为都必须使用以下分类前缀包裹：\n`;
         prompt += `1. 旁白描写:[HH:MM|${character.realName}的动作: 描写角色的物理动作或神态，例如“他凑近看了看你，伸手敲了敲桌子”]\n`;
@@ -57,8 +56,7 @@ function generateProactivePrivatePrompt(character) {
     // 📱 线上正常模式
     let prompt = `你正在一个名为“404”的线上聊天软件中扮演一个角色“${character.realName}”。\n`;
     prompt += `请你根据当前时间和情境，主动给我（${character.myName}）发消息。\n`;
-    prompt += `当前时间是：${currentTime}\n\n`;
-    
+
     prompt += `## 👤 角色档案\n**你的名字**：${character.realName}\n**人设**：${character.persona}\n**当前状态**：${character.status}\n\n`;
     if (worldBooksBefore) prompt += `${worldBooksBefore}\n\n`;
     if (allFavs) prompt += `**重要记忆**：\n${allFavs}\n\n`;
@@ -66,7 +64,6 @@ function generateProactivePrivatePrompt(character) {
     if (character.myPersona) prompt += `**我的人设**：${character.myPersona}\n\n`;
     
     if (worldBooksAfter) prompt += `**重要事项**：\n${worldBooksAfter}\n\n`;
-
     prompt += `## 💡 支持的主动消息格式 (必须严格使用对应前缀):\n`;
     prompt += `请结合情境，使用文本、照片、语音甚至表情包来丰富你的主动互动。这很重要，为了让系统识别，每条消息必须包含对应格式的前缀：\n`;
     prompt += `a) 普通文字:[HH:MM|${character.realName}的消息: 文字内容]\n`;

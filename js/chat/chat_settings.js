@@ -103,7 +103,7 @@ function setupChatSettings() {
                         const compressedUrl = await compressImage(file, { quality: 0.85, maxWidth: 1080, maxHeight: 1920 });
                         char.chatBg = compressedUrl;
                         document.getElementById('chat-room-screen').style.backgroundImage = `url(${compressedUrl})`;
-                        await saveData();
+                        await saveSingleChat(currentChatId, currentChatType);
                         showToast('聊天背景已更换');
                     } catch (error) {
                         showToast('背景压缩失败，请重试');
@@ -121,7 +121,8 @@ function setupChatSettings() {
             if (await AppUI.confirm(`你确定要清空与“${character.remarkName}”的所有聊天记录吗？这个操作是不可恢复的！`, "系统提示", "确认", "取消")) {
                 character.history =[];
                 character.status = '在线';
-                await saveData();
+                await clearChatHistoryInDB(currentChatId);
+                await saveSingleChat(currentChatId, currentChatType);
                 renderMessages(false, true);
                 renderChatList();
                 if (currentChatId === character.id) {
@@ -154,7 +155,7 @@ function setupChatSettings() {
                 const group = db.groups.find(g => g.id === currentChatId);
                 if (group) group.worldBookIds = selectedIds;
             }
-            await saveData();
+            await saveSingleChat(currentChatId, currentChatType);
             document.getElementById('world-book-selection-modal').classList.remove('visible');
             showToast('世界书关联已更新');
         });
@@ -246,7 +247,7 @@ async function saveSettingsFromSidebar() {
             }
         }
 
-        await saveData();
+        await saveSingleChat(currentChatId, currentChatType);
         showToast('设置已保存！');
         chatRoomTitle.textContent = e.remarkName;
         renderChatList();

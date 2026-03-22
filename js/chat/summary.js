@@ -386,12 +386,8 @@ function setupMemoryJournalScreen() {
             chat.journalWorldBookIds = selectedIds;
             showToast('日记绑定的世界书已更新');
         }
-        // 群聊存 db.groups, 私聊存 saveData() (内部存 db.characters)
-        if (currentChatType === 'group') {
-            await dexieDB.groups.put(chat);
-        } else {
-            await saveData();
-        }
+
+await saveSingleChat(currentChatId, currentChatType);
         
         worldBookModal.classList.remove('visible');
     });
@@ -424,8 +420,7 @@ function setupMemoryJournalScreen() {
              if (await AppUI.confirm('确定要删除这条记录吗？', "系统提示", "确认", "取消")) {
                  chat[targetArrayName] = chat[targetArrayName].filter(j => j.id !== id);
                  
-                 if (currentChatType === 'group') await dexieDB.groups.put(chat);
-                 else await saveData();
+                 await saveSingleChat(currentChatId, currentChatType);
 
                  renderMemoryScreen();
                  showToast('已删除');
@@ -436,8 +431,7 @@ function setupMemoryJournalScreen() {
          // 收藏
          if (target.closest('.favorite-journal-btn')) {
              item.isFavorited = !item.isFavorited;
-             if (currentChatType === 'group') await dexieDB.groups.put(chat);
-             else await saveData();
+             await saveSingleChat(currentChatId, currentChatType);
              
              target.closest('.favorite-journal-btn').classList.toggle('favorited', item.isFavorited);
              showToast(item.isFavorited ? '已收藏' : '已取消收藏');
@@ -463,8 +457,7 @@ function setupMemoryJournalScreen() {
                 item.content = summaryContentEl.innerText; 
                 item.occurredAt = summaryDateInput.value.trim(); 
                 
-                if (currentChatType === 'group') await dexieDB.groups.put(chat);
-                else await saveData();
+                await saveSingleChat(currentChatId, currentChatType);
 
                 showToast('保存成功');
                 renderMemoryScreen();
@@ -526,7 +519,7 @@ const chat = getCurrentChatObject(); // 【修改】
                 const d = pad(dayInput.value);
                 item.occurredAt = `${y}-${m}-${d}`;
                 
-                await saveData();
+                await saveSingleChat(currentChatId, currentChatType);
                 showToast('保存成功');
                 renderMemoryScreen();
 
@@ -592,7 +585,7 @@ journalSettingsBtn.addEventListener('click', () => {
         character.customJournalCss = cssContent;
         character.journalFontUrl = fontUrl;
         
-        await saveData();
+        await saveSingleChat(currentChatId, currentChatType);
         
         // 立即应用
         const styleTag = document.getElementById('dynamic-journal-style');
@@ -996,7 +989,11 @@ ${outputInstruction}`;
             // ★ 新增：判断是否处于线下模式
             const isOffline = (currentChatType === 'private' && chat.offlineModeEnabled);
             const actionPromptText = isOffline ? "做什么事" : "主动发消息";
-            
+                            const now = new Date();
+                const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+    const currentWeekDay = weekDays[now.getDay()]; // getDay() 返回 0-6，0是周日
+            const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${currentWeekDay} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                
             let senderInstruction = '';
             let exampleFormat = '';
             
@@ -1016,8 +1013,7 @@ ${outputInstruction}`;
             }
 
             systemPrompt += `\n\n【最后的一项绝对指令】：
-在完成上面的总结任务后，请你立刻脱离“总结员”身份，切换回情境中。
-因为你们刚聊完，请你预先想好在接下来的两个时间段（${nextSlots[0].name} 和 ${nextSlots[1].name}），你可能会${actionPromptText}。
+在完成上面的总结任务后，请你立刻脱离“总结员”身份，切换回情境中。现在是 ${currentTime}，你们刚聊完，请你预先想好在接下来的两个时间段（${nextSlots[0].name} 和 ${nextSlots[1].name}），你可能会${actionPromptText}。
 要求：
 1. 每个时段支持生成 1~3 条连贯的互动。
 2. 根据你们刚才聊天的氛围和人设，评估在这两个时间段主动发起的**概率（0到100的整数）**。
@@ -1116,8 +1112,7 @@ ${outputInstruction}
             
             if (match) {
                 let prob = match[1] ? parseInt(match[1], 10) : null;
-                let textBlock = match[2].trim();
-                console.log(`[奖池预打印]`,textBlock);
+                let textBlock = match[2].trim();                
                 
                 let messages =[];
                 // 正则匹配[07:30|小明的消息:早安]
@@ -1224,7 +1219,6 @@ ${outputInstruction}
     }
 
     // 5. 默认发生时间为当前生成时间
-    const pad = (n) => n < 10 ? '0' + n : n;
     const now = new Date();
     const formattedNow = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
@@ -1280,7 +1274,7 @@ async function generateMemoryContent(start, end, generateBoth) {
         if (currentChatType === 'group') throw new Error("群聊不支持日记");
             await performGeneration(chat, start, end, 'journal');
         }
-        await saveData();
+        await saveSingleChat(currentChatId, currentChatType);
         renderMemoryScreen();
         showToast('生成完成！');
     } catch (error) {
@@ -1448,8 +1442,7 @@ ${wbWriting ? `\n【特别文风/内容指导】：\n${wbWriting}\n` : ''}
             }
         });
 
-         if (currentChatType === 'group') await dexieDB.groups.put(chat);
-        else await saveData();
+         await saveSingleChat(currentChatId, currentChatType);
         renderMemoryScreen();
         showToast(`长期总结已生成！已取消 ${cancelCount} 条短期总结的收藏。`);
 
