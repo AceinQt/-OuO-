@@ -792,6 +792,10 @@
                 <label for="stream-switch">流式输出</label>
                 <input type="checkbox" id="stream-switch">
             </div>
+            <div class="form-group-select">
+    <label for="compatibility-mode-switch" title="开启后，不含图片的消息将以纯文本格式发送，解决部分中转站Claude 400报错问题">兼容模式</label>
+    <input type="checkbox" id="compatibility-mode-switch">
+</div>
         </form>
      <div class="form-group">
         <label>API 预设</label>
@@ -1277,14 +1281,16 @@
                 <div class="title-container">
                     <h1 class="title">Ta的消息</h1>
                 </div>
-                <button class="action-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22"
-                        height="22">
-                        <path
-                            d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z">
-                        </path>
-                    </svg>
-                </button>
+                <div class="action-btn-group"> 
+                    <!-- 刷新 -->
+                    <button class="action-btn" id="peek-messages-refresh-btn" title="刷新对话">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+                            <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+                        </svg>
+                    </button>
+                          <!-- 新增联系人 -->
+                    <button class="action-btn" id="peek-messages-add-btn" title="新增联系人">+</button>
+                </div>
             </header>
             <main class="content">
                 <ul class="list-container" id="peek-chat-list-container">
@@ -1300,14 +1306,8 @@
                 <div class="title-container">
                     <h1 class="title" id="peek-conversation-title">...</h1>
                 </div>
-                <button class="action-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22"
-                        height="22">
-                        <path
-                            d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z">
-                        </path>
-                    </svg>
-                </button>
+                <!-- action-btn 预留位：未来需求3"旁观模式"可挂载在此 -->
+                <button class="action-btn" id="peek-conversation-action-btn" style="visibility:hidden;"></button>
             </header>
             <main class="content">
                 <div class="message-area" id="peek-message-area">
@@ -1354,9 +1354,54 @@
             </main>
         </div>
 
-        <!-- Peek Unlock Screen (Social Media) -->
+<!-- 1. 替换后的 Peek Unlock Screen (社交小号) -->
         <div id="peek-unlock-screen" class="screen">
-            <!-- Content will be dynamically rendered by renderPeekUnlock() -->
+            <header class="app-header">
+                <button class="back-btn" data-target="peek-screen">‹</button>
+                <div class="title-container">
+                    <h1 class="title" id="unlock-header-title">...</h1>
+                </div>
+                <div class="action-btn-group">
+                    <button class="action-btn" id="refresh-unlock-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg>
+                    </button>
+                    <button class="action-btn" id="unlock-settings-btn">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </button>
+                </div>
+            </header>
+            <main class="content">
+                <div id="unlock-placeholder" class="placeholder-text" style="display:none; padding: 20px; text-align: center;">这里空空如也...</div>
+                <div id="unlock-content-area" style="display:none;">
+                    <div class="unlock-profile-header">
+                        <img src="" alt="Profile Avatar" class="unlock-profile-avatar" id="unlock-profile-avatar">
+                        <div class="unlock-profile-info">
+                            <h2 class="unlock-profile-username" id="unlock-profile-username"></h2>
+                            <p class="unlock-profile-handle" id="unlock-profile-handle"></p>
+                        </div>
+                    </div>
+                    <div class="unlock-profile-bio">
+                        <p id="unlock-profile-bio-text"></p>
+                    </div>
+                    <div class="unlock-profile-stats" id="unlock-profile-stats">
+                        <div class="unlock-profile-stat">
+                            <span class="count" id="unlock-stat-posts">0</span>
+                            <span class="label">帖子</span>
+                        </div>
+                        <div class="unlock-profile-stat">
+                            <span class="count" id="unlock-stat-followers">0</span>
+                            <span class="label">粉丝</span>
+                        </div>
+                        <div class="unlock-profile-stat">
+                            <span class="count" id="unlock-stat-following">0</span>
+                            <span class="label">关注</span>
+                        </div>
+                    </div>
+                    <div class="unlock-post-feed" id="unlock-post-feed">
+                        <!-- Posts go here -->
+                    </div>
+                </div>
+            </main>
         </div>
         
         <!-- Peek Steps App Screen -->
@@ -2741,36 +2786,47 @@
             <div class="form-group">
                 <label for="pa-mode-select">模式选择</label>
                 <select id="pa-mode-select" class="form-control">
-                    <option value="random">随机模式</option>
+                    <option value="random">随机模式</option>                          <option value="timer">固定模式</option>
                     <option value="fixed">主动模式</option>
                     <option value="dnd">免打扰模式</option>
                 </select>
             </div>
 
+
+
             <div id="pa-fixed-settings" class="form-group" style="display: none;">
-                
-                <!-- 【新增】发送频率/粘人度设置 (仅固定模式专属) -->
                 <div class="form-group">
                     <label for="pa-frequency-slider">
                         发送频率: <span id="pa-frequency-val">普通</span>
                     </label>
                     <input type="range" id="pa-frequency-slider" min="0" max="2" value="1" class="form-control">
                     <div id="pa-frequency-span">
-                        <span>佛系</span>
+                        <span>低频</span>
                         <span>普通</span>
-                        <span>粘人</span>
+                        <span>高频</span>
                     </div>
                 </div>
-
                 <label for="pa-daily-limit-slider">
                     每日最大静默调用: <span id="pa-daily-limit-val">10</span> 次
                 </label>
                 <input type="range" id="pa-daily-limit-slider" min="1" max="30" value="10" class="form-control">
-                
-                <p id="pa-fixed-hint" style="font-size: 12px; color: #888; margin-top: 10px; line-height: 1.5;">
-                    * 主动模式下，允许闲暇时主动调用api发送消息。可调整发送消息频率及允许调用次数来影响角色主动发消息频率。<br>
-                    * 达到设定的每日上限后当天不再主动调用。<br>
-                </p>
+            </div>
+
+            <!-- 新增：固定模式（Timer定时触发）专属设置 -->
+            <div id="pa-timer-settings" class="form-group" style="display: none;">
+                <div class="form-group">
+                    <label for="pa-timer-interval-input">无操作触发时间（分钟）:</label>
+                    <input type="number" id="pa-timer-interval-input" min="1" max="1440" value="5" class="form-control" style="padding: 12px;">
+                </div>
+                <div class="form-group">
+                    <label for="pa-timer-keepalive-input">后台自动保活时间（分钟）:</label>
+                    <input type="number" id="pa-timer-keepalive-input" min="5" max="1440" value="30" class="form-control" style="padding: 12px;">
+                </div>
+            </div>
+
+            <!-- 新增：各模式的专属提示说明 -->
+            <div id="pa-mode-hints">
+                <!-- 动态更新内容 -->
             </div>
 
             <div class="btn-group">
@@ -3034,22 +3090,45 @@
                         <!-- App icon settings will be rendered here by JS -->
                     </div>
                 </div>
-                <div class="collapsible-section">
-                    <div class="collapsible-header">
-                        <h4>微博(Unlock)小号</h4>
-                        <span class="collapsible-arrow">▼</span>
-                    </div>
-                    <div class="collapsible-content">
-                        <div class="form-group" style="margin-bottom: 0;">
-                            <label for="peek-unlock-avatar-url">头像URL</label>
-                            <input type="url" id="peek-unlock-avatar-url" class="form-group" style="margin-bottom: 0;" placeholder="粘贴图片URL">
-                        </div>
-                    </div>
-                </div>
                 <button id="save-peek-settings-btn" class="btn btn-primary" style="margin-top: 20px;">保存所有更改</button>
             </div>
         </div>
 
+<!-- 新增的 Unlock 独立设置 Modal (含本地上传与预览) -->
+        <div id="peek-unlock-settings-modal" class="modal-overlay">
+            <div class="modal-window">
+                <h3>Unlock 小号设置</h3>
+                
+                <!-- 新增：头像预览区域 -->
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <img id="peek-unlock-avatar-preview" src="https://i.postimg.cc/SNwL1XwR/chan-11.png" alt="预览">
+                </div>
+
+                <div class="form-group">
+                    <label for="peek-unlock-avatar">小号头像URL</label>
+                    <input type="url" id="peek-unlock-avatar" class="form-group" style="margin-bottom: 0;" placeholder="粘贴图片URL">
+                </div>
+                
+                <!-- 新增：本地上传按钮组 -->
+                <p style="text-align:center; color:#888; margin: 10px 0;">或</p>
+                <input type="file" id="peek-unlock-avatar-upload" accept="image/*" style="display: none;">
+                <label for="peek-unlock-avatar-upload" class="btn btn-secondary" style="width: 100%; margin-bottom: 16px; ">从本地上传</label>
+
+                <div class="form-group">
+                    <label for="peek-unlock-fixed-nickname">小号昵称（留空则自动随机生成）</label>
+                    <input type="text" id="peek-unlock-fixed-nickname" class="form-group" placeholder="例如：emo小狗">
+                </div>
+                <div class="form-group">
+                    <label for="peek-unlock-fixed-handle">小号ID（留空则自动随机生成）</label>
+                    <input type="text" id="peek-unlock-fixed-handle" class="form-group" placeholder="例如：@sad_doggo">
+                </div>
+                <div class="btn-group">
+                    <button id="save-unlock-settings-btn" class="btn btn-primary">保存</button>
+                    <button id="close-unlock-settings-btn" class="btn btn-neutral">取消</button>               
+                </div>
+            </div>
+        </div>
+        
         <div id="peek-photo-modal" class="modal-overlay">
             <div class="modal-window">
                 <div id="peek-photo-image-container">
@@ -3508,7 +3587,17 @@
     <script src="js/chat/chat_room.js"></script>
 
     <script src="js/chat/summary.js"></script>
-    <script src="js/peek.js"></script>
+
+    <script src="js/peek/peek_core.js"></script>      <!-- 必须第一个 -->
+<script src="js/peek/peek_messages.js"></script>
+<script src="js/peek/peek_album.js"></script>
+<script src="js/peek/peek_memos.js"></script>
+<script src="js/peek/peek_cart.js"></script>
+<script src="js/peek/peek_browser.js"></script>
+<script src="js/peek/peek_steps.js"></script>
+<script src="js/peek/peek_drafts.js"></script>
+<script src="js/peek/peek_transfer.js"></script>
+<script src="js/peek/peek_unlock.js"></script>
     
 <!-- 番茄钟 -->
     <script src="js/pomodoro.js"></script>
