@@ -358,6 +358,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             };
                         }
                         chat.history.push(message);
+                        newMessagesForDB.push(message); 
                         addMessageBubble(message, targetChatId, targetChatType);
 
                     } else {
@@ -378,6 +379,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             message.giftStatus = 'sent';
                         }
                         chat.history.push(message);
+                        newMessagesForDB.push(message);
                         addMessageBubble(message, targetChatId, targetChatType);
                     }
                 } 
