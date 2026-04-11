@@ -3,7 +3,7 @@
 // 私信列表、对话详情、消息生成
 // ==========================================
 
-function renderPeekChatList(conversations = []) {
+function renderPeekChatList(conversations =[]) {
     const container = document.getElementById('peek-chat-list-container');
     container.innerHTML = '';
 
@@ -15,10 +15,18 @@ function renderPeekChatList(conversations = []) {
         if (!convo.id) convo.id = 'msg_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
         const isSelected = isEdit && PeekDeleteManager.selectedIds.has(convo.id);
 
-        // 最后一条实际消息（跳过 time-divider）
         const history = convo.history || [];
-        const lastMessage = [...history].reverse().find(m => m.type !== 'time-divider') || null;
+        const lastMessage =[...history].reverse().find(m => m.type !== 'time-divider') || null;
         const lastMessageText = lastMessage ? (lastMessage.content || '').replace(/\[.*?的消息：([\s\S]+)\]/, '$1') : '...';
+
+        // 提取最新时间：如果有更新时间戳则直接格式化，否则向后寻找最近的时间分割线
+        let timeStr = '';
+        if (convo.lastUpdated) {
+            timeStr = typeof formatSmartTime === 'function' ? formatSmartTime(convo.lastUpdated) : new Date(convo.lastUpdated).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        } else {
+            const lastDiv = [...history].reverse().find(m => m.content === '[time-divider]' && m.timestamp);
+            if (lastDiv) timeStr = typeof formatSmartTime === 'function' ? formatSmartTime(lastDiv.timestamp) : '';
+        }
 
         const li = document.createElement('li');
         li.className = `list-item chat-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}`;
@@ -26,19 +34,28 @@ function renderPeekChatList(conversations = []) {
         li.dataset.id = convo.id;
 
         const avatarUrl = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+        
+        // 屏蔽标记图标
+        const hiddenIcon = convo.isHidden ? 
+            `<svg class="hidden-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>` : '';
+
         li.innerHTML = `
             <img src="${avatarUrl}" alt="${convo.partnerName}" class="chat-avatar">
             <div class="item-details">
-                <div class="item-details-row"><div class="item-name">${convo.partnerName} ${convo.isNew ? '<span class="new-badge">new!</span>' : ''}</div></div>
+                <div class="item-details-row">
+                    <div class="item-name">${convo.partnerName} ${convo.isNew ? '<span class="new-badge">new!</span>' : ''}</div>
+                    <div class="item-time">${timeStr}</div>
+                </div>
                 <div class="item-preview-wrapper">
                     <div class="item-preview">${lastMessageText}</div>
+                    ${hiddenIcon}
                 </div>
             </div>`;
         container.appendChild(li);
     });
 }
 
-function renderPeekConversation(history, partnerName) {
+function renderPeekConversation(history, partnerName, wasNew = false) {
     const titleEl = document.getElementById('peek-conversation-title');
     const messageAreaEl = document.getElementById('peek-message-area');
 
@@ -46,69 +63,126 @@ function renderPeekConversation(history, partnerName) {
     messageAreaEl.innerHTML = '';
     messageAreaEl.scrollTop = 0; 
 
+    // ── 屏蔽/取消屏蔽 按钮逻辑 (保留你原有的功能) ─────────────────
+    const convo = peekContentCache?.messages?.conversations?.find(c => c.partnerName === partnerName);
+    const actionBtn = document.getElementById('peek-conversation-action-btn');
+    if (actionBtn && convo) {
+        actionBtn.style.visibility = 'visible';
+        const renderActionBtnSVG = () => {
+            if (convo.isHidden) {
+                actionBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>`;
+            } else {
+                actionBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>`;
+            }
+        };
+
+        renderActionBtnSVG();
+        actionBtn.onclick = async () => {
+            convo.isHidden = !convo.isHidden;
+            renderActionBtnSVG();
+            await savePeekData(window.activePeekCharId).catch(e => console.error(e));
+            if (typeof showToast === 'function') showToast(convo.isHidden ? '已屏蔽该聊天' : '已取消屏蔽');
+            renderPeekChatList(peekContentCache.messages.conversations);
+        };
+    } else if (actionBtn) {
+        actionBtn.style.visibility = 'hidden';
+    }
+
     if (!history || history.length === 0) {
         messageAreaEl.innerHTML = '<p class="placeholder-text">这里空空如也...</p>';
         return;
     }
 
+    const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'conversation';
+    
+    // 用于记录我们需要滚动到的“未读边界”DOM节点
+    let unreadBoundaryEl = null;
+
     history.forEach(msg => {
-        // ── 时间分隔符：复用普通聊天的 chat-time-divider ────────────────
+        if (!msg.id) msg.id = 'msg_item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        const isSelected = isEdit && PeekDeleteManager.selectedIds.has(msg.id);
+        const editClasses = `message-item-wrapper ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}`;
+
+        let currentWrapper = null;
+
+        // ── 时间分隔符 ────────────────────────────────────────────────
         if (msg.content === '[time-divider]') {
             const dividerWrapper = document.createElement('div');
-            dividerWrapper.className = 'message-wrapper time-divider-wrapper';
+            dividerWrapper.className = `message-wrapper time-divider-wrapper ${editClasses}`;
+            dividerWrapper.dataset.id = msg.id;
             const label = (typeof formatSmartTime === 'function' && msg.timestamp)
-                ? formatSmartTime(msg.timestamp)
-                : (msg.label || '');
+                ? formatSmartTime(msg.timestamp) : (msg.label || '');
             dividerWrapper.innerHTML = `<div class="chat-time-divider">${label}</div>`;
             messageAreaEl.appendChild(dividerWrapper);
-            return;
-        }
-
-        // ── 普通消息气泡 ─────────────────────────────────────────────────
-        const isSentByChar = msg.sender === 'char';
-        const wrapper = document.createElement('div');
-        wrapper.className = `message-wrapper ${isSentByChar ? 'sent' : 'received'}`;
-
-        const bubbleRow = document.createElement('div');
-        bubbleRow.className = 'message-bubble-row';
-
-        const bubble = document.createElement('div');
-        bubble.className = `message-bubble ${isSentByChar ? 'sent' : 'received'}`;
-        bubble.textContent = msg.content;
-
-        if (isSentByChar) {
-            bubbleRow.appendChild(bubble);
+            currentWrapper = dividerWrapper;
         } else {
-            const avatar = document.createElement('img');
-            avatar.className = 'message-avatar';
-            avatar.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
-            bubbleRow.appendChild(avatar);
-            bubbleRow.appendChild(bubble);
+            // ── 普通消息气泡 ─────────────────────────────────────────────────
+            const isSentByChar = msg.sender === 'char';
+            const wrapper = document.createElement('div');
+            wrapper.className = `message-wrapper ${isSentByChar ? 'sent' : 'received'} ${editClasses}`;
+            wrapper.dataset.id = msg.id;
+
+            const bubbleRow = document.createElement('div');
+            bubbleRow.className = 'message-bubble-row';
+
+            const bubble = document.createElement('div');
+            bubble.className = `message-bubble ${isSentByChar ? 'sent' : 'received'}`;
+            bubble.textContent = msg.content;
+
+            if (isSentByChar) {
+                bubbleRow.appendChild(bubble);
+            } else {
+                const avatar = document.createElement('img');
+                avatar.className = 'message-avatar';
+                avatar.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+                bubbleRow.appendChild(avatar);
+                bubbleRow.appendChild(bubble);
+            }
+            wrapper.appendChild(bubbleRow);
+            messageAreaEl.appendChild(wrapper);
+            currentWrapper = wrapper;
         }
 
-        wrapper.appendChild(bubbleRow);
-        messageAreaEl.appendChild(wrapper);
+        // 寻找第一个未读边界标记
+        if (msg.isUnreadBoundary && wasNew && !unreadBoundaryEl) {
+            unreadBoundaryEl = currentWrapper;
+        }
     });
 
-    // 确保 DOM 完全渲染后再滚底
-    requestAnimationFrame(() => {
-        // 尝试让外部的 .content 容器滚到底部（通常这是真正的滚动容器）
-        const contentContainer = messageAreaEl.closest('.content');
-        if (contentContainer) {
-            contentContainer.scrollTop = contentContainer.scrollHeight;
-        }
-        // 兼容原逻辑
-        messageAreaEl.scrollTop = messageAreaEl.scrollHeight;
-    });
+    // 抽离滚动逻辑，进行精准定位
+    const scrollToTarget = () => {
+        // 多选编辑模式下不要自动滚动，以免打断用户选择
+        if (PeekDeleteManager.isEditMode) return;
 
-    // 增加延时兜底：防止因 switchScreen 的页面切换动画导致初次滚动失效
-    setTimeout(() => {
         const contentContainer = messageAreaEl.closest('.content');
-        if (contentContainer) {
-            contentContainer.scrollTop = contentContainer.scrollHeight;
+        if (wasNew && unreadBoundaryEl) {
+            // 偏移量减去20像素作为呼吸空间，确保时间戳完全露出来
+            const targetScrollTop = Math.max(0, unreadBoundaryEl.offsetTop - 20);
+            if (contentContainer) contentContainer.scrollTop = targetScrollTop;
+            messageAreaEl.scrollTop = targetScrollTop;
+        } else {
+            // 普通打开或者没有未读：常规直接滚到底部
+            if (contentContainer) contentContainer.scrollTop = contentContainer.scrollHeight;
+            messageAreaEl.scrollTop = messageAreaEl.scrollHeight;
         }
-        messageAreaEl.scrollTop = messageAreaEl.scrollHeight;
-    }, 150); // 150ms 后再次确认滚底
+    };
+
+    requestAnimationFrame(scrollToTarget);
+    setTimeout(scrollToTarget, 150);
+
+    // 渲染完毕后，清理这些已被读过的未读边界标记，防止下次打开仍卡在中间
+    if (wasNew) {
+        let needsSave = false;
+        history.forEach(m => {
+            if (m.isUnreadBoundary) {
+                m.isUnreadBoundary = false;
+                needsSave = true;
+            }
+        });
+        if (needsSave) {
+            savePeekData(window.activePeekCharId).catch(e => console.error(e));
+        }
+    }
 }
 
 async function generateAndRenderPeekMessages(options = {}) {
@@ -142,56 +216,27 @@ async function generateAndRenderPeekMessages(options = {}) {
         const senderName = char.realName || char.name;
         const baseContextPrompt = getPeekBasePromptContext(char, mainChatContext);
 
-        // ── 已有联系人名单注入 ──────────────────────────────────────────
-        const existingNames = (peekContentCache['messages']?.conversations || [])
+        // 排除已屏蔽（isHidden为true）的联系人
+        const existingNames = (peekContentCache['messages']?.conversations ||[])
+            .filter(c => !c.isHidden)
             .map(c => c.partnerName)
             .filter(Boolean);
 
         let systemPrompt = `你正在模拟角色 ${char.realName} 的手机聊天/消息应用。\n`;
         systemPrompt += baseContextPrompt;
-        systemPrompt += `
-【任务1：消息记录】`;
+        systemPrompt += `\n【任务1：消息记录】`;
 
         if (existingNames.length > 0) {
-            systemPrompt += `
-请为 ${char.realName} 编造3-5个最近的对话。\n当前手机里已有以下联系人：
-${existingNames.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n但联系人不仅仅局限于这些人。你应该根据聊天上下文情况，尽可能积极创造**新的联系人**进行对话。`;
+            systemPrompt += `\n请为 ${char.realName} 编造4-6个最近的对话。\n当前手机里已有以下联系人：\n${existingNames.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n但联系人不仅仅局限于这些人。你应该根据聊天上下文情况，尽可能积极创造**新的联系人**进行对话。`;
         } else {
-            systemPrompt += `
-请为 ${char.realName} 编造3-5个最近的对话。\n`;
+            systemPrompt += `\n请为 ${char.realName} 编造3-5个最近的对话。\n`;
         }
 
-        systemPrompt += `对话内容需要强烈反映Ta的人设以及和最近聊天上下文。
-每段对话需要提供对话对象的称呼(#PARTNER#)以及具体的聊天记录(#HISTORY#)。
-在 #HISTORY# 中，请严格使用以下格式记录每条消息：
-如果是 ${char.realName} 发送的，以 "char: " 开头；
-如果是对方发送的，以 "partner: " 开头。
-
-【任务2：话题分享】
-在消息记录生成完毕后，请从刚刚生成的这几段对话中挑选1个值得吐槽或分享的对话，预测一下，在未来的某个时间，${senderName}会主动把这个对话内容当成话题发消息分享给${char.myName}。
-`;
+        systemPrompt += `对话内容需要强烈反映Ta的人设以及和最近聊天上下文。\n每段对话需要提供对话对象的称呼(#PARTNER#)以及具体的聊天记录(#HISTORY#)。\n在 #HISTORY# 中，请严格使用以下格式记录每条消息：\n如果是 ${char.realName} 发送的，以 "char: " 开头；\n如果是对方发送的，以 "partner: " 开头。\n\n【任务2：话题分享】\n在消息记录生成完毕后，请从刚刚生成的这几段对话中挑选1个值得吐槽或分享的对话，预测一下，在未来的某个时间，${senderName}会主动把这个对话内容当成话题发消息分享给${char.myName}。\n`;
         systemPrompt += getPeekProactiveFormatPrompt(char);
-        systemPrompt += `
-请严格按照以下标签文本格式输出，**每段对话之间使用 ===SEP=== 分隔**。在所有对话结束后，使用 ===PROACTIVE_MESSAGES=== 分割，再输出主动消息。
+        systemPrompt += `\n请严格按照以下标签文本格式输出，**每段对话之间使用 ===SEP=== 分隔**。在所有对话结束后，使用 ===PROACTIVE_MESSAGES=== 分割，再输出主动消息。\n\n输出格式示例：\n#PARTNER#\n与Ta对话的人的称呼\n#HISTORY#\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\npartner: 对方发送的消息内容\n===SEP===\n#PARTNER#\n与Ta对话的人的称呼\n#HISTORY#\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\n===PROACTIVE_MESSAGES===\n#SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:突然好想吃我妈做的排骨啊(T_T)][19:16|${senderName}的消息:你吃晚饭了吗？]\n`;
 
-输出格式示例：
-#PARTNER#
-与Ta对话的人的称呼
-#HISTORY#
-partner: 对方发送的消息内容
-char: ${char.realName}发送的消息内容
-partner: 对方发送的消息内容
-===SEP===
-#PARTNER#
-与Ta对话的人的称呼
-#HISTORY#
-partner: 对方发送的消息内容
-char: ${char.realName}发送的消息内容
-===PROACTIVE_MESSAGES===
-#SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:突然好想吃我妈做的排骨啊(T_T)][19:16|${senderName}的消息:你吃晚饭了吗？]
-`;
-
-        const requestBody = { model: model, messages: [{ role: 'user', content: systemPrompt }], temperature: 0.85 };
+        const requestBody = { model: model, messages:[{ role: 'user', content: systemPrompt }], temperature: 0.85 };
         const response = await fetch(`${url}/v1/chat/completions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -207,7 +252,8 @@ char: ${char.realName}发送的消息内容
         const hitchhikerRawText = parts.length > 1 ? parts[1] : '';
 
         const rawItems = messagesRawText.split('===SEP===');
-        const parsedConversations = [];
+        const parsedConversations =[];
+        const now = Date.now();
 
         rawItems.forEach(rawText => {
             if (!rawText.trim()) return;
@@ -216,12 +262,13 @@ char: ${char.realName}发送的消息内容
 
             if (partnerMatch && historyMatch) {
                 const historyLines = historyMatch[1].trim().split('\n');
-                const history = [];
+                const history =[];
                 historyLines.forEach(line => {
+                    const msgId = `msg_gen_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
                     if (line.trim().toLowerCase().startsWith('char:')) {
-                        history.push({ sender: 'char', content: line.replace(/^char:\s*/i, '').trim() });
+                        history.push({ id: msgId, sender: 'char', content: line.replace(/^char:\s*/i, '').trim() });
                     } else if (line.trim().toLowerCase().startsWith('partner:')) {
-                        history.push({ sender: 'partner', content: line.replace(/^partner:\s*/i, '').trim() });
+                        history.push({ id: msgId, sender: 'partner', content: line.replace(/^partner:\s*/i, '').trim() });
                     }
                 });
 
@@ -230,7 +277,8 @@ char: ${char.realName}发送的消息内容
                         id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                         partnerName: partnerMatch[1].trim(),
                         history: history,
-                        isNew: true
+                        isNew: true,
+                        lastUpdated: now
                     });
                 }
             }
@@ -238,21 +286,20 @@ char: ${char.realName}发送的消息内容
 
         if (parsedConversations.length > 0) {
             if (!peekContentCache['messages']) peekContentCache['messages'] = { conversations: [] };
-
-            // ── 合并同类项逻辑 ────────────────────────────────────────────
-            // 如果新生成的对话中有和已有对话同名的联系人，
-            // 就把新内容拼到前面，中间插一条时间分隔符，而不是重复创建。
             const existingConvos = peekContentCache['messages'].conversations;
             const now = Date.now();
 
             parsedConversations.forEach(newConvo => {
                 const existingIdx = existingConvos.findIndex(c => c.partnerName === newConvo.partnerName);
-
                 if (existingIdx !== -1) {
-                    // 同名联系人：旧内容在上，分隔符居中，新内容在下（正序）
+                    // 如果对方已经积攒了之前的未读消息没看，就保留最早的边界不覆盖
+                    const hasUnread = existingConvos[existingIdx].history.some(m => m.isUnreadBoundary);
+                    
                     const divider = {
+                        id: `msg_div_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
                         content: '[time-divider]',
-                        timestamp: now
+                        timestamp: now,
+                        isUnreadBoundary: !hasUnread // 标记本次新增的时间戳为未读边界起点
                     };
                     existingConvos[existingIdx].history = [
                         ...existingConvos[existingIdx].history,
@@ -260,15 +307,17 @@ char: ${char.realName}发送的消息内容
                         ...newConvo.history
                     ];
                     existingConvos[existingIdx].isNew = true;
-                    // 把合并后的对话提到列表最前面（最近）
+                    existingConvos[existingIdx].lastUpdated = now;
                     const [merged] = existingConvos.splice(existingIdx, 1);
                     existingConvos.unshift(merged);
                 } else {
-                    // 新联系人：直接插到最前面
+                    // 新联系人，把第一句话作为未读锚定点（如果内容很长，打开刚好看到对话第一句）
+                    if (newConvo.history && newConvo.history.length > 0) {
+                        newConvo.history[0].isUnreadBoundary = true;
+                    }
                     existingConvos.unshift(newConvo);
                 }
             });
-            // ─────────────────────────────────────────────────────────────
 
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
             renderPeekChatList(peekContentCache['messages'].conversations);
@@ -283,7 +332,7 @@ char: ${char.realName}发送的消息内容
 
     } catch (error) {
         console.error(error);
-        showApiError(error);
+        if (typeof showApiError === 'function') showApiError(error);
         if (peekContentCache['messages']?.conversations?.length > 0) {
             renderPeekChatList(peekContentCache['messages'].conversations);
             if (typeof showToast === 'function') showToast('刷新失败: ' + error.message);
@@ -298,7 +347,6 @@ char: ${char.realName}发送的消息内容
     }
 }
 
-// ── 新增联系人 ─────────────────────────────────────────────────────────────
 async function addPeekContact() {
     const name = await AppUI.prompt(
         '请输入新增的联系人名称。',
@@ -316,8 +364,9 @@ async function addPeekContact() {
     const newConvo = {
         id: `msg_manual_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         partnerName: trimmedName,
-        history: [],   // 空对话，等下次刷新时 AI 填充
-        isNew: false
+        history:[],   
+        isNew: false,
+        lastUpdated: Date.now()
     };
 
     peekContentCache['messages'].conversations.push(newConvo);
@@ -325,10 +374,3 @@ async function addPeekContact() {
     renderPeekChatList(peekContentCache['messages'].conversations);
     showToast(`已添加"${trimmedName}"✓`);
 }
-
-// ── TODO: 需求3 预留位 ─────────────────────────────────────────────────────
-// 未来可以在 renderPeekConversation 底部加一个"进入旁观模式"按钮。
-// 点击后以 partnerName 为对方角色创建一个临时对话视图，
-// 复用普通聊天功能的消息渲染 + AI 回复，让用户旁观角色和朋友的实时对话。
-// 可能的入口：peek-conversation-screen 的 header action-btn。
-// ─────────────────────────────────────────────────────────────────────────

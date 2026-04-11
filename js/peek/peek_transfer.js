@@ -48,7 +48,7 @@ function renderPeekTransferStation(entries) {
 
     screen.innerHTML = `
         <header class="app-header">
-            <button class="back-btn" data-target="peek-screen">‹</button>
+            <button class="back-btn" data-target="peek-screen"></button>
             <div class="title-container">
                 <h1 class="title">文件传输助手</h1>
             </div>
