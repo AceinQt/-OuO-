@@ -42,29 +42,7 @@ function switchScreen(targetId) {
     }
 
     // 动态处理状态栏颜色
-    if (typeof setAndroidThemeColor === 'function') {
-        if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
-            setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
-            document.body.style.backgroundColor = window.db.homeNavigationBarColor || '#FFFFFF';
-        } else {
-            requestAnimationFrame(() => {
-                const header = targetScreen.querySelector('.app-header');
-                if (header) {
-                    const bgColor = window.getComputedStyle(header).backgroundColor;
-                    if (bgColor === 'rgba(0, 0, 0, 0)' || bgColor === 'transparent') {
-                        setAndroidThemeColor('#FFFFFF');
-                        document.body.style.backgroundColor = '#FFFFFF';
-                    } else {
-                        setAndroidThemeColor(bgColor);
-                        document.body.style.backgroundColor = bgColor;
-                    }
-                } else {
-                    setAndroidThemeColor('#FFFFFF');
-                    document.body.style.backgroundColor = '#FFFFFF';
-                }
-            });
-        }
-    }
+    updateThemeColorForScreen(targetId, targetScreen);
 }             
                                                         function processToastQueue() {
                 if (isToastVisible || notificationQueue.length === 0) {
@@ -148,7 +126,7 @@ function switchScreen(targetId) {
             }
 
             
-         // 动态修改安卓状态栏颜色
+// 动态修改安卓状态栏颜色
 function setAndroidThemeColor(color) {
     let meta = document.querySelector('meta[name="theme-color"]');
     if (!meta) {
@@ -158,6 +136,91 @@ function setAndroidThemeColor(color) {
     }
     meta.content = color;
 }
+
+// ================================================================
+// === 新增：统一的顶部状态栏颜色管理引擎
+// ================================================================
+function updateThemeColorForScreen(targetId, targetScreen) {
+    if (typeof setAndroidThemeColor !== 'function') return;
+
+    // 1. 最高优先级：如果通话界面处于打开状态，强制黑色
+    const callOverlay = document.getElementById('call-overlay');
+    if (callOverlay && callOverlay.style.display !== 'none') {
+        setAndroidThemeColor('#080808');
+        document.body.style.backgroundColor = '#080808';
+        return;
+    }
+
+    // 2. 主页特殊处理
+    if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
+        setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
+        document.body.style.backgroundColor = window.db.homeNavigationBarColor || '#FFFFFF';
+        return;
+    }
+
+    // 3. 🎯 【关键处理】角色主页、用户主页的特殊处理
+    if (targetId === 'persona-edit-screen' || targetId === 'character-edit-screen') {
+        setAndroidThemeColor('#f2f2f7'); // 替换为护眼灰
+        document.body.style.backgroundColor = '#f2f2f7';
+        return;
+    }
+
+    // 4. 其他常规页面：动态抓取 header 颜色
+    if (!targetScreen) {
+        targetScreen = document.getElementById(targetId);
+    }
+    if (!targetScreen) return;
+
+    requestAnimationFrame(() => {
+        const header = targetScreen.querySelector('.app-header');
+        if (header) {
+            const bgColor = window.getComputedStyle(header).backgroundColor;
+            if (bgColor === 'rgba(0, 0, 0, 0)' || bgColor === 'transparent') {
+                setAndroidThemeColor('#FFFFFF');
+                document.body.style.backgroundColor = '#FFFFFF';
+            } else {
+                setAndroidThemeColor(bgColor);
+                document.body.style.backgroundColor = bgColor;
+            }
+        } else {
+            setAndroidThemeColor('#FFFFFF');
+            document.body.style.backgroundColor = '#FFFFFF';
+        }
+    });
+}
+
+// ================================================================
+// === 新增：自动监听通话界面 (call-overlay) 的隐现状态
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => {
+    const callOverlay = document.getElementById('call-overlay');
+    if (callOverlay) {
+        // 创建一个观察器，随时盯着通话界面的 style.display 变动
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.attributeName === 'style') {
+                    if (callOverlay.style.display !== 'none') {
+                        // 通话界面弹出了 -> 立刻变深色
+                        if (typeof setAndroidThemeColor === 'function') {
+                            setAndroidThemeColor('#080808');
+                            document.body.style.backgroundColor = '#080808';
+                        }
+                    } else {
+                        // 通话界面挂断关闭了 -> 恢复当前屏幕本来的颜色
+                        const activeScreen = document.querySelector('.screen.active');
+                        if (activeScreen) {
+                            updateThemeColorForScreen(activeScreen.id, activeScreen);
+                        }
+                    }
+                }
+            });
+        });
+        // 绑定监听
+        observer.observe(callOverlay, { attributes: true, attributeFilter: ['style'] });
+    }
+});
+
+
 
 // 压缩图片
 
