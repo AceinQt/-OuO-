@@ -27,6 +27,15 @@
     padding-top: max(8px , var(--safe-top));
 }
 
+#character-edit-screen .char-edit-hero {
+    height: calc(180px + var(--safe-top));
+}
+
+#call-connected .app-header {
+    min-height: 50px;
+    padding-top: max(8px , var(--safe-top));
+}
+
 #forum-screen .app-header {
     padding-top: calc(8px + var(--safe-top));
 }
@@ -103,12 +112,9 @@
 }
 
 /* 消息列表屏幕 */
-#chat-list-container {
+#chat-list-container,
+.contacts-list-container {
     padding-bottom: calc(80px + var(--safe-bottom)); 
-}
-
-#my-personas-list {
-    padding-bottom: calc(70px + var(--safe-bottom));
 }
 
 #tab-view-bubbles .content-pane {
@@ -118,6 +124,11 @@
 
 #chat-list-screen .bottom-nav-tabs {
     bottom: max(15px , var(--safe-bottom));
+}
+
+#character-edit-screen .char-info-tab-panel {
+    /* 基础留白20px + 结合安全区 */
+    padding-bottom: max(20px, var(--safe-bottom));
 }
 
 /* 偷看 */

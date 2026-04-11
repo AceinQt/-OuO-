@@ -54,17 +54,13 @@
     background: none;
     border: none;
     font-size: 45px;
-    color: var(--primary-color);
+    color: var(--btn-color);
     cursor: pointer;
     width: 40px;
     height: 40px;
     display: flex;
     align-items: center;
     justify-content: center;
-}
-
-.app-header .back-btn {
-    margin-bottom: 4px;
 }
 
 .app-header .action-btn-group {
@@ -79,7 +75,7 @@
     width: 36px;
     height: 36px;
     background-color: transparent;
-    color: var(--primary-color);
+    color: var(--btn-color);
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -93,12 +89,24 @@
 .app-header .action-btn-group .action-btn svg {
     width: 24px;
     height: 24px;
-    fill: var(--primary-color);
+    fill: var(--btn-color);
 }
 
 .app-header .action-btn img {
     width: 24px;
     height: 24px;
+}
+
+.back-btn::before {
+  content: '';
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  margin-left: 10px;
 }
 
 .app-header .title-container {
@@ -233,7 +241,7 @@
 }
 
 .action-sheet {
-    background: #f7f7f7;
+    background: var(--gray-color);
     width: 100%;
     border-top-left-radius: 20px;
     border-top-right-radius: 20px;
@@ -248,11 +256,11 @@
     border: none;
     padding: 15px;
     font-size: 16px;
-    color: var(--primary-color);
+    color: var(--btn-color);
     font-weight: 500;
     cursor: pointer;
-    border-radius: 10px;
-    margin-bottom: 8px;
+    border-radius: 16px;
+    margin-bottom: 10px;
     user-select: none;
     -webkit-user-select: none;
     -webkit-touch-callout: none;
