@@ -319,6 +319,7 @@ window.init = async () => {
 
         // 初始化各个模块
         if (typeof setupHomeScreen === 'function') setupHomeScreen();
+        if (typeof setupCharacterEditScreen === 'function') setupCharacterEditScreen();
         if (typeof setupChatListScreen === 'function') setupChatListScreen();
         if (typeof setupAddCharModal === 'function') setupAddCharModal();
         if (typeof setupChatRoom === 'function') setupChatRoom();
@@ -373,7 +374,7 @@ window.init = async () => {
         if (typeof setupPomodoroGlobalSettings === 'function') setupPomodoroGlobalSettings();
         if (typeof setupInsWidgetAvatarModal === 'function') setupInsWidgetAvatarModal();
         if (typeof setupRpgGame === 'function') setupRpgGame();
-        if (typeof setupUserPersonaModal === 'function') setupUserPersonaModal();
+        if (typeof setupUserPersonaScreen === 'function') setupUserPersonaScreen();
 
         // 绑定特殊按钮
         const delWbBtn = document.getElementById('delete-selected-world-books-btn');
