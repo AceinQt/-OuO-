@@ -1,0 +1,58 @@
+/* user_info.css — persona-edit-screen 专用覆盖
+   大部分样式直接复用 char_info.css 中的 .char-edit-* 类，
+   这里只补充 persona-edit-screen 的 ID 级覆盖。 */
+
+#persona-edit-screen .app-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: transparent;
+  border-bottom: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+#persona-edit-screen .action-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 状态内联输入框：视觉上与 .char-edit-status span 保持一致 */
+/* 状态内联输入框：视觉上与 .char-edit-status span 保持一致 */
+.persona-edit-status-input {
+  background: transparent;
+  border: 1px solid transparent;
+  font-size: 13px;
+  color: #888;
+  font-family: var(--font-family);
+  text-align: center;
+  width: 220px;
+  max-width: 100%;
+  outline: none;
+  padding: 4px 8px;
+  border-radius: 10px;
+  transition: background 0.15s, border-color 0.15s;
+  
+  /* 新增：支持多行与自动换行，并隐藏边框和拖拽柄 */
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+}
+
+.persona-edit-status-input::placeholder {
+  color: #ccc;
+}
+
+.persona-edit-status-input:focus {
+  background: var(--gray-color);
+  border-color: transparent;
+}

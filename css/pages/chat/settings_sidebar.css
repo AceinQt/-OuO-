@@ -51,18 +51,6 @@
     cursor: pointer;
 }
 
-.avatar-setting .avatar-preview {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid var(--primary-color);
-    cursor: pointer;
-}
-
-
-/* --- settings_sidebar.css 追加/修改 --- */
-
 /* 提取的样式类 */
 .sidebar-avatar-container {
     display: flex;
@@ -71,6 +59,7 @@
     margin-bottom: 15px;
 }
 
+/* 信息显示区 */
 .sidebar-info-display {
     flex-grow: 1;
     display: flex;
@@ -89,10 +78,12 @@
     color: #333;
 }
 
+/* 侧边栏按钮 */
 .btn-sidebar-action {
-    flex-grow: 1;
-    margin-left: 10px;
+    width: auto;
+    padding: 6px 12px;
     font-size: 13px;
+    margin-left: 10px;
 }
 
 .readonly-field {
@@ -101,7 +92,6 @@
     border: 1px solid #eee;
 }
 
-/* 新增的提取样式 */
 .settings-sidebar .form-group-label {
     margin-bottom: 10px;
     font-weight: bold;
@@ -196,44 +186,6 @@
     gap: 8px;
     align-items: center;
     margin-bottom: 10px;
-}
-
-
-/* --- settings_sidebar.css 追加 --- */
-
-/* 侧边栏头像行 */
-.sidebar-avatar-container {
-    display: flex;
-    align-items: center;
-    gap: 15px;
-    margin-bottom: 15px;
-}
-
-/* 信息显示区 */
-.sidebar-info-display {
-    flex-grow: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.sidebar-info-label {
-    font-size: 12px;
-    color: #999;
-}
-
-.sidebar-info-value {
-    font-size: 15px;
-    font-weight: 500;
-    color: #333;
-}
-
-/* 侧边栏按钮 */
-.btn-sidebar-action {
-    width: auto;
-    padding: 6px 12px;
-    font-size: 13px;
-    margin-left: 10px;
 }
 
 #bubble-presets-modal {
@@ -351,4 +303,357 @@
 
 .btn-primary label{
     font-weight: bold;
+}
+
+/* =========================================
+   全新侧边栏分离式 UI (Redesigned Sidebar)
+   ========================================= */
+
+/* 覆盖原始侧边栏的外层样式 */
+.settings-sidebar.redesigned-sidebar {
+    background-color: var(--gray-color);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 隐藏旧版的默认 header 和 content (以防旧代码干扰) */
+.settings-sidebar.redesigned-sidebar > .header:first-child {
+    display: none; 
+}
+.settings-sidebar.redesigned-sidebar > .content:first-of-type {
+    display: none; 
+}
+
+/* --- 上半部分：灰色区域 --- */
+.sidebar-top-section {
+    padding: 50px 20px 20px 20px; /* 顶部留足安全距离 */
+    flex-shrink: 0;
+}
+
+.avatars-row {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: flex-start;
+}
+
+.avatar-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100px;
+}
+
+.avatar-col .avatar-preview {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    margin: 0;
+    cursor: default;
+}
+
+.name-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+}
+
+/* 伪装成普通文字的 Input */
+.name-text-input {
+    border: none;
+    background: transparent;
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    max-width: 70px;
+    text-align: center;
+    padding: 0;
+    outline: none;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+/* --- 下半部分：白色圆角列表区 --- */
+.sidebar-bottom-section {
+    flex-grow: 1;
+    background-color: #fff;
+    border-top-left-radius: 48px; /* 只有左上圆角 */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.bottom-header {
+    font-size: 18px;
+    font-weight: bold;
+    color: #333;
+    padding: 5px 10px;
+    border-bottom: none;
+    text-align: center;
+}
+
+.bottom-content-scroll {
+    flex-grow: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 借用你 setting-screen 的列表样式，去掉阴影和外边距 */
+.menu-list-style {
+    box-shadow: none;
+    border-radius: 0;
+    background: transparent;
+    padding-bottom: 0;
+}
+
+.menu-list-style .settings-item {
+    padding: 16px 20px;
+    gap:5px;
+}
+.menu-list-style .settings-item::after {
+    left: 60px;
+    right: 20px;
+}
+
+.menu-list-style .setting-icon-box {
+    margin-right: 5px;
+}
+
+.menu-list-style .setting-icon-box svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* 右侧内联表单控件 */
+.inline-select {
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: #666;
+    outline: none;
+    text-align: right;
+    direction: rtl; /* 使下拉箭头靠近边缘且文字靠右排列 */
+    appearance: none; /* 隐藏原生箭头，依靠后面的 SVG chevron */
+    padding-right: 0;
+}
+
+.inline-number-input {
+    border: none;
+    background: transparent;
+    font-size: 14px;
+    color: #666;
+    outline: none;
+    text-align: right;
+    width: 50px;
+}
+
+/* 底部按钮区 */
+.bottom-actions {
+    margin-top: auto;
+    padding: 25px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.action-btn-full {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.outline-danger {
+    background-color: #fff;
+    color: var(--danger-color, #ff4d4f);
+    border: 1px solid var(--danger-color, #ff4d4f);
+}
+.outline-danger:hover {
+    background-color: #fff2f2;
+}
+
+/* 按钮行（在姓名正下方） */
+.action-row {
+    display: flex;
+    justify-content: center;
+    margin-top: -2px; /* 进一步拉近姓名与图标距离 */
+}
+
+
+
+/* 菜单右侧数值显示 (针对记忆轮数) */
+.item-value {
+    font-size: 14px;
+    color: #888;
+    font-weight: 500;
+}
+
+/* 强制抹除卡片自带的阴影、内边距与外边距，使其与下方区域完全融合 */
+#chat-settings-sidebar .settings-card.menu-list-style {
+    box-shadow: none !important;
+    border: none !important;
+    padding-bottom: 0 !important;
+    margin-bottom: 0 !important;
+    background: transparent !important;
+}
+
+/* =========================================
+   侧边栏顶层排版 (方案 B：头像叠加居中，名字按钮对称)
+   ========================================= */
+
+/* 顶部整体容器 */
+.sidebar-top-section {
+    padding: 40px 20px 20px 20px; 
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* --- 头像居中叠加区 --- */
+.overlapping-avatars-center {
+    position: relative;
+    /* 头像 72px, 中间重叠 24px, 总宽 120px */
+    width: 132px;    
+    height: 72px;    
+    display: flex;
+    justify-content: center;
+}
+
+.overlapping-avatars-center .avatar-wrapper {
+    position: absolute;
+    top: 0; 
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 3px solid #ffffff; 
+    box-shadow: 0 2px 3px rgba(0, 0, 0, 0.05);
+    box-sizing: border-box;
+}
+
+.overlapping-avatars-center .avatar-preview {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+    margin: 0;
+    border: none;
+}
+
+.user-avatar-wrapper {
+    left: 60px;
+    z-index: 2; /* 用户底层 */
+}
+
+.char-avatar-wrapper {
+    left: 0; /* 右偏 60px */
+    z-index: 1; /* 角色顶层 */
+}
+
+/* --- 心跳折线 --- */
+.heartbeat-divider {
+    width: 160px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 15px 0 0 0; /* 控制与头像、名字的垂直间距 */
+}
+
+/* --- 名字对称区 --- */
+.names-row {
+    display: flex;
+    justify-content: space-between;
+    width: 320px; 
+    align-items: center;
+}
+
+.name-block {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}
+
+.names-row .name-text-span {
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+    max-width: 150px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow: hidden;
+    text-align: center;
+}
+
+/* --- 按钮对称区 --- */
+.actions-row {
+    display: flex;
+    justify-content: space-between;
+    width: 320px; 
+    margin-top: 0; /* 与上方名字拉近距离 */
+}
+
+.action-group {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    gap: 5px; /* 一边内部两个按钮的间距 */
+}
+
+/* SVG 图标大小微调 */
+.sidebar-top-section .icon-btn-wrapper.mini-btn svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* 优化圆角按钮（使用你提供的圆润爱心 SVG + 增加描边） */
+.icon-btn-wrapper.mini-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 0; 
+    background-color: transparent !important; 
+    box-shadow: none !important; 
+    
+    /* 
+       修改点：在 <path> 中加入了 stroke='%23e0e0e0' (浅灰描边) 和 stroke-width='1' (1像素粗细) 
+    */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23f9f9fe' stroke='%23ffffff' stroke-width='1' stroke-linejoin='round' d='M16.44 3.10156C14.63 3.10156 13.01 3.98156 12 5.33156C10.99 3.98156 9.37 3.10156 7.56 3.10156C4.49 3.10156 2 5.60156 2 8.69156C2 9.88156 2.19 10.9816 2.52 12.0016C4.1 17.0016 8.97 19.9916 11.38 20.8116C11.72 20.9316 12.28 20.9316 12.62 20.8116C15.03 19.9916 19.9 17.0016 21.48 12.0016C21.81 10.9816 22 9.88156 22 8.69156C22 5.60156 19.51 3.10156 16.44 3.10156Z'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+    background-position: center;
+    background-repeat: no-repeat;
+    
+    /* 保留一点淡淡的真实阴影，让描边更有立体感 */
+    filter: drop-shadow(0 2px 1px rgba(0,0,0,0.06));
+    color: #90caf9;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    
+    padding-bottom: 2px; 
+}
+
+.icon-btn-wrapper.mini-btn:hover {
+    color: var(--primary-color, #007bff);
+    transform: translateY(-1px);
+    background-color: transparent !important;
+    
+    /* 
+       hover修改点：加入了 stroke='%23bde0ff' (浅蓝色描边) 
+    */
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23eaf4ff' stroke='%23bde0ff' stroke-width='1' stroke-linejoin='round' d='M16.44 3.10156C14.63 3.10156 13.01 3.98156 12 5.33156C10.99 3.98156 9.37 3.10156 7.56 3.10156C4.49 3.10156 2 5.60156 2 8.69156C2 9.88156 2.19 10.9816 2.52 12.0016C4.1 17.0016 8.97 19.9916 11.38 20.8116C11.72 20.9316 12.28 20.9316 12.62 20.8116C15.03 19.9916 19.9 17.0016 21.48 12.0016C21.81 10.9816 22 9.88156 22 8.69156C22 5.60156 19.51 3.10156 16.44 3.10156Z'/%3E%3C/svg%3E");
 }

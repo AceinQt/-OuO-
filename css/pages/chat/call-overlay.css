@@ -1,0 +1,837 @@
+/* =========================================================
+   语音/视频通话全屏覆盖层
+   ========================================================= */
+#call-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 200;
+    overflow: hidden;
+    color: #fff;
+    background: #080808;
+}
+
+/* =========================================================
+   等待接通屏 (#call-waiting)
+   ========================================================= */
+#call-waiting {
+    position: absolute;
+    inset: 0;
+    background: #111;
+}
+
+/* 背景模糊图，仅上半部分 */
+#call-bg-blur {
+    position: absolute;
+    top: 0; left: 0; width: 100%;
+    height: 60%;                          /* 原 50%，越大覆盖越多，可自行调 */
+    filter: blur(3px);                   /* 新增：图片模糊 */
+    transform: scale(1.01);              /* 新增：消除 blur 边缘漏白 */
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+    mask-image:         linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+    opacity: 0.55;                        /* 原 0.6，可再往下调让它更暗 */
+}
+
+/* 姓名+状态，垂直居中稍偏上 */
+#call-waiting-info {
+    position: absolute;
+    top: 45%;
+    left: 0; width: 100%;
+    text-align: center;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+}
+
+#call-waiting-name {
+    font-size: 34px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-shadow: 0 2px 16px rgba(0,0,0,0.8);
+}
+
+#call-waiting-status {
+    font-size: 13px;
+    color: #fff;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 16px;
+    border-radius: 20px;
+    border: 1px solid rgba(255,255,255,0.5);
+}
+
+#call-waiting-status::after {
+    content: '...';
+    display: inline-block;
+    width: 0;
+    overflow: hidden;
+    vertical-align: bottom;
+    animation: ellipsis-dots 2s steps(4, end) infinite;
+}
+@keyframes ellipsis-dots {
+    to { width: 1.1em; }
+}
+
+/* ── 等待屏：挂断按钮居中容器 ── */
+#call-waiting-end-wrap {
+    position: absolute;
+    bottom: 15%;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* ── 等待屏：来电接听/拒接按钮
+   百分比宽 + space-between，间距随屏幕等比缩放
+   ── */
+#incoming-call-btns {
+    position: absolute;
+    bottom: 15%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 72%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* =========================================================
+   圆形按钮基础样式
+   ========================================================= */
+.call-round-btn {
+    border: none;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.15s ease;
+    flex-shrink: 0;
+}
+.call-round-btn svg { width: 28px; height: 28px; }
+.call-round-btn:active { transform: scale(0.95); }
+
+.call-round-white  { background: rgba(255,255,255,0.18); color: #fff; width: 64px; height: 64px; }
+.call-round-red    { background: #ff3b30; color: #fff; width: 72px; height: 72px; box-shadow: 0 4px 24px rgba(255,59,48,0.4);}
+.call-round-green  { background: #34C759; color: #fff; width: 72px; height: 72px; box-shadow: 0 4px 24px rgba(52,199,89,0.4); }
+
+#call-mic-btn svg { width: 28px; height: 28px; }
+
+#call-end-btn {
+    background: #ff3b30;
+    color: #fff;
+    width: 64px;
+    height: 64px;
+    box-shadow: 0 4px 18px rgba(255,59,48,0.45);
+}
+
+#call-end-btn-waiting svg,
+#incoming-call-decline-btn svg {
+    width: 30px;
+    height: 30px;
+    transform: rotate(225deg);
+}
+
+#call-end-btn svg {
+    width: 24px;
+    height: 24px;
+    transform: rotate(225deg);
+}
+
+#incoming-call-accept-btn svg {
+    width: 30px;
+    height: 30px;
+    transform: scaleX(-1);
+}
+
+#incoming-call-accept-btn {
+    animation: incomingCallShake 1.5s infinite ease-in-out;
+    transform-origin: center center;
+}
+
+@keyframes incomingCallShake {
+    0%   { transform: scale(1) rotate(0deg); }
+    10%  { transform: scale(1.02) rotate(-15deg); }
+    20%  { transform: scale(1.02) rotate(15deg); }
+    30%  { transform: scale(1.02) rotate(-15deg); }
+    40%  { transform: scale(1.02) rotate(15deg); }
+    50%  { transform: scale(1.02) rotate(0deg); }
+    60%  { transform: scale(1) rotate(0deg); }
+    100% { transform: scale(1) rotate(0deg); }
+}
+
+/* =========================================================
+   接通后屏 (#call-connected)
+   ========================================================= */
+#call-connected {
+    position: absolute;
+    inset: 0;
+    background: #080808;
+    overflow: hidden;
+    isolation: isolate;   /* ← 新增：建立独立 stacking context */
+}
+
+#call-connected-bg {
+    position: absolute;
+    inset: 0;
+    top: 0; left: 0; width: 100%;
+    height: 60%; 
+    background-position: center;
+    filter: blur(15px) brightness(0.35);
+    transform: scale(1.01);
+    z-index: -1;   /* ← 改成 -1，沉到 stacking context 底层 */
+    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+    mask-image:         linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+}
+
+
+#call-connected .app-header {
+    background: transparent;
+    border: none;
+    padding: 8px 20px;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+#call-connected .app-header .action-btn {
+    background: rgba(255,255,255,0.12);
+    border: none;
+    color: #fff;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+}
+
+#call-connected .app-header .action-btn svg {
+    color: #fff;
+}
+
+#call-connected .app-header .title-container .title {
+    color: #fff;
+}
+
+/* 淡入动画 */
+.fade-in-element {
+    opacity: 0;
+    transform: translateY(10px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+}
+#call-connected.show-anim .fade-in-element {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+
+/* ── 旁白区
+   flex column 容器：spacer-top + 行 + spacer-bottom
+   spacer 高度由 JS 动态写入（= area.clientHeight / 2），
+   使每条新行 append 后 scroll 居中时正好落在视觉中间
+   ── */
+#call-narration-area {
+    flex-shrink: 0;
+    height: 55%;
+    overflow-y: auto;
+    padding: 0 4px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: rgba(255,255,255,0.5);
+    font-style: italic;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 35%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 35%);
+}
+
+#call-narration-area.hidden {
+    height: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+/* spacer：高度由 JS 动态设置为 area.clientHeight / 2 */
+.narration-spacer-top,
+.narration-spacer-bottom {
+    flex-shrink: 0;
+    width: 100%;
+}
+
+/* 旁白行：默认暗淡小字，.active 条高亮 */
+.call-narration-line {
+    flex-shrink: 0;
+    margin: 0 0 14px;
+    font-size: 14px;              /* 保持不变 */
+    color: rgba(255,255,255,0.28);
+    line-height: 1.65;
+    font-style: italic;
+    text-align: center;
+    padding: 4px 0;
+    transform-origin: center center;
+    /* ★ 用 scale 替代 font-size，布局不重排 */
+    transition: transform 0.35s ease, color 0.35s ease, font-weight 0.35s ease;
+    transform: scale(0.95);       /* ★ 整体等比放大 */
+}
+.call-narration-line.active {
+    font-size: 14px;              /* ★ 不再改字号 */
+    transform: scale(1);       /* ★ 整体等比放大 */
+    color: rgba(255,255,255,0.95);
+    font-weight: 500;
+    font-style: italic;
+}
+/* =========================================================
+   中部内容块
+   ========================================================= */
+
+/* ══════════════════════════════════════════════════
+   ① 语音模式（默认，无 .video-mode）
+      内容块垂直居中；身份 + 气泡纵向排列
+   ══════════════════════════════════════════════════ */
+#call-content-block {
+    position: absolute;
+    top: 20%;
+    left: 20px;
+    right: 20px;
+    bottom: calc(8% + 72px);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0;
+}
+
+/* 语音模式：主行纵向居中排列 */
+#call-main-row {
+    flex: 1;           /* ✅ 填充 content-block 剩余空间 */
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    width: 100%;
+}
+
+/* 语音模式：身份区居中 */
+#call-identity {
+    flex-shrink: 0;
+    width: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding-top: 0;
+}
+
+/* 语音模式：头像 80px */
+#call-avatar-img {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid rgba(255,255,255,0.2);
+}
+
+#call-char-name {
+    font-size: 20px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.3;
+    word-break: break-all;
+}
+
+/* 计时器 div 已不再使用（计时写入通话页 app-header .title） */
+#call-timer {
+    display: none;
+}
+
+/* 语音模式：气泡区全宽 */
+#call-bubble-wrap {
+    width: 100%;
+    flex: 1;           /* ✅ 填充 main-row 剩余空间 */
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow: hidden;
+    padding-top:8px;
+    padding-left:0;
+}
+
+/* 语音模式：AI 对话气泡高度自适应 */
+#call-dialogue-area {
+    flex: 0 0 30%;     
+    min-height: 0;         
+    background: transparent;   /* ✅ 提取到 ::before */
+    border: none;              /* ✅ 提取到 ::before */
+    border-radius: 12px;
+    overflow: visible;         /* ✅ 允许小三角溢出显示 */
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── AI 对话气泡内容 ── */
+#call-dialogue-inner {
+    flex: 1;
+    min-height: 0;             /* ✅ 关键：防止内部撑破父盒子，确保自身能滚动 */
+    border-radius: inherit;    /* ✅ 确保滚动时的内容不会溢出 12px 的圆角 */
+    position: relative;
+    z-index: 2;                /* ✅ 内容层级提高，压在背景之上 */
+    overflow-y: auto;          
+    padding: 12px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 100%);
+}
+
+#call-dialogue-area::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.3);
+    z-index: 0;
+    pointer-events: none;
+    transition: border-color 0.3s ease, background 0.3s ease;
+
+    /* 💡 核心魔法：使用 mask 组合，在顶部边框中间“挖”掉一个 14x3px 的洞，从而消除重叠的横线 */
+    -webkit-mask-image: linear-gradient(black, black), linear-gradient(black, black);
+    -webkit-mask-size: 100% 100%, 13px 3px;
+    -webkit-mask-position: 0 0, center top;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-composite: destination-out;
+    mask-composite: exclude;
+}
+
+/* Loading 状态隐藏边框 */
+#call-dialogue-area.loading-state::before {
+    background: transparent;
+    border-color: transparent;
+}
+
+#call-dialogue-area::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: transparent;
+    border-top: 1.3px solid rgba(255,255,255,0.3); 
+    border-left: 1.3px solid rgba(255,255,255,0.3);
+    border-top-left-radius: 2px;
+    z-index: 0;
+    pointer-events: none;
+    
+    
+    /* 默认 (语音模式)：在顶部正中间 */
+    top: -5px;
+    left: calc(50% - 5px);
+    transform: rotate(45deg);
+}
+
+#call-dialogue-area.loading-state {
+    background: transparent;
+    border-color: transparent;
+}
+
+#call-dialogue-area.loading-state::after {
+    opacity: 0;
+}
+
+/* ══════════════════════════════════════════════════
+   ② 视频模式（.video-mode）—— 覆盖为横向布局
+   ══════════════════════════════════════════════════ */
+#call-overlay.video-mode #call-content-block {
+    top: 0;
+    justify-content: flex-start;
+}
+
+#call-overlay.video-mode #call-main-row {
+    flex: 1;
+    min-height: 0;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 5px;
+}
+
+#call-overlay.video-mode #call-identity {
+    width: 58px;
+    flex-shrink: 0;
+    gap: 7px;
+    padding-top: 4px;
+}
+
+#call-overlay.video-mode #call-avatar-img {
+    width: 52px;
+    height: 52px;
+}
+
+#call-overlay.video-mode #call-char-name {
+    font-size: 12px;
+}
+
+#call-overlay.video-mode #call-bubble-wrap {
+    flex: 1;
+    min-height: 0;
+    width: auto;
+    padding-top: 0;
+    padding-left: 5px;
+}
+
+#call-overlay.video-mode #call-dialogue-area {
+    height: 28%;
+    min-height: unset;
+    max-height: unset;
+}
+
+#call-overlay.video-mode #call-dialogue-area::before {
+    -webkit-mask-size: 100% 100%, 3px 10px;
+    -webkit-mask-position: 0 0, left 20px;
+}
+
+/* 视频模式时：小三角移到左边 */
+#call-overlay.video-mode #call-dialogue-area::after {
+    width: 8px;
+    height: 8px;
+    top: 21px;
+    left: -4px;
+    transform: rotate(-45deg);
+}
+
+.call-dialogue-line {    
+    padding-left: 6px;
+    font-size: 14px;
+    line-height: 1.4;
+    color: rgba(255,255,255,0.9);
+    animation: callLineIn 0.38s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+.call-dialogue-line::before {
+    content: '';
+    position: absolute;
+    bottom: 50%;
+    left: -3px;
+    transform: translateY(50%);
+    width: 2px;
+    height: 2px;
+    background-color: rgba(255,255,255,0.2);
+    border-radius: 2px;
+}
+
+/* 用户气泡区 */
+#call-user-area {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: flex-start;   /* center → flex-end */
+    gap: 5px;
+    padding: 6px 10px;
+}
+
+#call-user-area::before {
+    content: '';
+    margin-top: auto;
+    flex-shrink: 0;
+}
+
+.call-user-line {    
+    background: rgba(255,255,255,0.13);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 18px;
+    padding: 8px 13px;
+    font-size: 14px;
+    color: rgba(255,255,255,0.9);
+    max-width: 90%;
+    animation: callLineIn 0.3s ease;
+}
+
+/* ── 底部控制区 ── */
+#call-bottom-bar {
+    position: absolute;
+    bottom: 8%;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px); /* ← 初始也保留 X */
+    opacity: 0;
+    width: 80%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+#call-connected.show-anim #call-bottom-bar {  /* 特异性 (2,0,0) */
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+#call-bottom-bar > * { pointer-events: auto; }
+
+
+
+/* ── 输入模式 ── */
+#call-overlay.input-mode-active #call-bottom-bar {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(16px);
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#call-bottom-bar {
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+#call-overlay.input-mode-active #call-bottom-bar,
+#call-overlay.input-mode-active #call-bottom-bar > * {
+    pointer-events: none;
+}
+
+/* ── 输入展开栏 ── */
+#call-input-bar {
+    position: absolute;
+    bottom: 10%;
+    left: 0;
+    width: 100%;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: transparent;
+    border: none;
+    transform: translateY(100%);
+    opacity: 0;
+    pointer-events: none;
+    transition: transform 0.38s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.3s ease;
+    gap:10px;
+}
+#call-overlay.input-mode-active #call-input-bar {
+    transform: translateY(0);
+    opacity: 1;
+    pointer-events: auto;
+}
+
+#call-message-input {
+    flex: 1;
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 22px;
+    padding: 10px 15px;
+    font-size: 15px;
+    outline: none;
+    min-width: 0;
+}
+.call-input-btn {
+    background: rgba(255,255,255,0.14);
+    border: none;
+    color: #fff;
+    border-radius: 20px;
+    padding: 10px 14px;
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.2s;
+}
+.call-input-btn-ai {
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* =========================================================
+   通话历史侧边栏
+   ========================================================= */
+#call-history-panel {
+    position: fixed;
+    top: 0; right: 0;
+    width: 75%;
+    max-width: 320px;
+    height: 100%;
+    background: rgba(22,22,25,0.9);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    z-index: 250;
+    transform: translateX(calc(100% + 35px));
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    display: flex;
+    flex-direction: column;
+    color: #fff;
+    box-shadow: -5px 0 25px rgba(0,0,0,0.5);
+}
+#call-history-panel.visible { transform: translateX(0); }
+
+#call-history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: calc(var(--safe-top, 20px) + 15px) 20px 15px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    font-size: 16px;
+    font-weight: 600;
+}
+#call-history-close-btn {
+    background: none;
+    border: none;
+    color: #aaa;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 4px;
+}
+#call-history-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+.call-history-item {
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.55;
+    word-break: break-all;
+}
+.call-history-label {
+    font-weight: bold;
+    margin-right: 8px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 12px;
+}
+
+/* 旁白：灰色 */
+.call-history-label--narration {
+    color: rgba(200,200,200,0.7);
+    background: rgba(180,180,180,0.12);
+}
+.call-history-text--narration {
+    color: rgba(200,200,200,0.6);
+    font-style: italic;
+}
+
+/* AI：蓝色 */
+.call-history-label--ai {
+    color: #90caf9;
+    background: rgba(144,202,249,0.15);
+}
+.call-history-text--ai {
+    color: rgba(144,202,249,0.85);
+}
+
+/* 用户：黄色 */
+.call-history-label--user {
+    color: #ffd97a;
+    background: rgba(255,210,100,0.13);
+}
+.call-history-text--user {
+    color: rgba(255,210,100,0.75);
+}
+
+/* 切换按钮：AI 生成中 opacity 降低，禁止点击 */
+#call-connected:has(#call-identity.ai-generating) #call-switch-btn {
+    opacity: 0.35;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+#call-switch-btn {
+    transition: opacity 0.3s ease;
+}
+
+/* =========================================================
+   AI 回复中：头像扩散光晕
+   ========================================================= */
+@keyframes callAuraRipple {
+    0%   {
+        box-shadow:
+            0 0 0 0   rgba(144, 202, 249, 0.75),
+            0 0 0 0   rgba(144, 202, 249, 0.35);
+    }
+    65%  {
+        box-shadow:
+            0 0 0 10px rgba(144, 202, 249, 0),
+            0 0 0 20px rgba(144, 202, 249, 0);
+    }
+    100% {
+        box-shadow:
+            0 0 0 0   rgba(144, 202, 249, 0),
+            0 0 0 0   rgba(144, 202, 249, 0);
+    }
+}
+
+#call-identity.ai-generating #call-avatar-img {
+    animation: callAuraRipple 1.5s ease-out infinite;
+    border-color: rgba(144, 202, 249, 0.8);
+    transition: border-color 0.3s ease;
+}
+
+/* =========================================================
+   共用动画
+   ========================================================= */
+@keyframes callLineIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+#call-mic-btn:disabled,
+#call-switch-btn:disabled {
+    opacity: 0.35;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+}
+
+/* =========================================================
+   AI 等待中：音频波形 loading 动画 (15根)
+   ========================================================= */
+.call-dialogue-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px; /* 这里越小越紧凑 */
+    width: 100%;
+    height: 100%;
+    min-height: 56px;
+    padding: 18px 0;
+    box-sizing: border-box;
+}
+
+.call-dialogue-loading span {
+    display: inline-block;
+    width: 4px;
+    border-radius: 2px;
+    background: rgba(144, 202, 249, 0.72);
+    animation: callAudioBar 1.1s ease-in-out infinite;
+    transform-origin: center center;    
+}
+
+/* 👇 删掉原本的 1~5，替换为全新的 1~15 高低错落配置 */
+.call-dialogue-loading span:nth-child(1)  { height: 12px; animation-delay: 0.0s;  }
+.call-dialogue-loading span:nth-child(2)  { height: 22px; animation-delay: 0.15s; }
+.call-dialogue-loading span:nth-child(3)  { height: 16px; animation-delay: 0.3s;  }
+.call-dialogue-loading span:nth-child(4)  { height: 30px; animation-delay: 0.45s; }
+.call-dialogue-loading span:nth-child(5)  { height: 18px; animation-delay: 0.6s;  }
+.call-dialogue-loading span:nth-child(6)  { height: 34px; animation-delay: 0.2s;  }
+.call-dialogue-loading span:nth-child(7)  { height: 20px; animation-delay: 0.8s;  }
+.call-dialogue-loading span:nth-child(8)  { height: 28px; animation-delay: 0.35s; }
+.call-dialogue-loading span:nth-child(9)  { height: 14px; animation-delay: 0.5s;  }
+.call-dialogue-loading span:nth-child(10) { height: 26px; animation-delay: 0.75s; }
+.call-dialogue-loading span:nth-child(11) { height: 32px; animation-delay: 0.1s;  }
+.call-dialogue-loading span:nth-child(12) { height: 18px; animation-delay: 0.9s;  }
+.call-dialogue-loading span:nth-child(13) { height: 24px; animation-delay: 0.25s; }
+.call-dialogue-loading span:nth-child(14) { height: 14px; animation-delay: 0.65s; }
+.call-dialogue-loading span:nth-child(15) { height: 10px; animation-delay: 0.4s;  }
+
+@keyframes callAudioBar {
+    0%, 100% { transform: scaleY(0.35); opacity: 0.45; }
+    50%      { transform: scaleY(1);    opacity: 1;    }
+}

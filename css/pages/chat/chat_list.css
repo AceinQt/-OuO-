@@ -22,7 +22,7 @@
     height: 24px;
     fill: none;
     stroke-width: 2px;
-    stroke: var(--primary-color);
+    stroke: var(--btn-color);
 }
 
 /* 消息列表：拥有带弧度的白底，并且向下撑满 */
@@ -172,59 +172,90 @@
     pointer-events: none; /* 防止提示文本的隐形图层遮挡列表的手势滑动 */
 }
 
-/* 5. “我”的页面卡片样式 (提取自JS行内样式) */
-.persona-card {
-    display: flex;
-    align-items: center;
-    background: #fff;
-    margin: 10px 15px;
-    padding: 15px;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    border: 1px solid #f0f0f0;
-    transition: transform 0.1s;
-}
+/* ================= 5. “我”的页面 (通讯录) 样式 ================= */
 
-.persona-card:active {
-    transform: scale(0.98);
-}
-
-.persona-card-img {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    object-fit: cover;
-    margin-right: 15px;
-    border: 1px solid #eee;
-}
-
-.persona-card-content {
-    flex: 1;
+/* 1. 全宽背景白底容器 (与 #chat-list-container 采用同款形状) */
+.contacts-list-container {
+    background-color: var(--white-color);
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    margin-top: 3px; 
+    padding-top: 0px; 
+    min-height: calc(100% - 3px); 
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap:5px;
-    justify-content: flex-start;
-
 }
 
-.persona-card-realname {
-    font-size: 12px;
-    color: #999;
-}
-
-.persona-card-nickname {
-    font-size: 16px;
-    font-weight: 600;
-    color: #333;
-}
-
-.persona-edit-btn {
-    padding: 8px;
-    color: var(--primary-color);
-    background: transparent;
+/* 2. 分组外壳：无边距，无圆角，边缘贴合屏幕 */
+.contact-group {
+    background-color: transparent;
+    margin: 0;
     border: none;
-    cursor: pointer;
+    border-radius: 0;
+    overflow: hidden;
 }
+
+/* 3. 分组头部：类似微信通讯录的字母表索引头设计 */
+.contact-group-header {
+    padding: 12px 30px;
+    background-color: #fff; /* 微弱的浅灰底色，与白色列表内容区分 */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;    
+}
+
+/* 第一个元素的顶部边框不需要 */
+.contact-group:first-child .contact-group-header {
+    border-top: none;
+    border-top-left-radius: 20px;
+    border-top-right-radius: 20px;
+    padding-top:30px;
+}
+
+.contact-group-header h4 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--text-color);
+    font-weight: bold;
+}
+
+/* 4. 折叠箭头动画设计 */
+.contact-group-arrow {
+    font-size: 12px;
+    color: var(--ink-color);
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    transform: rotate(-90deg); /* 默认折叠：箭头向右 ▶ */
+}
+
+.contact-group.open .contact-group-arrow {
+    transform: rotate(0deg); /* 展开：箭头向下 ▼ */
+}
+
+/* 5. 内部列表容器的展开与折叠控制 */
+.contact-group-content {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease-in-out;
+}
+
+.contact-group.open .contact-group-content {
+    max-height: 3000px; /* 给予一个足够大的高度来显示列表项 */
+}
+
+/* 微调：如果通讯录里的 list-item 被第一项选择器错误影响，单独重置 */
+#tab-view-me .list-item:first-child {
+    padding: 10px 20px;
+}
+
+/* 清除列表默认的多余 Padding，并给列表底部留出自然的少许间距 */
+#tab-view-me ul.list-container {
+    padding-bottom: 0;
+}
+
+
 
 /* 6. 美化后的底部悬浮 Tab 栏 */
 #chat-list-screen .bottom-nav-tabs {
@@ -336,36 +367,6 @@ color: var(--primary-color);
 
 
 
-/* 2. 优化“我”的页面卡片操作区样式 (配合 JS 修改) */
-.persona-card-actions {
-    display: flex;
-    align-items: center;
-    gap: 5px; /* 按钮之间的间距 */
-}
-
-.persona-action-btn {
-    padding: 8px;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    transition: background-color 0.2s;
-}
-
-.persona-action-btn:active {
-    background-color: #f0f0f0;
-}
-
-.persona-action-btn.edit {
-    color: var(--primary-color);
-}
-
-.persona-action-btn.delete {
-    color: #ff3b30; /* 红色删除图标 */
-}
 
 /* 3. 修复新建角色弹窗的绑定按钮样式 (配合 HTML 修改) */
 

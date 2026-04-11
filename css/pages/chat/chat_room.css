@@ -918,6 +918,13 @@
     /* 变灰 */
 }
 
+#chat-room-screen .action-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    filter: grayscale(100%);
+    /* 变灰 */
+}
+
 .chat-input-wrapper {
     flex-shrink: 0;
     position: absolute;
@@ -1095,7 +1102,7 @@
 #chat-room-header-default .action-btn-group .action-btn svg {
     width: 24px;
     height: 24px;
-    stroke: var(--primary-color);
+    stroke: var(--btn-color);
     stroke-width: 0.5px;
 }
 
@@ -1189,4 +1196,114 @@
     text-align: center;
     line-height: 1.5;
     /* 如果背景是深色主题，可以把背景改成 rgba(255,255,255,0.1)，文字改成 #ccc */
+}
+
+/* ==========================================
+   折叠通话气泡
+   ========================================== */
+
+/* 折叠气泡整体：沿用 sent/received 的列布局，仅加边距 */
+.collapsed-call-bubble {
+    margin-bottom: 12px;
+}
+
+/* 新增：包裹气泡和按钮的容器 */
+.call-bubble-and-btn-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.call-bubble-and-btn-wrap.sent {
+    flex-direction: row-reverse;
+}
+
+/* 气泡本身：和普通气泡同款，略加图标间距 */
+.call-summary-bubble {
+    cursor: default;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 16px;
+    letter-spacing: 0.01em;
+}
+
+/* 展开按钮调整 */
+.call-expand-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0;
+    padding: 6px;
+    background: rgba(255, 255, 255, 0.5);
+    border: none;
+    cursor: pointer;
+    color: #82AED9;
+    border-radius: 50%;
+    transition: background 0.15s, color 0.15s;
+}
+.call-expand-btn:hover {
+    background: rgba(255, 255, 255, 0.1);    
+}
+
+/* 右侧浮动收起按钮调整 */
+#call-collapse-floating-btn {
+    position: fixed;
+    right: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 150;
+    display: none;           /* 默认隐藏，JS 控制显示 */
+    align-items: center;
+    justify-content: center;
+    padding: 10px; /* 改成四周等距，实现正圆 */
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    color: #82AED9;
+    border-radius: 50%; /* 改为正圆形 */
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    user-select: none;
+    transition: opacity 0.2s;
+}
+#call-collapse-floating-btn:active {
+    opacity: 0.75;
+}
+
+
+/* ==========================================
+   展开后的通话记录容器样式
+   ========================================== */
+.expanded-call-session-container {
+    background-color:rgba(130, 174, 217, 0.3); /* 柔和浅灰蓝底色 */
+    border-top: 1px dashed #82AED9; /* 顶部分割蓝线 */
+    border-bottom: 1px dashed #82AED9; /* 底部分割蓝线 */
+    margin: 14px -10px; /* 负边距抵消外层 message-area 的 10px padding，实现左右贯穿 */
+    padding: 15px 10px; /* 内容重新缩进，恢复气泡原有的对齐感 */
+    position: relative;
+    z-index: 1; /* 保证内部气泡层级正常不受挤压 */
+    animation: fadeIn 0.2s ease;
+    border-radius: 20px;
+}
+
+/* 如果最后一个气泡紧贴底部边线，可以去掉多余的边距，让内部留白更均匀 */
+.expanded-call-session-container .message-wrapper:last-child {
+    margin-bottom: 0;
+}
+
+/* 调整容器内的“系统通知时间戳/状态更新”背景，使其在浅灰蓝底色上显得更自然和通透 */
+.expanded-call-session-container .system-notification-bubble {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #7A869A;
+}
+
+.expanded-call-session-container .withdrawn-message {
+    background-color: rgba(0, 0, 0, 0.06);
+    color: #7A869A;
+}
+
+/* 兼容可能出现的时间分割线透明化 */
+.expanded-call-session-container .chat-time-divider {
+    background-color: transparent;
+    color: #7A869A;
 }

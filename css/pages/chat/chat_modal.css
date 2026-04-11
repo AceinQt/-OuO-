@@ -58,6 +58,7 @@
 #create-member-for-group-modal .avatar-preview {
     width: 80px;
     height: 80px;
+    border-radius: 50%;
 }
 
 #chat-expansion-panel {
