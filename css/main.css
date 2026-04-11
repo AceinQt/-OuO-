@@ -19,6 +19,10 @@
 @import './pages/chat/settings_sidebar.css';
 @import './pages/chat/chat_search.css';
 @import './pages/chat/chat_modal.css';
+@import './pages/chat/char_info.css';
+@import './pages/chat/user_info.css';
+@import './pages/chat/call-overlay.css';
+
 
 
 @import './pages/summary.css';
