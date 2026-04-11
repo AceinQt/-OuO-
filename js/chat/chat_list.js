@@ -8,10 +8,12 @@ function setupChatListScreen() {
     addCharModal = document.getElementById('add-char-modal');
     addCharForm = document.getElementById('add-char-form');
     
-    renderChatList();
-    renderUserPersonas(); 
+    // 【修改】直接绑定表单与跳转事件，无需再注入页面
+    setupContactScreensEvents(); 
     
-    // 初始化气泡编辑器
+    renderChatList();
+    renderContacts(); 
+    
     if(typeof setupBubblePresets === 'function') setupBubblePresets();
 
     const tabs = document.querySelectorAll('.nav-tab-item');
@@ -19,6 +21,9 @@ function setupChatListScreen() {
     const title = document.getElementById('chat-list-title');
     const createGroupBtn = document.getElementById('create-group-btn');
     const importBtn = document.getElementById('import-character-card-btn');
+    
+    const tabMeSpan = document.querySelector('.nav-tab-item[data-tab="me"] span');
+    if (tabMeSpan) tabMeSpan.textContent = '通讯录';
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -29,7 +34,6 @@ function setupChatListScreen() {
             views.forEach(v => v.style.display = 'none');
             const targetView = document.getElementById(`tab-view-${tab.dataset.tab}`);
             if (targetView) {
-                // 如果是气泡外观设置页，使用 flex 布局；否则使用 block
                 if (tab.dataset.tab === 'bubbles') {
                     targetView.style.display = 'flex';
                 } else {
@@ -57,20 +61,19 @@ function setupChatListScreen() {
                     }
                 };
             } else if (tab.dataset.tab === 'me') {
-                title.textContent = '我';
+                title.textContent = '通讯录';
                 if(createGroupBtn) createGroupBtn.style.display = 'none';
                 if(importBtn) importBtn.style.display = 'none';
-                addChatBtn.style.display = 'inline-flex';
                 
-                addChatBtn.onclick = () => { openUserPersonaModal(); };
+                // 【修改】隐藏通讯录页面右上角的添加按钮
+                addChatBtn.style.display = 'none';
+                
             } else if (tab.dataset.tab === 'bubbles') {
                 title.textContent = '外观';
-                // 隐藏右上角的各种按钮
                 if(createGroupBtn) createGroupBtn.style.display = 'none';
                 if(importBtn) importBtn.style.display = 'none';
                 addChatBtn.style.display = 'none';
                 
-                // 触发渲染气泡编辑器列表
                 if(typeof window.renderGlobalBubblePresets === 'function') {
                     window.renderGlobalBubblePresets();
                 }
@@ -95,7 +98,6 @@ function setupChatListScreen() {
         handleChatListLongPress(chatItem.dataset.id, chatItem.dataset.type, e.clientX, e.clientY);
     });
 }
-
 
 // --- 替换 chat_list.js 中的 setupAddCharModal 函数 ---
 
@@ -164,6 +166,7 @@ function setupAddCharModal() {
                 realName: myRealName,
                 nickname: myNickname,
                 persona: myPersonaVal,
+                status: '在线',
                 avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'
             };
             
@@ -209,100 +212,127 @@ function setupAddCharModal() {
         await saveSingleChat(newChar.id, 'private');
         
         if(typeof renderChatList === 'function') renderChatList();
+        if(typeof renderCharacters === 'function') renderCharacters();
         addCharModal.classList.remove('visible');
         showToast(`角色“${newChar.remarkName}”创建成功！`);
     });
 }
 
-// --- 替换 chat_list.js 中的 renderUserPersonas 函数 ---
 
-function renderUserPersonas() {
-    const container = document.getElementById('my-personas-list');
-    if(!container) return;
+
+// --- 替换 chat_list.js 中原来的 renderContacts 等三个函数 ---
+
+// --- 替换 chat_list.js 中的 renderContacts 函数 ---
+function renderContacts() {
+    const tabMe = document.getElementById('tab-view-me');
+    if (tabMe && !tabMe.dataset.initialized) {
+        tabMe.dataset.initialized = 'true';
+        // 绑定新的无缝折叠面板头部
+        tabMe.querySelectorAll('.contact-group-header').forEach(header => {
+            header.addEventListener('click', () => {
+                header.parentElement.classList.toggle('open');
+            });
+        });
+    }
+    
+    renderCharacters();
+    renderUserPersonas();
+}
+
+function renderCharacters() {
+    const container = document.getElementById('contacts-characters-list');
+    if (!container) return;
     container.innerHTML = '';
     
-    if (!db.userPersonas || db.userPersonas.length === 0) {
-        container.innerHTML = '<div style="text-align:center; color:#999; margin-top:50px;">暂无档案，点击右上角+创建</div>';
+    if (!db.characters || db.characters.length === 0) {
+        container.innerHTML = '<li class="list-item" style="justify-content:center; color:#999; padding:20px 0;">暂无角色</li>';
         return;
     }
-
-    db.userPersonas.forEach(p => {
-        const card = document.createElement('div');
-        card.className = 'persona-card';
-        
-        card.innerHTML = `
-            <img src="${p.avatar}" class="persona-card-img">
-            <div class="persona-card-content">
-                <div class="persona-card-nickname">${p.nickname}</div>
-                <div class="persona-card-realname">姓名: ${p.realName}</div>
-                
-            </div>
-            <div class="persona-card-actions">
-                <button class="persona-action-btn edit" title="编辑">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                </button>
-                <button class="persona-action-btn delete" title="删除">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-                </button>
+    
+    db.characters.forEach(c => {
+        const li = document.createElement('li');
+        li.className = 'list-item'; // 使用消息列表同款样式
+        li.innerHTML = `
+            <img src="${c.avatar}" class="chat-avatar">
+            <div class="item-details">
+                <div class="item-details-row">
+                    <div class="item-name">${c.remarkName}</div>
+                </div>
+                <div class="item-preview-wrapper">
+                    <div class="item-preview">${c.status || '在线'}</div>
+                </div>
             </div>
         `;
-
-        // 绑定编辑事件
-        card.querySelector('.persona-action-btn.edit').addEventListener('click', (e) => {
-            e.stopPropagation();
-            openUserPersonaModal(p);
+        li.addEventListener('click', () => {
+            openCharacterScreen(c);
         });
-
-        // 绑定删除事件 (这里是修复的核心)
-        card.querySelector('.persona-action-btn.delete').addEventListener('click', async (e) => {
-            e.stopPropagation();
-            // 检查是否被绑定
-            const isBound = db.characters.some(c => c.boundPersonaId === p.id);
-            if (isBound) {
-                showToast('该档案已绑定聊天，无法删除');
-                return;
-            }
-            if (await AppUI.confirm(`确定要删除档案“${p.nickname}”吗?`, "系统提示", "确认", "取消")) {
-                try {
-                    // 1. 直接从数据库删除
-                    await dexieDB.userPersonas.delete(p.id);
-                    // 2. 从内存数组删除
-                    db.userPersonas = db.userPersonas.filter(x => x.id !== p.id);
-                    // 3. 重新渲染
-                    renderUserPersonas();
-                    showToast('档案已删除');
-                } catch (err) {
-                    console.error("删除失败:", err);
-                    showToast("删除失败，请查看控制台");
-                }
-            }
-        });
-
-        container.appendChild(card);
+        container.appendChild(li);
     });
 }
 
-function openUserPersonaModal(persona = null) {
-    const modal = document.getElementById('user-persona-modal');
-    const title = document.getElementById('user-persona-modal-title');
+function renderUserPersonas() {
+    const container = document.getElementById('my-personas-list');
+    if (!container) return;
+    container.innerHTML = '';
     
-    if (persona) {
-        currentPersonaIdToEdit = persona.id;
-        title.textContent = '编辑档案';
-        document.getElementById('user-persona-avatar-preview').src = persona.avatar;
-        document.getElementById('user-persona-realname').value = persona.realName;
-        document.getElementById('user-persona-nickname').value = persona.nickname;
-        document.getElementById('user-persona-desc').value = persona.persona;
-    } else {
-        currentPersonaIdToEdit = null;
-        title.textContent = '新建档案';
-        document.getElementById('user-persona-avatar-preview').src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
-        document.getElementById('user-persona-form').reset();
+    // 渲染现有的用户档案列表
+    if (db.userPersonas && db.userPersonas.length > 0) {
+        db.userPersonas.forEach(p => {
+            const li = document.createElement('li');
+            li.className = 'list-item'; // 使用消息列表同款样式
+            li.innerHTML = `
+                <img src="${p.avatar}" class="chat-avatar">
+                <div class="item-details">
+                    <div class="item-details-row">
+                        <div class="item-name">${p.nickname}</div>
+                    </div>
+                    <div class="item-preview-wrapper">
+                        <div class="item-preview">${p.status || '在线'}</div>
+                    </div>
+                </div>
+            `;
+            li.addEventListener('click', () => {
+                openUserPersonaScreen(p);
+            });
+            container.appendChild(li);
+        });
     }
-    modal.classList.add('visible');
+
+    // 在底部固定添加一个“新增”列表项，使用一致的外观
+    const addCard = document.createElement('li');
+    addCard.className = 'list-item';
+    addCard.innerHTML = `
+        <div class="chat-avatar" style="display: flex; justify-content: center; align-items: center; background-color: #f8f9fa; color: #999; font-size: 24px; font-weight: 300; border: 1px dashed #ccc; box-sizing: border-box;">+</div>
+        <div class="item-details">
+            <div class="item-details-row">
+                <div class="item-name" style="color: #333;">新增档案</div>
+            </div>
+        </div>
+    `;
+    
+    // 绑定点击事件：弹出新建档案弹窗
+    addCard.addEventListener('click', () => {
+        const modal = document.getElementById('user-persona-modal');
+        if (modal) {
+            document.getElementById('user-persona-modal-title').textContent = '新建档案';
+            document.getElementById('user-persona-form').reset();
+            document.getElementById('user-persona-avatar-preview').src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+            currentPersonaIdToEdit = null;
+            modal.classList.add('visible');
+        }
+    });
+    
+    container.appendChild(addCard);
 }
 
+// --- 专门用于：跳转到通讯录页面的函数 ---
+function goBackToContacts() {
+    switchScreen('chat-list-screen');
+    const meTab = document.querySelector('.nav-tab-item[data-tab="me"]');
+    if (meTab) meTab.click(); // 确保返回后仍然停留在"通讯录"视图
+}
 
+// openUserPersonaScreen 已迁移至 user_info.js
 
             function handleChatListLongPress(chatId, chatType, x, y) {
                 clearTimeout(longPressTimer);
@@ -345,10 +375,25 @@ function openUserPersonaModal(persona = null) {
                     type: 'group'
                 }))];
                 noChatsPlaceholder.style.display = (db.characters.length + db.groups.length) === 0 ? 'block' : 'none';
+// 【修复】过滤掉用户全局状态推送的时间戳，防止列表被异常顶起
+                const getEffectiveSortTime = (chatItem) => {
+                    if (!chatItem.history || chatItem.history.length === 0) return 0;
+                    // 从后往前找，找到第一个不是"用户全局状态通知"的消息时间戳
+                    for (let i = chatItem.history.length - 1; i >= 0; i--) {
+                        const m = chatItem.history[i];
+                        const isUserStatus = m.isUserStatusNotif || (m.role === 'user' && /\[.*?更新状态为：.*?\]/.test(m.content));
+                        if (!isUserStatus) {
+                            return m.timestamp;
+                        }
+                    }
+                    // 如果全是状态通知，就保底返回最早一条的时间
+                    return chatItem.history[0].timestamp; 
+                };
+
                 const sortedChats = allChats.sort((a, b) => {
                     if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
-                    const lastMsgTimeA = a.history && a.history.length > 0 ? a.history[a.history.length - 1].timestamp : 0;
-                    const lastMsgTimeB = b.history && b.history.length > 0 ? b.history[b.history.length - 1].timestamp : 0;
+                    const lastMsgTimeA = getEffectiveSortTime(a);
+                    const lastMsgTimeB = getEffectiveSortTime(b);
                     return lastMsgTimeB - lastMsgTimeA;
                 });
                 sortedChats.forEach(chat => {
@@ -443,7 +488,9 @@ function openUserPersonaModal(persona = null) {
                     const itemName = chat.type === 'private' ? chat.remarkName : chat.name;
                     const pinBadgeHTML = chat.isPinned ? '<span class="pin-badge">置顶</span>' : '';
                     let timeString = '';
-                    const lastMessage = chat.history && chat.history.length > 0 ? chat.history[chat.history.length - 1] : null;
+                    const lastMessage = chat.history && chat.history.length > 0
+    ? [...chat.history].reverse().find(m => !m.isUserStatusNotif) ?? null
+    : null;
                     if (lastMessage) {
                         const date = new Date(lastMessage.timestamp);
                         const now = new Date();
@@ -485,159 +532,78 @@ ${unreadBadgeHTML}`; /* <-- 将红点元素移动到这里 */
             
 
 
-function setupUserPersonaModal() {
-    const modal = document.getElementById('user-persona-modal');
-    const form = document.getElementById('user-persona-form');
-    const cancelBtn = document.getElementById('user-persona-cancel-btn');
-    const avatarUpload = document.getElementById('user-persona-avatar-upload');
-    const avatarPreview = document.getElementById('user-persona-avatar-preview');
-    
-    // 1. 处理头像上传
-    avatarUpload.addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            try {
-                // 如果你有压缩图片的函数,使用它;否则直接读取
-                if (typeof compressImage === 'function') {
-                    const compressed = await compressImage(file, { 
-                        quality: 0.8, 
-                        maxWidth: 400, 
-                        maxHeight: 400 
-                    });
-                    avatarPreview.src = compressed;
-                } else {
-                    // 没有压缩函数,直接用 FileReader
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                        avatarPreview.src = e.target.result;
-                    };
-                    reader.readAsDataURL(file);
-                }
-            } catch (error) {
-                console.error('头像上传失败:', error);
-                showToast('头像上传失败,请重试');
-            }
-        }
-    });
-    
-    // 2. 处理表单提交
-    form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const realName = document.getElementById('user-persona-realname').value.trim();
-        const nickname = document.getElementById('user-persona-nickname').value.trim();
-        const persona = document.getElementById('user-persona-desc').value.trim();
-        const avatar = avatarPreview.src;
-        
-        if (!realName || !nickname) {
-            showToast('真名和昵称不能为空');
-            return;
-        }
-        
-        // 确保数组存在
-        if (!db.userPersonas) db.userPersonas = [];
-        
-        if (currentPersonaIdToEdit) {
-            // 编辑模式
-            const existingPersona = db.userPersonas.find(p => p.id === currentPersonaIdToEdit);
-          if (existingPersona) {
-                // 1. 更新档案本身
-                existingPersona.realName = realName;
-                existingPersona.nickname = nickname;
-                existingPersona.persona = persona;
-                existingPersona.avatar = avatar;
+function setupContactScreensEvents() {
 
-                // 2. 同步私聊 (原有的代码)
-                if (db.characters) {
-                    let updateCount = 0;
-                    db.characters.forEach(char => {
-                        if (char.boundPersonaId === existingPersona.id) {
-                            char.myName = realName;
-                            char.myNickname = nickname;
-                            char.myPersona = persona;
-                            char.myAvatar = avatar;
-                            updateCount++;
-                        }
-                    });
-                }
+    // 返回键 / 头像上传 / 表单保存 / 删除 已迁移至 user_info.js -> setupUserPersonaScreen()
 
-                // ==========================================
-                // 3. 【新增】同步群聊 (修复你的问题)
-                // ==========================================
-                if (db.groups) {
-                    db.groups.forEach(group => {
-                        // 检查群聊中"我"的信息是否绑定了当前编辑的档案 ID
-                        if (group.me && group.me.boundPersonaId === existingPersona.id) {
-                            group.me.realName = realName; // 真名
-                            group.me.persona = persona;   // 人设
-                            group.me.avatar = avatar;     // 头像
-                        }
-                    });
-                }
-                showToast('档案已更新');
+    // --- 1. 新建用户档案（Modal弹窗逻辑） ---
+    const modalForm = document.getElementById('user-persona-form');
+    const modalAvatarUpload = document.getElementById('user-persona-avatar-upload');
+    const modalAvatarPreview = document.getElementById('user-persona-avatar-preview');
+    const modalCancelBtn = document.getElementById('user-persona-cancel-btn');
+
+    if (modalAvatarUpload) {
+        modalAvatarUpload.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                try {
+                    if (typeof compressImage === 'function') {
+                        modalAvatarPreview.src = await compressImage(file, { quality: 0.8, maxWidth: 400, maxHeight: 400 });
+                    } else {
+                        const reader = new FileReader();
+                        reader.onload = (e) => modalAvatarPreview.src = e.target.result;
+                        reader.readAsDataURL(file);
+                    }
+                } catch (error) { showToast('头像上传失败'); }
             }
-        } else {
-            // 新建模式
+        });
+    }
+
+    if (modalForm) {
+        modalForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const realName = document.getElementById('user-persona-realname').value.trim();
+            const nickname = document.getElementById('user-persona-nickname').value.trim();
+            const persona = document.getElementById('user-persona-desc').value.trim();
+            const avatar = modalAvatarPreview.src;
+            
+            if (!realName || !nickname) {
+                showToast('真名和昵称不能为空');
+                return;
+            }
+            
+            if (!db.userPersonas) db.userPersonas =[];
+            
+            // 永远都是新建
             const newPersona = {
                 id: Date.now().toString() + Math.random().toString().slice(2, 6),
                 realName: realName,
                 nickname: nickname,
                 persona: persona,
+                status: '在线',
                 avatar: avatar
             };
             db.userPersonas.push(newPersona);
             showToast('档案创建成功');
-        }
-        
-
-await saveUserPersonaTable(); // 1. 保存档案表
-
-        // 2. 如果发生了同步更新（私聊或群聊），需要同步对应的表
-        // ⚠️ 修复：必须安全剥离 history，或者直接调用 saveData()，绝不能直接原样 put
-        try {
-            if (db.characters && db.characters.length > 0) {
-                const safeChars = db.characters.map(c => { 
-                    const o = {...c}; 
-                    if(window.isMessageMigrated) delete o.history; 
-                    return o; 
-                });
-                await dexieDB.characters.bulkPut(safeChars); 
+            
+            if (typeof saveUserPersonaTable === 'function') {
+                await saveUserPersonaTable();
             }
-            if (db.groups && db.groups.length > 0) {
-                const safeGroups = db.groups.map(g => { 
-                    const o = {...g}; 
-                    if(window.isMessageMigrated) delete o.history; 
-                    return o; 
-                });
-                await dexieDB.groups.bulkPut(safeGroups); 
-            }
-        } catch (e) {
-            console.error("同步角色与群聊信息失败:", e);
-        }
+            
+            renderContacts();
+            document.getElementById('user-persona-modal').classList.remove('visible');
+        });
+    }
 
-        renderUserPersonas();
-        
-        // 关闭弹窗
-        modal.classList.remove('visible');
-        form.reset();
-        currentPersonaIdToEdit = null;
-    });
-    
-    // 3. 处理取消按钮
-    cancelBtn.addEventListener('click', () => {
-        modal.classList.remove('visible');
-        form.reset();
-        currentPersonaIdToEdit = null;
-    });
-    
-    // 4. 点击背景关闭弹窗
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.classList.remove('visible');
-            form.reset();
-            currentPersonaIdToEdit = null;
-        }
-    });
+    if (modalCancelBtn) {
+        modalCancelBtn.addEventListener('click', () => {
+            document.getElementById('user-persona-modal').classList.remove('visible');
+        });
+    }
+
+
+
+    // 编辑已有档案的独立页面逻辑已迁移至 user_info.js -> setupUserPersonaScreen()
 }
 
 // 辅助函数：打开选择档案模态框 (给 settings.js 和 addChat 用)

@@ -83,11 +83,57 @@ function setupChatSettings() {
                         if(myPersonaInput) myPersonaInput.value = selectedPersona.persona;
                         
                         if(form) form.dataset.pendingBindId = selectedPersona.id;
-                        showToast('已选择新身份，请记得点击下方“保存设置”');
+                        showToast('已选择新身份，请记得点击下方"保存设置"');
                     }
                 });
             } else {
                 showToast("功能未就绪，请刷新页面");
+            }
+        });
+    }
+    
+        // ================= 侧边栏快捷操作按钮 =================
+    
+    // 1. 编辑我的用户身份档案
+    const editUserPersonaBtn = document.getElementById('edit-user-persona-btn');
+    if (editUserPersonaBtn) {
+        editUserPersonaBtn.addEventListener('click', () => {
+            const char = db.characters.find(c => c.id === currentChatId);
+            if (char && char.boundPersonaId) {
+                const persona = db.userPersonas.find(p => p.id === char.boundPersonaId);
+                if (persona) {
+                    document.getElementById('chat-settings-sidebar').classList.remove('open'); // 关闭侧边栏
+                    if (typeof openUserPersonaScreen === 'function') openUserPersonaScreen(persona, 'chat-room');
+                } else {
+                    showToast('未找到绑定的身份档案，请重新绑定');
+                }
+            } else {
+                showToast('请先绑定一个身份档案');
+            }
+        });
+    }
+
+    // 2. 偷看角色手机
+    const sidebarPeekBtn = document.getElementById('sidebar-peek-btn');
+    if (sidebarPeekBtn) {
+        sidebarPeekBtn.addEventListener('click', () => {
+            document.getElementById('chat-settings-sidebar').classList.remove('open');
+            document.getElementById('peek-screen').dataset.source = 'chat-room'; // 标记来源
+            if (typeof window.openPeekScreen === 'function') {
+                window.openPeekScreen(currentChatId);
+            }
+        });
+    }
+
+    // 3. 编辑角色信息
+    const sidebarEditCharBtn = document.getElementById('sidebar-edit-char-btn');
+    if (sidebarEditCharBtn) {
+        sidebarEditCharBtn.addEventListener('click', () => {
+            const char = db.characters.find(c => c.id === currentChatId);
+            if (char) {
+                document.getElementById('chat-settings-sidebar').classList.remove('open');
+                // ✅ source 改为通过参数传入，不再手动设置 dataset，防止脏值残留
+                if (typeof openCharacterScreen === 'function') openCharacterScreen(char, 'chat-room');
             }
         });
     }
@@ -113,12 +159,30 @@ function setupChatSettings() {
         });
     }
 
+    // 最大记忆轮数：点击菜单唤起输入弹窗
+    const maxMemoryItem = document.getElementById('setting-max-memory-item');
+    if (maxMemoryItem) {
+        maxMemoryItem.addEventListener('click', async () => {
+            const currentVal = document.getElementById('setting-max-memory').value || 10;
+            const result = await AppUI.prompt("请输入最大记忆轮数", currentVal, "最大记忆轮数", "确定", "取消");
+            if (result !== null) {
+                const num = parseInt(result, 10);
+                if (!isNaN(num) && num > 0) {
+                    document.getElementById('setting-max-memory').value = num;
+                    document.getElementById('setting-max-memory-display').textContent = num;
+                } else {
+                    showToast('请输入有效的正整数');
+                }
+            }
+        });
+    }
+    
     const clearChatHistoryBtn = document.getElementById('clear-chat-history-btn');
     if (clearChatHistoryBtn) {
         clearChatHistoryBtn.addEventListener('click', async () => {
             const character = db.characters.find(c => c.id === currentChatId);
             if (!character) return;
-            if (await AppUI.confirm(`你确定要清空与“${character.remarkName}”的所有聊天记录吗？这个操作是不可恢复的！`, "系统提示", "确认", "取消")) {
+            if (await AppUI.confirm(`你确定要清空与"${character.remarkName}"的所有聊天记录吗？这个操作是不可恢复的！`, "系统提示", "确认", "取消")) {
                 character.history =[];
                 character.status = '在线';
                 await clearChatHistoryInDB(currentChatId);
@@ -162,15 +226,27 @@ function setupChatSettings() {
     }
 }
             
-// --- 替换 loadSettingsToSidebar 函数 ---
 function loadSettingsToSidebar() {
     const e = db.characters.find(c => c.id === currentChatId);
     if (e) {
         document.getElementById('setting-char-avatar-preview').src = e.avatar;
         document.getElementById('setting-char-remark').value = e.remarkName;
+        const charRemarkDisplay = document.getElementById('setting-char-remark-display');
+        if (charRemarkDisplay) charRemarkDisplay.textContent = e.remarkName;
         document.getElementById('setting-char-real-name').value = e.realName || '';
         document.getElementById('setting-char-persona').value = e.persona;
         
+        // --- Added for Address Book update: make character persona read-only in sidebar ---
+        const charRealNameInput = document.getElementById('setting-char-real-name');
+        const charRemarkInput = document.getElementById('setting-char-remark');
+        const charPersonaInput = document.getElementById('setting-char-persona');
+        const charAvatarLabel = document.querySelector('label[for="setting-char-avatar-upload"]');
+        
+        if (charRealNameInput) charRealNameInput.readOnly = true;
+        if (charRemarkInput) charRemarkInput.readOnly = true;
+        if (charPersonaInput) charPersonaInput.readOnly = true;
+        if (charAvatarLabel) charAvatarLabel.style.display = 'none';
+                
         let myAvatar = e.myAvatar;
         let myRealName = e.myName;
         let myNickname = e.myNickname || e.myName;
@@ -191,6 +267,13 @@ function loadSettingsToSidebar() {
         document.getElementById('setting-max-memory').value = e.maxMemory;
         document.getElementById('setting-bilingual-mode').checked = e.bilingualModeEnabled || false;
 
+   document.getElementById('setting-max-memory').value = e.maxMemory || 10;
+const maxMemDisplay = document.getElementById('setting-max-memory-display');
+if (maxMemDisplay) {
+    maxMemDisplay.textContent = e.maxMemory || 10;
+}
+document.getElementById('setting-bilingual-mode').checked = e.bilingualModeEnabled || false;     
+        
         // 【核心变更】读取当前气泡预设并映射到选择框
         window.populateChatThemeSelects();
         const themeSelect = document.getElementById('setting-theme-color');

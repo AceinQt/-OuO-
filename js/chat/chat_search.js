@@ -282,18 +282,58 @@ function jumpToMessageInChat(messageId) {
         renderMessages(false, false);
     }
 
-    // 6. 滚动高亮
+    // 6. 滚动高亮（含通话折叠自动展开）
     setTimeout(() => {
-        const bubble = document.querySelector(`.message-wrapper[data-id="${messageId}"]`);
-        if (bubble) {
-            bubble.scrollIntoView({ behavior: 'auto', block: 'center' });
-            bubble.classList.add('message-highlight');
-            setTimeout(() => {
-                bubble.classList.remove('message-highlight');
-            }, 2000);
-        } else {
-            showToast('定位消息失败');
+        // 先尝试直接找到消息气泡
+        let bubble = document.querySelector(`.message-wrapper[data-id="${messageId}"]`);
+
+        // 如果没找到，检查是否被通话折叠隐藏了
+        if (!bubble) {
+            const targetMsg = chat.history.find(m => m.id === messageId);
+            const sessionId = targetMsg?.callSessionId;
+
+            if (sessionId) {
+                // 先找折叠气泡，再找已展开容器（可能已被其他跳转展开过）
+                const collapsedEl = document.querySelector(
+                    `.collapsed-call-bubble[data-call-session-id="${sessionId}"]`
+                );
+                const expandedContainer = document.querySelector(
+                    `[data-call-session-expanded-container="${sessionId}"]`
+                );
+
+                if (collapsedEl) {
+                    // 展开折叠的通话记录
+                    if (typeof expandCallSession === 'function') {
+                        expandCallSession(sessionId, collapsedEl);
+                    }
+                } else if (!expandedContainer) {
+                    // 既没有折叠气泡也没有展开容器，真的定位不到
+                    showToast('定位消息失败');
+                    return;
+                }
+
+                // 展开后重新查找气泡（需要再等一帧渲染）
+                setTimeout(() => {
+                    bubble = document.querySelector(`.message-wrapper[data-id="${messageId}"]`);
+                    if (bubble) {
+                        bubble.scrollIntoView({ behavior: 'auto', block: 'center' });
+                        bubble.classList.add('message-highlight');
+                        setTimeout(() => bubble.classList.remove('message-highlight'), 2000);
+                    } else {
+                        showToast('定位消息失败');
+                    }
+                }, 80);
+                return; // 等待上面的 setTimeout 处理
+            } else {
+                showToast('定位消息失败');
+                return;
+            }
         }
+
+        // 正常路径：气泡直接可见
+        bubble.scrollIntoView({ behavior: 'auto', block: 'center' });
+        bubble.classList.add('message-highlight');
+        setTimeout(() => bubble.classList.remove('message-highlight'), 2000);
     }, 150); // 给渲染留出时间
 }
 

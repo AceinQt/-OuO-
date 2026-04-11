@@ -29,7 +29,7 @@
                 // 情况 1: 退出线下模式
                 // =======================================================
                 if (wasEnabled && !isNowEnabled) {
-                    const endInstruction = `[system: 面对面情节结束。切换回手机聊天模式。恢复使用[${chat.realName}的消息：...] 格式。]`;
+                    const endInstruction = `[system: 面对面情节结束。切换回手机聊天模式。恢复使用“${chat.realName}的消息…”格式。]`;
                     const instructionMsg = {
                         id: `msg_ins_off_${now}`,
                         role: 'user', 
@@ -130,7 +130,8 @@
                     'photo-video-btn',         // 照片/视频
                     'image-recognition-btn',   // 发送图片/识图
                     'sticker-toggle-btn',       // 表情包
-                    'wallet-btn'               // --- 新增：转账/钱包按钮 ---
+                    'wallet-btn',              // 转账/钱包
+                    'video-call-btn'           // 通话（线下模式无法通话）
                 ];
 
                 buttonsToDisable.forEach(btnId => {

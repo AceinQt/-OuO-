@@ -235,6 +235,19 @@ async function checkAndDeliverProactiveMessages() {
                 }
             }
         }
+
+        // 【修复 1】summary / idle 队列：用户在生成后说过话，整条作废，立即清除
+        // Peek 来源不受此规则约束（Peek 池子是长期备用的）
+        if (!isPeekSource &&
+            (draft.type === 'time_window_summary' || draft.type === 'time_window_idle') &&
+            lastInteractTime > draft.generatedAt) {
+            console.log(`[顺风车] ${chat.realName || chat.name} 的 ${draft.type} 队列因用户发言而作废，已清除。`);
+            chat.proactiveMessageQueue.splice(msgIndex, 1);
+            if (type === 'private') { if (!charModified.includes(chat)) charModified.push(chat); }
+            else { if (!groupModified.includes(chat)) groupModified.push(chat); }
+            if (typeof saveSingleChat === 'function') await saveSingleChat(chat.id, type);
+            continue;
+        }
         
         let hasSentProactiveSinceLastReal = false;
         if (chat.history.length > 0) {
@@ -250,7 +263,7 @@ async function checkAndDeliverProactiveMessages() {
         const minTimeGap = isPeekSource ? 60 * 60 * 1000 : 5 * 60 * 1000;
         if (tNow - lastInteractTime < minTimeGap) continue; 
         
-        if (isPeekSource && hasSentProactiveSinceLastReal) continue;
+        if (hasSentProactiveSinceLastReal) continue;
 
         let candidates =[];
 
@@ -351,6 +364,9 @@ async function checkAndDeliverProactiveMessages() {
             const roll = Math.random() * 100;
             console.log(`[抽奖详情] 对象: ${chat.realName || chat.name}, 来源: ${isPeekSource ? 'Peek备用池' : '标准池'}, 组: ${candidate.slotId}, 概率: ${candidate.probability}%, 骰子: ${roll.toFixed(1)}`);
             
+            // 【修复 2】先删除当前候选，无论成功与否
+            delete draft.content[candidate.slotId];
+
             if (roll <= candidate.probability) {
                 let msgsToPut =[]; 
                 console.log(`[抽奖成功] 组: ${candidate.slotId} 连发 ${candidate.messages.length} 条。`);
@@ -441,10 +457,16 @@ async function checkAndDeliverProactiveMessages() {
                     chat.unreadCount = (chat.unreadCount || 0) + candidate.messages.length;
                 }
                 deliveredCount++;
+
+                // 【修复 2 续】发成功后销毁其余所有候选，只发一组
+                for (const rest of candidates) {
+                    delete draft.content[rest.slotId];
+                }
+                break;
+
             } else {
                 console.log(`[抽奖失败] 组: ${candidate.slotId} 放弃发送。`);
             }
-            delete draft.content[candidate.slotId];
         }
 
         if (isPeekSource) {
@@ -455,16 +477,12 @@ async function checkAndDeliverProactiveMessages() {
 
         if (deliveredCount > 0 || candidates.length > 0) {
             hasDelivered = (deliveredCount > 0) || hasDelivered;
-            if (type === 'private') { if (!charModified.includes(chat)) charModified.push(chat); } 
-            else { if (!groupModified.includes(chat)) groupModified.push(chat); }
+            // 【修复】立即保存，缩短崩溃窗口，防止重启后队列未清导致重复投递
+            if (typeof saveSingleChat === 'function') await saveSingleChat(chat.id, type);
         }
     }
 
-    if (hasDelivered || charModified.length > 0 || groupModified.length > 0) {
-        for (const c of charModified) { if (typeof saveSingleChat === 'function') await saveSingleChat(c.id, 'private'); }
-        for (const g of groupModified) { if (typeof saveSingleChat === 'function') await saveSingleChat(g.id, 'group'); }
-        if (hasDelivered && typeof renderChatList === 'function') { renderChatList(); }
-    }
+    if (hasDelivered && typeof renderChatList === 'function') { renderChatList(); }
 }
 
 // ==========================================
@@ -475,6 +493,17 @@ let bgTimeoutId = null;
 const silentWavBase64 = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
 
 function unlockAudioElement() {
+    const needsAudio = typeof db !== 'undefined' && 
+        [...(db.characters || []), ...(db.groups || [])].some(
+            chat => chat.proactiveMode === 'fixed' || chat.proactiveMode === 'timer'
+        );
+    
+    if (!needsAudio) {
+        window.removeEventListener('touchstart', unlockAudioElement, { passive: true });
+        window.removeEventListener('click', unlockAudioElement, { passive: true });
+        return;
+    }
+
     if (!bgAudioElement) {
         bgAudioElement = new Audio(silentWavBase64);
         bgAudioElement.loop = true; 

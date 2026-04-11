@@ -56,10 +56,46 @@
                 }
     
     const userNick = character.myNickname || character.myName;
-                // --- 插入代码开始 ---
-                if (character.offlineModeEnabled) {
-                    let prompt = `你是一位**当代**畅销小说作家。\n`;
-                    prompt += `你正在实时续写连载小说中正在进行的一个章节场景。你的笔触**清新、克制且具有质感**，拒绝网文、古早言情的油腻和土味。\n\n`;
+if (character.callMode === 'voice') {
+    const worldBooksBefore = (character.worldBookIds || [])
+        .map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before'))
+        .filter(Boolean).map(wb => wb.content).join('\n');
+
+    const allFavsCombined = allFavs; // allFavs 在此之前已经计算好了，直接用
+
+    let prompt = `你正在和${character.myName}进行【语音通话】。\n\n`;
+    prompt += `## 角色档案\n`;
+    prompt += `**你的角色名**：${character.realName}\n`;
+    prompt += `**你的当前状态**：${character.status}\n`;
+    prompt += `**你的角色设定**：${character.persona || '一个友好的伙伴。'}\n\n`;
+    if (worldBooksBefore) prompt += `**世界观背景**：\n${worldBooksBefore}\n\n`;
+    if (character.myPersona) prompt += `**对方信息（${character.myName}）**：${character.myPersona}\n\n`;
+    if (allFavsCombined) prompt += `**重要记忆**：\n${allFavsCombined}\n\n`;
+
+    prompt += `## 通话规则\n`;
+    prompt += `1. 这是语音通话，只能说话，禁止发送图片、表情包、转账等。\n`;
+    prompt += `2. 回复简短的口语化对话，语气自然，像真人打电话。\n`;
+    prompt += `3. 可以有停顿、语气词，保持你的角色性格。\n`;
+    prompt += `4. 如需更新状态，格式：[${character.realName}更新状态为：xxx]（不会显示在通话里）\n`;
+    prompt += `5. **输出格式**：每句话单独一行，格式为 [${character.realName}的消息：{内容}]，` +
+          `多句话就输出多行，不要合并在一条内。\n` +
+          `示例：\n` +
+          `[${character.realName}的消息：喂？]\n` +
+          `[${character.realName}的消息：听得到吗？]\n`;
+    prompt += `6. **挂断通话**：如果对话需要自然结束，你可以主动挂断，单起一行输出：[${character.realName}挂断了通话]。\n`; 
+    prompt += `7. 现在是 ${currentTime}。`;
+
+    return prompt;
+}
+                    if (character.offlineModeEnabled || character.callMode === 'video') {
+    const isVideoCall = character.callMode === 'video';
+
+    let prompt = `你是一位**当代**畅销小说作家。\n`;
+    if (isVideoCall) {
+        prompt += `你正在实时续写一个**视频通话场景**。${character.realName}和${character.myName}正在通过视频通话互动，画面中可以看见彼此的表情和上半身动作，但无法有肢体接触。你的笔触**清新、克制且具有质感**，拒绝网文、古早言情的油腻和土味。\n\n`;
+    } else {
+        prompt += `你正在实时续写连载小说中正在进行的一个章节场景。你的笔触**清新、克制且具有质感**，拒绝网文、古早言情的油腻和土味。\n\n`;
+    }
                    
                     
                     // 📍 第一次：完整展示人设（开头）
@@ -155,12 +191,13 @@
 8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为：xxx]。例如：[${character.realName}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
 9. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。
 10. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
-11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
+11. 你可以主动发起通话邀请，格式为：[${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]。
+12. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
 `;
                 if (availableStickers) {
-                    prompt += `12. 你拥有发送表情包的能力，这是你拥有的表情包库，包含以下表情：【${availableStickers}】。这是一个可选功能，你可以根据对话氛围，发送表情包来辅助表达情绪，你不必在每次回复中都包含表情包。格式必须严格为：[${character.realName}的表情包：表情名称]。\n⚠️ 严禁造词！你只能使用上述【】内存在的表情名称，并且绝对不要输出任何图片URL路径！\n`;
+                    prompt += `13. 你拥有发送表情包的能力，这是你拥有的表情包库，包含以下表情：【${availableStickers}】。这是一个可选功能，你可以根据对话氛围，发送表情包来辅助表达情绪，你不必在每次回复中都包含表情包。格式必须严格为：[${character.realName}的表情包：表情名称]。\n⚠️ 严禁造词！你只能使用上述【】内存在的表情名称，并且绝对不要输出任何图片URL路径！\n`;
                 } else {
-                    prompt += `12. 因为你的表情包库目前为空，你无法发送任何表情包，只能使用纯文字回复。\n`;
+                    prompt += `13. 因为你的表情包库目前为空，你无法发送任何表情包，只能使用纯文字回复。\n`;
                 }
 
                 let outputFormats = `
@@ -175,7 +212,8 @@
     i) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
     j) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
     k) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
-    l) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]`;
+    l) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]
+    m) 主动发起通话邀请: [${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]`;
 
                 const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
                 if (allWorldBookContent.includes('<orange>')) {
@@ -184,13 +222,13 @@
 
                 
 
-                prompt += `13. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
+                prompt += `14. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
                 if (character.bilingualModeEnabled) {
                     prompt += `✨双语模式特别指令✨：当你的角色的母语为中文以外的语言时，你的消息回复必须严格遵循双语模式下的普通消息格式：[${character.realName}的消息：{外语原文}（中文翻译）],例如: [${character.realName}的消息：Of course, I'd love to.（当然，我很乐意。）],中文翻译文本视为系统自翻译，不视为角色的原话;当你的角色想要说中文时，需要根据你的角色设定自行判断对于中文的熟悉程度来造句，并使用普通消息的标准格式: [${character.realName}的消息：{中文消息内容}] 。这条规则的优先级非常高，请务必遵守。\n`;
                     prompt += `**注意：括号内中文翻译为纯文本翻译，原句中的颜文字、表情等内容禁止翻译！如："なので、メッセージを頂けて、めちゃくちゃ嬉しいです！(ฅ́˘ฅ̀)♡（笑） （所以，能收到你的消息，我超级开心的！）"此句，颜文字和"（笑）"禁止出现在中文翻译中**`;
                 }
-                prompt += `14. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少3-8条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
-                prompt += `15. 现在是 ${currentTime}。你应知晓当前时间，但不要主动提及或评论时间（例如，不要催促我睡觉），不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
+                prompt += `15. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少3-8条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
+                prompt += `16. 现在是 ${currentTime}。你应知晓当前时间，但不要主动提及或评论时间（例如，不要催促我睡觉），不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
 
                 return prompt;
             }

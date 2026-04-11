@@ -1,4 +1,3 @@
-// 在文件最上方
 let isLoadingHistory = false; // 新增：防止重复加载标志位
 let selectedLinkStickerIds = new Set(); // 关联弹窗选中的ID
 let currentStickerCategory = '全部';    // 主面板当前选中的分类
@@ -107,7 +106,7 @@ function setupChatRoom() {
             const lastValidMsg = getLastValidInteractMsg(chat);
             // 2. 如果最后一条有效消息是 AI 发送的，说明用户没有回复
             if (lastValidMsg && (lastValidMsg.role === 'assistant' || lastValidMsg.role === 'model')) {
-                const confirmed = await AppUI.confirm("你还没有回复，是否继续？", "确认继续", "继续回复", "取消");
+                const confirmed = await AppUI.confirm("你还没有回复，是否继续？", "确认继续", "继续", "取消");
                 if (!confirmed) return; 
                 
                 // === 关键修改：区分线上/线下模式，动态获取角色名称注入 Prompt ===
@@ -290,6 +289,8 @@ function setupChatRoom() {
     deleteSelectedBtn.addEventListener('click', deleteSelectedMessages);
 
     document.getElementById('cancel-reply-btn').addEventListener('click', cancelQuoteReply);
+    initCallFeature();
+    
 }
  
             
@@ -314,16 +315,17 @@ if (chat.unreadCount && chat.unreadCount > 0) {
         if (typeof renderChatList === 'function') renderChatList(); 
     }, 50);
 }
-// --- 新增代码结束 ---
+
+      if (typeof hideCallCollapseBtn === 'function') hideCallCollapseBtn();          
                 exitMultiSelectMode();
                 cancelMessageEdit();
                 switchScreen('chat-room-screen');
-                const peekBtn = document.getElementById('peek-btn');
-    if (peekBtn) {
+                const callBtn = document.getElementById('video-call-btn');
+    if (callBtn) {
         if (type === 'group') {
-            peekBtn.style.display = 'none'; // 群聊隐藏
+            callBtn.style.display = 'none'; // 群聊隐藏
         } else {
-            peekBtn.style.display = 'flex'; // 私聊显示 (使用 flex 以保持图标居中)
+            callBtn.style.display = 'flex'; // 私聊显示 (使用 flex 以保持图标居中)
         }
     }
                 chatRoomTitle.textContent = (type === 'private') ? chat.remarkName : chat.name;
@@ -373,9 +375,220 @@ updateCustomBubbleStyle(chatId, cssToApply, useCustomToApply);
                     updateOfflineModeUI(false);
                 }
                 // --- 插入结束 ---
-                renderMessages(false, false);
+if (type === 'private' && chat.callMode && typeof recoverInterruptedCall === 'function') {
+    recoverInterruptedCall(chat).then(() => renderMessages(false, false));
+} else {
+    renderMessages(false, false);
+}
                 
             }
+
+// ==========================================
+// 通话记录折叠/展开 工具函数
+// ==========================================
+
+/**
+ * 根据 callSessionId 找出 history 中属于该 session 的所有可见消息
+ * 使用时间范围：session marker（含hidden）确定边界，取边界内所有非hidden消息
+ */
+function getCallSessionRange(history, sessionId) {
+    // 含 hidden 消息确定时间边界
+    const markers = history.filter(m => m.callSessionId === sessionId);
+    if (markers.length === 0) return null;
+
+    const startTime = Math.min(...markers.map(m => m.timestamp));
+    const endTime   = Math.max(...markers.map(m => m.timestamp));
+
+    // 边界内所有非hidden的可见消息
+    const msgs = history.filter(m =>
+        !m.isHidden && m.timestamp >= startTime && m.timestamp <= endTime);
+
+    return { sessionId, startTime, endTime, msgs };
+}
+
+/**
+ * 通话结束后，将聊天室里已渲染的消息气泡合并为折叠气泡
+ * 在 endCall / recoverInterruptedCall 的 addMessageBubble 之后调用
+ */
+function foldCallSession(sessionId) {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : null;
+    if (!chat) return;
+
+    const range = getCallSessionRange(chat.history, sessionId);
+    if (!range || range.msgs.length === 0) return;
+
+    const isSentByUser = range.msgs.some(m => m.id?.includes('_start_vis_'));
+
+    // 找到 DOM 里属于该 session 的所有消息元素
+    const domEls = range.msgs
+        .map(m => messageArea.querySelector(`.message-wrapper[data-id="${m.id}"]`))
+        .filter(Boolean);
+
+    if (domEls.length === 0) return;
+
+    const collapsed = createCollapsedCallBubble(sessionId, range.msgs, isSentByUser);
+
+    // 用折叠气泡替换第一个，删除其余
+    domEls[0].replaceWith(collapsed);
+    for (let i = 1; i < domEls.length; i++) domEls[i].remove();
+
+    // 如果之前有展开的浮动收起按钮，隐藏
+    if (document.getElementById('call-collapse-floating-btn')?.dataset.sessionId === sessionId) {
+        hideCallCollapseBtn();
+    }
+}
+
+/**
+ * 展开折叠气泡，显示所有通话期间消息
+ */
+function expandCallSession(sessionId, collapsedEl) {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : null;
+    if (!chat) return;
+
+    const range = getCallSessionRange(chat.history, sessionId);
+    if (!range) return;
+
+    // Accordion：收起所有其他已展开的 session
+    const allExpanded = messageArea.querySelectorAll('[data-call-session-expanded-container]');
+    allExpanded.forEach(el => {
+        const sid = el.dataset.callSessionExpandedContainer;
+        if (sid !== sessionId) collapseCallSession(sid);
+    });
+
+    const container = document.createElement('div');
+    container.className = 'expanded-call-session-container';
+    container.dataset.callSessionExpandedContainer = sessionId;
+
+    range.msgs.forEach(msg => {
+        const bubble = createMessageBubbleElement(msg);
+        if (bubble) {
+            bubble.dataset.callSessionExpanded = sessionId;
+            container.appendChild(bubble);
+        }
+    });
+
+    collapsedEl.replaceWith(container);
+    showCallCollapseBtn(sessionId);
+}
+
+/**
+ * 收起已展开的通话记录，还原折叠气泡
+ */
+function collapseCallSession(sessionId) {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : null;
+    if (!chat) return;
+
+    const range = getCallSessionRange(chat.history, sessionId);
+    if (!range) return;
+
+    const isSentByUser = range.msgs.some(m => m.id?.includes('_start_vis_'));
+    
+    // --- 【修改点2】：优先寻找新增的包裹容器进行折叠还原 ---
+    const container = messageArea.querySelector(`[data-call-session-expanded-container="${sessionId}"]`);
+
+    if (container) {
+        const collapsed = createCollapsedCallBubble(sessionId, range.msgs, isSentByUser);
+        container.replaceWith(collapsed);
+    } else {
+        // 兼容之前未刷新页面时，没有容器的旧版结构
+        const expandedEls = Array.from(
+            messageArea.querySelectorAll(`[data-call-session-expanded="${sessionId}"]`));
+
+        if (expandedEls.length === 0) return;
+
+        const collapsed = createCollapsedCallBubble(sessionId, range.msgs, isSentByUser);
+        expandedEls[0].replaceWith(collapsed);
+        for (let i = 1; i < expandedEls.length; i++) expandedEls[i].remove();
+    }
+
+    hideCallCollapseBtn();
+}
+
+/** 显示右侧浮动收起按钮 */
+function showCallCollapseBtn(sessionId) {
+    let btn = document.getElementById('call-collapse-floating-btn');
+    if (!btn) {
+        btn = document.createElement('div');
+        btn.id = 'call-collapse-floating-btn';
+        btn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+            <path d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/>
+        </svg>`;
+        document.getElementById('chat-room-screen').appendChild(btn);
+    }
+    btn.dataset.sessionId = sessionId;
+    btn.style.display = 'flex';
+    btn.onclick = async () => {
+    const ok = await AppUI.confirm('是否收起通话记录？', '通话记录', '收起', '取消');
+    if (ok) {
+        hideCallCollapseBtn();          // 先隐藏，不依赖 collapseCallSession 内部调用
+        collapseCallSession(btn.dataset.sessionId);
+    }
+};
+}
+
+/** 隐藏浮动收起按钮 */
+function hideCallCollapseBtn() {
+    const btn = document.getElementById('call-collapse-floating-btn');
+    if (btn) btn.style.display = 'none';
+}
+
+function _calcInitialStart(chat) {
+    const history = chat.history;
+    const total = history.length;
+
+    // ★ 一次扫描同时建立：
+    //   msgIdToSession: msgId → sessionId（用于后向扫描时 O(1) 查找）
+    //   sessionComplete: sessionId → bool（是否是完整 session）
+    const msgIdToSession = new Map();
+    const sessionComplete = new Map();
+
+    if (currentChatType === 'private') {
+        for (const msg of history) {
+            if (!msg.callSessionId || msg.isHidden) continue;
+            msgIdToSession.set(msg.id, msg.callSessionId);
+            if (msg.id?.includes('_end_vis_') || msg.id?.includes('_interrupt_vis_') || msg.id?.includes('_decline_vis_') || msg.id?.includes('_noanswer_')) {
+    sessionComplete.set(msg.callSessionId, true);
+} else if (!sessionComplete.has(msg.callSessionId)) {
+                sessionComplete.set(msg.callSessionId, false);
+            }
+        }
+    }
+
+    // 后向扫描，按可见气泡计数
+    const countedSessions = new Set();
+    let bubbleCount = 0;
+    let startIdx = 0;
+
+    for (let i = total - 1; i >= 0; i--) {
+        const msg = history[i];
+        if (msg.isHidden) continue;
+
+        const sid = msgIdToSession.get(msg.id);
+        if (sid && sessionComplete.get(sid)) {
+            // 属于完整通话 session
+            if (!countedSessions.has(sid)) {
+                countedSessions.add(sid);
+                bubbleCount++;
+            }
+        } else {
+            bubbleCount++;
+        }
+
+        if (bubbleCount >= MESSAGES_PER_PAGE) {
+            startIdx = i;
+            break;
+        }
+    }
+
+    currentPage = 1;
+    return startIdx;
+}
 
     // ==========================================
     // 滚动画布和加载历史
@@ -390,11 +603,18 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     const oldScrollTop = messageArea.scrollTop;
 
     const totalMessages = chat.history.length;
-    const end = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
-    const start = Math.max(0, end - MESSAGES_PER_PAGE);
-    
-    // 截取需要渲染的消息片段
-    const messagesToRender = chat.history.slice(start, end);
+let start, end;
+
+if (!isLoadMore) {
+    // ★ 初始化：按"可见气泡数"计算切片，保证一次渲染就够，无需穿透
+    start = _calcInitialStart(chat);  // 同时更新 currentPage
+    end = totalMessages;
+} else {
+    end = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
+    start = Math.max(0, end - MESSAGES_PER_PAGE);
+}
+
+const messagesToRender = chat.history.slice(start, end);
 
     if (!isLoadMore) {
         messageArea.innerHTML = '';
@@ -418,32 +638,79 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
         fragment.appendChild(loadingDiv);
     }
 
-    // 3. 渲染消息气泡
-// ...
+// 3. 渲染消息气泡
+    // --- 预扫描：识别当前页面中需要折叠的完整通话 session ---
+    const callSessionsToFold = new Map();  // sessionId → {range, isSentByUser, firstMsgId}
+    const skippedMsgIds = new Set();
+
+    if (currentChatType === 'private') {
+        // 收集本页所有带 callSessionId 的 session
+        const sessionIds = new Set(
+            messagesToRender
+                .filter(m => m.callSessionId && !m.isHidden)
+                .map(m => m.callSessionId)
+        );
+
+for (const sid of sessionIds) {
+    const range = getCallSessionRange(chat.history, sid);
+    if (!range || range.msgs.length === 0) continue;
+
+    const isComplete = range.msgs.some(m =>
+    m.id?.includes('_end_vis_') || m.id?.includes('_interrupt_vis_') || m.id?.includes('_decline_vis_') || m.id?.includes('_noanswer_'));
+    if (!isComplete) continue;
+
+    // ★ 【修改点3】：loadMore 时，增加对 expanded-container 容器存在与否的判断
+    if (isLoadMore) {
+        const alreadyInDom =
+            messageArea.querySelector(`.collapsed-call-bubble[data-call-session-id="${sid}"]`) ||
+            messageArea.querySelector(`[data-call-session-expanded-container="${sid}"]`) ||
+            messageArea.querySelector(`[data-call-session-expanded="${sid}"]`);
+        if (alreadyInDom) {
+            range.msgs.forEach(m => skippedMsgIds.add(m.id));
+            continue;
+        }
+    }
+
+    const isSentByUser = range.msgs.some(m => m.id?.includes('_start_vis_'));
+    const firstInPage = messagesToRender.find(m =>
+        !m.isHidden && range.msgs.some(r => r.id === m.id));
+    if (!firstInPage) continue;
+
+    callSessionsToFold.set(sid, { range, isSentByUser, firstMsgId: firstInPage.id });
+    range.msgs.forEach(m => skippedMsgIds.add(m.id));
+}
+    } // 关闭 if (currentChatType === 'private')
+
+    let renderedCount = 0; // 统计本页实际渲染的气泡数（不含 loading indicator）
+
     messagesToRender.forEach(msg => {
-        if (msg.isHidden) return; 
-        
+        if (msg.isHidden) return;
+
         if (isLoadMore) {
             const existingBubble = messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`);
-            if (existingBubble) {
-                return; // 页面已有此消息，不再重复创建
-            }
+            if (existingBubble) return;
         }
-        
-        const bubble = createMessageBubbleElement(msg);
-        
-        if (bubble) {
-            // 【新增】如果是新消息模式，给气泡加动画类
-            if (forceScrollToBottom) {
-                bubble.classList.add('new-message-anim');
+
+        // 属于折叠 session 的消息：只在第一条位置插入折叠气泡
+        if (skippedMsgIds.has(msg.id)) {
+            for (const [sid, info] of callSessionsToFold.entries()) {
+                if (info.firstMsgId === msg.id) {
+                    const collapsed = createCollapsedCallBubble(sid, info.range.msgs, info.isSentByUser);
+                    if (forceScrollToBottom) collapsed.classList.add('new-message-anim');
+                    fragment.appendChild(collapsed);
+                    renderedCount++;
+                }
             }
+            return;
+        }
+
+        const bubble = createMessageBubbleElement(msg);
+        if (bubble) {
+            if (forceScrollToBottom) bubble.classList.add('new-message-anim');
             fragment.appendChild(bubble);
+            renderedCount++;
         }
     });
-    // ...
-
-    // 4. 将新消息插入到 DOM
-// --- 找到 renderMessages 函数的末尾部分并替换 ---
 
     // 4. 将新消息插入到 DOM
     if (!isLoadMore) {
@@ -472,9 +739,14 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
         messageArea.scrollTop = newScrollHeight - oldScrollHeight + oldScrollTop;
         isLoadingHistory = false;
 
+        // ★ 空页自动穿透：整页消息全被折叠/跳过，DOM 高度不变 → 自动再加载一页
+        if (renderedCount === 0 && start > 0) {
+            setTimeout(() => loadMoreMessages(), 0);
+        }
+
     // --- 找到 renderMessages 函数末尾的 else 分支，完全替换该块内容 ---
 
-    } else {
+} else {
         // --- 场景 C：初始化进入聊天室 (终极修复版) ---
         
         // 1. 基础设置：关闭动画，瞬间跳转
@@ -491,7 +763,7 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
         // 3. 延迟一小会儿再执行一次 (应对 DOM 渲染延迟)
         setTimeout(forceToBottom, 50);
 
-// 4. 【核心修复】针对所有图片的“无死角”监听
+// 4. 【核心修复】针对所有图片的"无死角"监听
         const images = messageArea.querySelectorAll('img');
         
         if (images.length > 0) {
@@ -526,7 +798,7 @@ function loadMoreMessages() {
     setTimeout(() => {
         currentPage++;
         renderMessages(true, false);
-    }, 500); 
+    }, 200); 
 }
 
 // === 新增函数 1：触发加载后续消息 ===
@@ -563,38 +835,78 @@ function renderNewerMessages() {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
 
-    // 1. 计算切片范围
-    // 逻辑：因为 currentPage 已经减 1 了，我们需要获取这一页对应的数据
-    // 假设每页 20 条，总共 100 条。
-    // 原来在第 5 页 (index 0-19)。现在变成了第 4 页 (index 20-39)。
-    // 公式与 renderMessages 保持一致
     const totalMessages = chat.history.length;
     const end = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
     const start = Math.max(0, end - MESSAGES_PER_PAGE);
 
     const messagesToRender = chat.history.slice(start, end);
 
-    // 2. 创建文档片段
     const fragment = document.createDocumentFragment();
+
+    // --- 预扫描：识别新页中需要折叠的完整通话 session ---
+    const callSessionsToFold = new Map();
+    const skippedMsgIds = new Set();
+
+    if (currentChatType === 'private') {
+        const sessionIds = new Set(
+            messagesToRender
+                .filter(m => m.callSessionId && !m.isHidden)
+                .map(m => m.callSessionId)
+        );
+
+        for (const sid of sessionIds) {
+            const range = getCallSessionRange(chat.history, sid);
+            if (!range || range.msgs.length === 0) continue;
+
+            const isComplete = range.msgs.some(m =>
+    m.id?.includes('_end_vis_') || m.id?.includes('_interrupt_vis_') || m.id?.includes('_decline_vis_') || m.id?.includes('_noanswer_'));
+            if (!isComplete) continue;
+
+            // session 已在 DOM → 【修改点4】：同样增加对 expanded-container 容器的防重检查
+            const alreadyInDom =
+                messageArea.querySelector(`.collapsed-call-bubble[data-call-session-id="${sid}"]`) ||
+                messageArea.querySelector(`[data-call-session-expanded-container="${sid}"]`) ||
+                messageArea.querySelector(`[data-call-session-expanded="${sid}"]`);
+            if (alreadyInDom) {
+                range.msgs.forEach(m => skippedMsgIds.add(m.id));
+                continue;
+            }
+
+            // session 首次出现在 DOM → 折叠
+            const isSentByUser = range.msgs.some(m => m.id?.includes('_start_vis_'));
+            const firstInPage = messagesToRender.find(m =>
+                !m.isHidden && range.msgs.some(r => r.id === m.id));
+            if (!firstInPage) continue;
+
+            callSessionsToFold.set(sid, { range, isSentByUser, firstMsgId: firstInPage.id });
+            range.msgs.forEach(m => skippedMsgIds.add(m.id));
+        }
+    }
 
     messagesToRender.forEach(msg => {
         if (msg.isHidden) return;
-        
-        // 防重检查：虽然切片逻辑理论上不会重复，但在边界情况检查一下 ID 更安全
+
+        // 防重检查
         const exists = messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`);
-        if (!exists) {
-            const bubble = createMessageBubbleElement(msg);
-            if (bubble) {
-                fragment.appendChild(bubble);
+        if (exists) return;
+
+        // 属于折叠 session 的消息：只在第一条位置插入折叠气泡
+        if (skippedMsgIds.has(msg.id)) {
+            for (const [sid, info] of callSessionsToFold.entries()) {
+                if (info.firstMsgId === msg.id) {
+                    const collapsed = createCollapsedCallBubble(sid, info.range.msgs, info.isSentByUser);
+                    fragment.appendChild(collapsed);
+                }
             }
+            return;
         }
+
+        const bubble = createMessageBubbleElement(msg);
+        if (bubble) fragment.appendChild(bubble);
     });
 
-    // 3. 追加到现有的消息列表底部 (Append)
+    // 追加到底部
     messageArea.appendChild(fragment);
-    
-    // 注意：加载后续消息时，我们通常不需要调整滚动条位置，
-    // 因为追加内容到底部不会影响当前视口（除非用户已经紧贴底部，那样正好顺滑看到新消息）。
 }
 
             async function addMessageBubble(message, targetChatId, targetChatType) {
@@ -609,7 +921,7 @@ function renderNewerMessages() {
                         // 如果消息不是系统内部不可见的消息，才增加未读计数
                         // --- 从这里开始是新增的代码 ---
 // 如果消息不是系统内部不可见的消息，才增加未读计数
-const invisibleRegex = /\[system:.*?\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
+const invisibleRegex = /\[system:.*\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
 if (!invisibleRegex.test(message.content)) {
     senderChat.unreadCount = (senderChat.unreadCount || 0) + 1;
     saveSingleChat(targetChatId, targetChatType); // 异步保存数据
@@ -677,7 +989,8 @@ if (!invisibleRegex.test(message.content)) {
 
                     if (message.content.match(updateStatusRegex)) {
                         character.status = message.content.match(updateStatusRegex)[1];
-                        chatRoomStatusText.textContent = character.status;
+                        const statusEl = document.getElementById('chat-room-status-text');
+if (statusEl) statusEl.textContent = character.status;
                         await saveSingleChat(currentChatId, currentChatType);
                         return;
                     }
@@ -743,6 +1056,7 @@ if (!invisibleRegex.test(message.content)) {
             }
 
 // 新增公共辅助函数：获取最后一条真正的互动消息
+// 新增公共辅助函数：获取最后一条真正的互动消息
 function getLastValidInteractMsg(chat) {
     if (!chat || !chat.history || chat.history.length === 0) return null;
     
@@ -755,9 +1069,14 @@ function getLastValidInteractMsg(chat) {
             const isSystemDisplay = typeof msg.content === 'string' && msg.content.trim().startsWith('[system-display:');
             const isTimeDivider = typeof msg.content === 'string' && msg.content.trim() === '[time-divider]';
             const isAiIgnore = msg.isAiIgnore === true;
+            
+            // 明确排除用户的全局状态通知
+            const isUserStatusNotif = msg.isUserStatusNotif === true;  
+            // 【新增兼容】兜底判断旧版本没有打上 isUserStatusNotif 标记的用户状态消息
+            const isOldUserStatus = msg.role === 'user' && typeof msg.content === 'string' && /\[.*?更新状态为：.*?\]/.test(msg.content);
 
-            // 排除了所有隐藏提示和单纯系统UI，才是真正的聊天互动
-            if (!isTimeSense && !isModeInstruction && !isSystemCommand && !isSystemDisplay && !isTimeDivider && !isAiIgnore) {
+            // 排除了所有隐藏提示、单纯系统UI、以及【用户状态通知】，剩下的才是真正的聊天互动
+            if (!isTimeSense && !isModeInstruction && !isSystemCommand && !isSystemDisplay && !isTimeDivider && !isAiIgnore && !isUserStatusNotif && !isOldUserStatus) {
                 return msg; 
             }
         }
@@ -775,9 +1094,16 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
     const now = new Date();
     const timeGap = now.getTime() - lastValidMsg.timestamp;
     const thirtyMinutes = 30 * 60 * 1000;
-
+    
     // 2. 只有超过30分钟才插入 [time-divider] 和 AI提示词
     if (timeGap > thirtyMinutes) {
+        // ✅ 新增：检查 lastValidMsg 之后是否已存在时间感知消息，避免重复注入
+        const lastValidIndex = chat.history.findIndex(m => m.id === lastValidMsg.id);
+        const alreadyInjected = chat.history.slice(lastValidIndex + 1).some(
+            m => m.id && m.id.includes('msg_context_timesense')
+        );
+        if (alreadyInjected) return;
+
         const visualMessage = {
             id: `msg_visual_timesense_${Date.now()}`,
             role: 'system',
@@ -844,7 +1170,7 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
     messageInput.value = ''; // Clear input immediately for better UX
 
                 let messageContent;
-                const systemRegex = /\[system:.*?\]|\[system-display:.*?\]/;
+                const systemRegex = /\[system:[\s\S]*?\]|\[system-display:.*?\]/;
                 const inviteRegex = /\[.*?邀请.*?加入群聊\]/;
                 const renameRegex = /\[(.*?)修改群名为“(.*?)”\]/;
                 const myName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
@@ -882,9 +1208,14 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
                 if (currentChatType === 'group') {
                     message.senderId = 'user_me';
                 }
+   if (currentChatType === 'private' && chat.currentCallSessionId) {
+    message.callSessionId = chat.currentCallSessionId;
+}             
                 chat.history.push(message);
                 addMessageBubble(message, currentChatId, currentChatType);
-                
+   if (currentChatType === 'private' && chat.callMode && typeof appendCallUserMessage === 'function') {
+    appendCallUserMessage(text);
+}             
 
                 if (chat.history.length > 0 && chat.history.length % 100 === 0) {
                     promptForBackupIfNeeded('history_milestone');
@@ -1136,4 +1467,3 @@ switch (action) {
                     document.getElementById('chat-expansion-panel').classList.remove('visible');
                 });
             }
-            

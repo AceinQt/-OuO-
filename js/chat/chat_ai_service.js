@@ -1,6 +1,7 @@
 // ==========================================
 // ai_service.js - 核心 AI 处理层
 // ==========================================
+let callAbortController = null;   // ← 新增：通话请求中止器
 
 function getMixedContent(responseData) {
     const results =[];
@@ -148,11 +149,13 @@ function calculateTypingDelay(text, isFirstMessage) {
 // 处理 AI 回复内容解析与渲染
 // ==========================================
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType) {
+    if (!fullResponse) return;
     console.log("🟢 开始处理 AI 回复:", fullResponse.substring(0, 50) + "..."); 
-    let newMessagesForDB =[];
-    try {
-        if (!fullResponse) return;
-
+    // ★ 记录本次通话会话ID，用于挂断后中止生成
+    const capturedCallSessionId = (targetChatType === 'private' && chat?.currentCallSessionId)
+        ? chat.currentCallSessionId : null;
+    let newMessagesForDB = [];
+    try {        
         let cleanResponse = fullResponse;
         cleanResponse = cleanResponse.replace(/^```\w*\s*$/gm, '');
 
@@ -169,7 +172,28 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
         cleanResponse = cleanResponse.trim();
 
-        if (targetChatType === 'private' && chat.offlineModeEnabled) {
+        // ======== 👇 终极修复：全局最高优先级拦截挂断指令 👇 ========
+        let shouldHangup = false;
+        if (chat.callMode) {
+            // 不管 AI 把指令藏在开头、中间还是末尾，只要匹配到就触发
+            const hangupMatch = cleanResponse.match(/\[[^\[\]]*挂断了通话\]/);
+            if (hangupMatch) {
+                shouldHangup = true;
+                // 将挂断指令及它后面的废话全部一刀切掉，防止被渲染成气泡
+                cleanResponse = cleanResponse.substring(0, hangupMatch.index).trim();
+                console.log("☎️ 检测到 AI 挂断指令，已提前抹除并准备挂断。");
+            }
+        }
+        
+        // 如果 AI 这一轮除了输出挂断指令外，一句话都没说，直接执行挂断并返回
+        if (shouldHangup && !cleanResponse) {
+            if (typeof clearCallUserArea === 'function') clearCallUserArea();
+            if (typeof aiHangupCall === 'function') await aiHangupCall();
+            return;
+        }
+        // ======== 👆 修复结束 👆 ========
+
+        if (targetChatType === 'private' && (chat.offlineModeEnabled || chat.callMode === 'video')) {
             let processed = cleanResponse;
             processed = processed.replace(/\r\n/g, '\n');
             processed = processed.replace(/([^\n])\s*(\[.*?[:：])/g, '$1\n$2');
@@ -192,6 +216,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 const cleanTextForCalc = line.replace('>>>', '').replace(/\[.*?\]/g, '');
                 const delay = calculateTypingDelay(cleanTextForCalc, isFirstLine);
                 await new Promise(r => setTimeout(r, delay));
+                
+                // ★ 挂断中止：通话期间若会话已结束则停止继续生成
+                if (capturedCallSessionId && chat.currentCallSessionId !== capturedCallSessionId) return;
                 isFirstLine = false;
 
                 const statusRegex = /\[?.*?更新状态为[:：](.*?)(?:\]|$)/;
@@ -202,6 +229,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         chat.status = newStatus;
                         const statusTextEl = document.getElementById('chat-room-status-text');
                         if (statusTextEl) statusTextEl.textContent = chat.status;
+                        if(typeof renderCharacters === 'function') renderCharacters();
 
                         const statusMsg = {
                             id: `msg_status_${Date.now()}_${Math.random()}`,
@@ -210,6 +238,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             parts: [{ type: 'text', text: line }],
                             timestamp: Date.now()
                         };
+                        if (chat.currentCallSessionId) statusMsg.callSessionId = chat.currentCallSessionId;
                         chat.history.push(statusMsg);
                         newMessagesForDB.push(statusMsg);
                         continue;
@@ -217,7 +246,6 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 }
 
                 let messageContent = "";
-                
                 if (line.startsWith('>>>')) {
                     let speech = line.substring(3).trim();
                     speech = speech.replace(/\]+$/, '');
@@ -258,8 +286,18 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     parts:[{ type: 'text', text: messageContent }],
                     timestamp: Date.now()
                 };
+                if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                 chat.history.push(message);
                 addMessageBubble(message, targetChatId, targetChatType);
+                if (chat.callMode === 'video' && typeof appendCallNarration === 'function') {
+                    const narrationMatch = messageContent.match(/^\[system-narration:([\s\S]+?)\]$/);
+                    const dialogueMatch = messageContent.match(/\[.*?的消息：([\s\S]+?)\]$/);
+                    if (narrationMatch) {
+                        appendCallNarration(narrationMatch[1]);
+                    } else if (dialogueMatch) {
+                        appendCallDialogue(dialogueMatch[1]);
+                    }
+                }
                 newMessagesForDB.push(message);
             }
         } else {
@@ -284,6 +322,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 if (textLen < 5) textLen = 5;
                 const delay = calculateTypingDelay('x'.repeat(textLen), isFirstMsg);
                 await new Promise(resolve => setTimeout(resolve, delay));
+                
+                // ★ 挂断中止
+                if (capturedCallSessionId && chat.currentCallSessionId !== capturedCallSessionId) return;
                 isFirstMsg = false;
 
                 const aiWithdrawRegex = /\[(.*?)撤回了上一条消息：([\s\S]*?)\]/;
@@ -305,13 +346,43 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         messageToWithdraw.originalContent = cleanContentMatch ? cleanContentMatch[1] : messageToWithdraw.content;
                         messageToWithdraw.content = `[system: ${characterName} withdrew a message. Original: ${originalContent}]`;
                         renderMessages(false, true);
-                    await saveMessageToDB(messageToWithdraw, targetChatId, targetChatType);     
+                        await saveMessageToDB(messageToWithdraw, targetChatId, targetChatType);     
                     }                    
                     continue;
                 }
 
                 if (targetChatType === 'private') {
                     const character = chat;
+                    // --- 来电邀请检测 ---
+                    const incomingCallRegex = /\[.*?发起了(语音|视频)通话邀请\]/;
+                    const incomingCallMatch = item.content.match(incomingCallRegex);
+                    if (incomingCallMatch && !chat.callMode) {
+                        const callType = incomingCallMatch[1] === '语音' ? 'voice' : 'video';
+                        const typeName = incomingCallMatch[1] + '通话';
+                        const preSessionId = `call_${Date.now()}`;
+                        chat.currentCallSessionId = preSessionId;
+
+                        const displayContent = `[system-display: ${chat.remarkName || chat.realName} 邀请你${typeName}]`;
+                        const displayMsg = {
+                            id: `msg_incoming_call_${Date.now()}_${Math.random()}`,
+                            role: 'system',
+                            content: displayContent,
+                            parts: [],
+                            timestamp: Date.now(),
+                            isAiIgnore: true,
+                            callSessionId: preSessionId 
+                        };
+                        chat.history.push(displayMsg);
+                        newMessagesForDB.push(displayMsg);
+                        addMessageBubble(displayMsg, targetChatId, targetChatType);
+
+                        if (typeof showIncomingCall === 'function') {
+                            showIncomingCall(callType, chat);
+                        }
+                        continue;
+                    }
+                    // --- 来电检测结束 ---
+
                     const standardMsgMatch = item.content.match(/\[(.*?)的消息：([\s\S]+?)\]/);
                     const aiQuoteRegex = /\[.*?引用["“](.*?)["”]并回复[:：]([\s\S]*?)\]/;
                     const aiQuoteMatch = item.content.match(aiQuoteRegex);
@@ -326,8 +397,13 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             parts: [{ type: 'text', text: fixedContent }],
                             timestamp: Date.now(),
                         };
+                        if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                         chat.history.push(message);
                         addMessageBubble(message, targetChatId, targetChatType);
+                        if (chat.callMode && typeof appendCallDialogue === 'function') {
+                            const match = fixedContent.match(/\[.*?的消息：([\s\S]+?)\]$/);
+                            if (match) appendCallDialogue(match[1]);
+                        }
                         newMessagesForDB.push(message);
 
                     } else if (aiQuoteMatch) {
@@ -357,11 +433,23 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                                 content: quotedText
                             };
                         }
+                        if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                         chat.history.push(message);
                         newMessagesForDB.push(message); 
                         addMessageBubble(message, targetChatId, targetChatType);
 
                     } else {
+                        const statusRegex = /\[?.*?更新状态为[:：](.*?)(?:\]|$)/;
+                        const statusMatch = item.content.match(statusRegex);
+                        if (statusMatch) {
+                            let newStatus = statusMatch[1].trim().replace(/[\])]+$/, '').trim();
+                            if (newStatus) {
+                                chat.status = newStatus;
+                                const statusTextEl = document.getElementById('chat-room-status-text');
+                                if (statusTextEl) statusTextEl.textContent = newStatus;
+                                if(typeof renderCharacters === 'function') renderCharacters();
+                            }
+                        }
                         const receivedTransferRegex = /\[.*?的转账：.*?元；备注：.*?\]/;
                         const giftRegex = /\[.*?送来的礼物：.*?\]/;
                         
@@ -378,6 +466,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         } else if (giftRegex.test(message.content)) {
                             message.giftStatus = 'sent';
                         }
+                        if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                         chat.history.push(message);
                         newMessagesForDB.push(message);
                         addMessageBubble(message, targetChatId, targetChatType);
@@ -426,7 +515,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
                             group.history.push(message);
                             addMessageBubble(message, targetChatId, targetChatType);
-                            newMessagesForDB.push(message); // ★ 群聊引用消息存库
+                            newMessagesForDB.push(message); 
                         }
                     } 
                     else if (standardMatch || item.char) {
@@ -444,13 +533,32 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             };
                             group.history.push(message);
                             addMessageBubble(message, targetChatId, targetChatType);
-                            newMessagesForDB.push(message); // ★ 群聊普通消息存库
+                            newMessagesForDB.push(message);
                         }
                     }
                 }
             } 
         } 
 
+        // 等待 AI 的打字机动画全走完（话都说出口了），我们再关断电话
+        if (shouldHangup) {
+            // 停顿 2.5 秒，让用户有充足的时间看清最后那句话
+            await new Promise(resolve => setTimeout(resolve, 2000)); 
+            
+            if (typeof aiHangupCall === 'function') {
+                await aiHangupCall();
+            }
+        }
+
+        if (targetChatType === 'private' && chat.callMode && chat.callConnected === false && typeof onCallConnected === 'function') {
+            onCallConnected();
+        }
+
+        // 清空用户区（AI 回复完成）
+        if (targetChatType === 'private' && chat.callMode && typeof clearCallUserArea === 'function') {
+            clearCallUserArea();
+        }
+        
         await saveMessagesToDB(newMessagesForDB, targetChatId, targetChatType);
         await saveSingleChat(targetChatId, targetChatType);
         renderChatList();
@@ -465,17 +573,18 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 // ==========================================
 // 修改函数签名，增加 isBackground = false
 async function getAiReply(chatId, chatType, isBackground = false) {
-    // 【核心新增】：如果后台触发时，用户恰好在这个聊天室里盯着看，直接转为“前台处理”（会有输入中提示并锁死按钮）
+    // 【核心新增】：如果后台触发时，用户恰好在这个聊天室里盯着看，直接转为"前台处理"（会有输入中提示并锁死按钮）
     const isCurrentChat = (typeof currentChatId !== 'undefined' && currentChatId === chatId && currentChatType === chatType);
     if (isCurrentChat) {
         isBackground = false; 
     }
 
     if (isGenerating && !isBackground) return;
-    const { url, key, model, provider, streamEnabled } = db.apiSettings; 
+    const { url, key, model, provider } = db.apiSettings;
+const streamEnabled = db.apiSettings.streamEnabled ?? true; // 默认true
     if (!url || !key || !model) {
         if (!isBackground) {
-            showToast('请先在“api”应用中完成设置！');
+            showToast('请先在"api"应用中完成设置！');
             switchScreen('api-settings-screen');
         }
         return;
@@ -486,15 +595,28 @@ async function getAiReply(chatId, chatType, isBackground = false) {
     // 只有在前台处理时，才修改 UI 和 锁定发信状态
     if (!isBackground) {
         isGenerating = true;
+        if (chatType === 'private' && chat.callMode) {
+    document.getElementById('call-switch-btn')?.setAttribute('disabled', '');
+    document.getElementById('call-mic-btn')?.setAttribute('disabled', '');
+}
+        if (chatType === 'private' && chat.callMode && typeof clearCallDialogue === 'function') {
+    clearCallDialogue();
+}
+        // ★ 通话中AI回复：头像光晕
+        if (chatType === 'private' && chat.callMode) {
+            document.getElementById('call-identity')?.classList.add('ai-generating');
+        }
         getReplyBtn.disabled = true;
         regenerateBtn.disabled = true;
         const typingName = chatType === 'private' ? chat.remarkName : chat.name;
         
-        let actionStatusText = '正在输入中...';
-        if (chatType === 'private' && chat.offlineModeEnabled) {
-            actionStatusText = '正在行动中...';
-        }
-        typingIndicator.textContent = `“${typingName}”${actionStatusText}`;
+let actionStatusText = '正在输入中...';
+if (chatType === 'private' && chat.offlineModeEnabled) {
+    actionStatusText = '正在行动中...';
+} else if (chatType === 'private' && chat.callMode) {
+    actionStatusText = '通话中...';
+}
+        typingIndicator.textContent = `"${typingName}"${actionStatusText}`;
         typingIndicator.style.display = 'block';
         messageArea.scrollTop = messageArea.scrollHeight;
     }
@@ -515,7 +637,7 @@ async function getAiReply(chatId, chatType, isBackground = false) {
         });
 
         let offlineReinforcement = null;
-        if (chatType === 'private' && chat.offlineModeEnabled) {
+if (chatType === 'private' && chat.offlineModeEnabled) {
             const worldBooksWriting = (chat.worldBookIds ||[]).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'writing')).filter(Boolean).map(wb => wb.content).join(''); 
             offlineReinforcement = `[🛑 严格执行以下写作手册]
 ## 1. 🧠 动笔前的快速自问（100字以内，无需输出，心底自问）
@@ -528,9 +650,9 @@ async function getAiReply(chatId, chatType, isBackground = false) {
 ## 2. ✍️ 写作六大原则
 ${worldBooksWriting ? `1. **文风第一**：严格遵循【写作风格】设定：${worldBooksWriting}` : ''}
 2. **人设为本**：${chat.realName}的反应必须符合他/她的设定
-3. **拒绝“网文味”和“古早言情土味”**：
-   - **严禁**使用“邪魅一笑”、“宠溺”、“彻底沦陷”、“命都给你”、“揉进骨血”等廉价网文词汇。
-   - 保持文字的**现实逻辑**。真实的人不会立刻承认自己“输了”或“栽了”，不会直接投降。
+3. **拒绝"网文味"和"古早言情土味"**：
+   - **严禁**使用"邪魅一笑"、"宠溺"、"彻底沦陷"、"命都给你"、"揉进骨血"等廉价网文词汇。
+   - 保持文字的**现实逻辑**。真实的人不会立刻承认自己"输了"或"栽了"，不会直接投降。
 4. **逻辑严密**：物理动作连续，物品去向明确，时间流逝合理。
 5. **渐进变化**：${chat.realName}的情绪和情境的转变要合理，避免过度煽情
 6. **拒绝冗余和重复**：
@@ -555,10 +677,21 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
 
 ## 4.🛑 **动笔前的自我灵魂拷问**：
 1. **人设校验**：回到最上方，重新浏览一遍**👤 角色档案**，问自己：这个反应符合${chat.realName}的性格吗？如果不符合，调整到符合为止。
-2. **禁词检查**：如果不幸写出了网文的油腻土味，例如“宠溺”、“我栽了”、“彻底输了”等字眼，**请立刻将其删除**，并改写为一个具体的、无言的动作。
+2. **禁词检查**：如果不幸写出了网文的油腻土味，例如"宠溺"、"我栽了"、"彻底输了"等字眼，**请立刻将其删除**，并改写为一个具体的、无言的动作。
 
 现在，根据下方${chat.myName}的最新动态开始创作。深呼吸，回想一下${chat.realName}的人设，然后自然地续写接下来的剧情。\n\n`;
         }
+        
+        // 视频通话写作手册（在 chat_feature_call.js 的 generateCallVideoReinforcement 中独立配置）
+let callReinforcement = null;
+if (chatType === 'private' && chat.callMode === 'video') {
+    callReinforcement = typeof generateCallVideoReinforcement === 'function'
+        ? generateCallVideoReinforcement(chat)
+        : null;
+}
+
+// 两者互斥，取其一作为本次请求的写作手册注入
+const activeReinforcement = offlineReinforcement || callReinforcement;
 
         if (provider === 'gemini') {
             const contents = historySlice.map(msg => {
@@ -600,7 +733,7 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
                 return { role, parts };
             });
             
-            if (offlineReinforcement) {
+            if (activeReinforcement){
                 let targetIndex = -1;
                 for (let i = contents.length - 1; i >= 0; i--) {
                     if (contents[i].role === 'user') {
@@ -612,7 +745,7 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
 
                 if (targetIndex !== -1) {
                     const targetMsg = contents[targetIndex];
-                    const injectionText = `${offlineReinforcement}`; 
+                    const injectionText = `${activeReinforcement}`; 
                     
                     if (targetMsg.parts && targetMsg.parts.length > 0) {
                         const textPart = targetMsg.parts.find(p => p.text);
@@ -625,7 +758,7 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
                         targetMsg.parts = [{ text: injectionText }];
                     }
                 } else {
-                    contents.push({ role: 'user', parts: [{ text: offlineReinforcement }] });
+                    contents.push({ role: 'user', parts: [{ text: activeReinforcement }] });
                 }
             }
 
@@ -652,26 +785,13 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
                 if (msg.role === 'user' && msg.quote) {
                      const replyTextMatch = rawContent.match(/\[.*?[:：]([\s\S]+?)\]/); 
                      const replyText = replyTextMatch ? replyTextMatch[1] : rawContent;
-                     content = `[${chat.myName}引用“${msg.quote.content}”并回复：${replyText}]`;
+                     content = `[${chat.myName}引用"${msg.quote.content}"并回复：${replyText}]`;
                 } else {
                     if (msg.parts && msg.parts.length > 0) {
-                        // --- 兼容模式判断逻辑开始 ---
                         const hasImage = msg.parts.some(p => p.type === 'image');
-                        
-                        if (isCompatibilityMode && !hasImage) {
-                            // 开启了兼容模式且没有图片，将 content 拼接成纯字符串
-                            content = msg.parts.map(p => {
-                                if (p.type === 'text' || p.type === 'html') {
-                                    let text = p.text;
-                                    if (chat.offlineModeEnabled && msg.role === 'user') {
-                                        text = text.replace(/的消息：/g, '说：');
-                                    }
-                                    return text;
-                                }
-                                return "";
-                            }).join("").trim();
-                        } else {
-                            // 默认模式（数组格式）：支持图片，或未开启兼容模式
+
+                        if (hasImage) {
+                            // 有图片时才使用数组格式（vision格式），支持图文混合
                             content = msg.parts.map(p => {
                                 if (p.type === 'text' || p.type === 'html') {
                                     let text = p.text;
@@ -684,16 +804,34 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
                                 }
                                 return null;
                             }).filter(p => p);
+                        } else {
+                            // 没有图片时，始终拼接成纯字符串，兼容所有API
+                            content = msg.parts.map(p => {
+                                if (p.type === 'text' || p.type === 'html') {
+                                    let text = p.text;
+                                    if (chat.offlineModeEnabled && msg.role === 'user') {
+                                        text = text.replace(/的消息：/g, '说：');
+                                    }
+                                    return text;
+                                }
+                                return '';
+                            }).join('').trim();
                         }
-                        // --- 兼容模式判断逻辑结束 ---
                     } else {
                         content = rawContent;
                     }
                 }
-                apiMessages.push({ role: msg.role, content: content });
+
+                // 跳过 content 为空的消息，避免部分 API 返回 400
+                const isEmpty = content === null || content === undefined ||
+                    (typeof content === 'string' && content.trim() === '') ||
+                    (Array.isArray(content) && content.length === 0);
+                if (!isEmpty) {
+                    apiMessages.push({ role: msg.role, content: content });
+                }
             });
 
-            if (offlineReinforcement) {
+            if (activeReinforcement) {
                 let insertIndex = apiMessages.length;
                 for (let i = apiMessages.length - 1; i >= 0; i--) {
                     if (apiMessages[i].role === 'user') {
@@ -702,7 +840,7 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
                         break; 
                     }
                 }
-                const instructionMsg = { role: 'system', content: offlineReinforcement };
+                const instructionMsg = { role: 'system', content: activeReinforcement };
                 apiMessages.splice(insertIndex, 0, instructionMsg);
             }
 
@@ -715,11 +853,13 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
             Authorization: `Bearer ${key}`
         };
         
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestBody)
-        });
+        callAbortController = new AbortController();          // ← 每次请求前重置
+const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(requestBody),
+    signal: callAbortController.signal                // ← 挂载信号
+});
         if (!response.ok) {
             const error = new Error(`API Error: ${response.status} ${await response.text()}`);
             error.response = response;
@@ -734,21 +874,34 @@ ${chat.realName}愣了一下，指尖无意识地摩挲着杯沿。
             if (provider === 'gemini') {
                 fullResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
             } else {
-                fullResponse = result.choices[0].message.content;
+                fullResponse = result.choices[0].message.content || "";
             }
             await handleAiReplyContent(fullResponse, chat, chatId, chatType);
         }
 
     } catch (error) {
-        if (!isBackground) showApiError(error);
-        else console.error("[Timer后台固定模式错误]", error);
-    } finally {
+    if (error.name === 'AbortError') {
+        // 通话已挂断，fetch 被主动中止，静默处理即可
+    } else if (!isBackground) {
+        showApiError(error);
+        if (chatType === 'private' && chat && chat.callMode && !chat.callConnected
+            && typeof endCallAiFailure === 'function') {
+            endCallAiFailure();
+        }
+    } else {
+        console.error("[Timer后台固定模式错误]", error);
+    }
+}finally {
         // 同样，只有前台处理时，才解开 UI
         if (!isBackground) {
             isGenerating = false;
+            document.getElementById('call-switch-btn')?.removeAttribute('disabled');
+document.getElementById('call-mic-btn')?.removeAttribute('disabled');
             getReplyBtn.disabled = false;
             regenerateBtn.disabled = false;
             typingIndicator.style.display = 'none';
+            // ★ 移除通话光晕
+            document.getElementById('call-identity')?.classList.remove('ai-generating');
         }
     }
 }
@@ -848,22 +1001,26 @@ async function handleRegenerate() {
         if (statusWasChangedInDeletedMsg) {
             let foundStatus = false;
             for (let i = chat.history.length - 1; i >= 0; i--) {
-                const msg = chat.history[i];
-                const match = msg.content.match(statusRegex);
-                
-                if (match) {
-                    let newStatus = match[1].trim().replace(/[\])]+$/, '').trim();
-                    if (newStatus) {
-                        chat.status = newStatus;
-                        foundStatus = true;
-                        break;
-                    }
-                }
-            }
+    const msg = chat.history[i];
+
+    // ★ 只追溯 AI 自己写的状态，不能被用户状态通知误导
+    if (msg.role !== 'assistant' && msg.role !== 'model') continue;  // ← 新增
+
+    const match = msg.content.match(statusRegex);
+    if (match) {
+        let newStatus = match[1].trim().replace(/[\])]+$/, '').trim();
+        if (newStatus) {
+            chat.status = newStatus;
+            foundStatus = true;
+            break;
+        }
+    }
+}
         }
 
         const statusTextEl = document.getElementById('chat-room-status-text');
         if (statusTextEl) statusTextEl.textContent = chat.status;
+                        if(typeof renderCharacters === 'function') renderCharacters();
     }
 await deleteMessagesFromDB(removedMessages.map(m=>m.id));
     await saveSingleChat(currentChatId, currentChatType);
