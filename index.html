@@ -129,9 +129,9 @@
 <!-- === 结束：主页 === -->
 
     <!-- 聊天列表 -->
-        <div id="chat-list-screen" class="screen">
+<div id="chat-list-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="home-screen">‹</button>
+        <button class="back-btn" data-target="home-screen"></button>
         <div class="title-container">
             <h1 class="title" id="chat-list-title">聊天</h1>
         </div>
@@ -156,10 +156,35 @@
                 <p>点击右上角的“+”创建一个吧！</p>
             </div>
         </div>
-        <!-- Tab 2: 我 (用户档案管理) -->
-        <div id="tab-view-me" class="tab-content-view" style="display:none;">
-            <div id="my-personas-list"></div>
+
+<!-- Tab 2: 我 (用户档案管理) -->
+<div id="tab-view-me" class="tab-content-view" style="display:none;">
+    <!-- 核心：使用与消息列表相同外观的全宽连体白底容器 -->
+    <div class="contacts-list-container">
+        
+        <!-- 用户档案 (排在上方，去掉 open 类默认折叠) -->
+        <div class="contact-group" id="contacts-personas-section">
+            <div class="contact-group-header">
+                <h4>我的档案</h4>
+                <span class="contact-group-arrow">▼</span>
+            </div>
+            <div class="contact-group-content">
+                <ul class="list-container" id="my-personas-list"></ul>
+            </div>
         </div>
+
+        <!-- 角色档案 (默认展开) -->
+        <div class="contact-group open" id="contacts-characters-section">
+            <div class="contact-group-header">
+                <h4>我的好友</h4>
+                <span class="contact-group-arrow">▼</span>
+            </div>
+            <div class="contact-group-content">
+                <ul class="list-container" id="contacts-characters-list"></ul>
+            </div>
+        </div>        
+    </div>
+</div>
 <!-- Tab 3: 外观及气泡预设管理 -->
 <div id="tab-view-bubbles" class="tab-content-view" style="display:none;">
     
@@ -353,7 +378,7 @@
     <!-- 聊天室页面 -->
         <div id="chat-room-screen" class="screen">
             <header class="app-header" id="chat-room-header-default">
-                <button class="back-btn" data-target="chat-list-screen">‹</button>
+                <button class="back-btn" data-target="chat-list-screen"></button>
                 <div class="title-container">
                     <h1 class="title" id="chat-room-title">...</h1>
                     <div class="subtitle" id="chat-room-subtitle">
@@ -362,7 +387,7 @@
                     </div>
                 </div>
                 <div class="action-btn-group">
-                    <button class="action-btn" id="peek-btn">
+                    <button class="action-btn" id="video-call-btn" title="视频电话">
                         <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                             <path transform="scale(1.4) translate(0.5 0.5)"
                                 d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328zM1.83 1.83l.002-.001-.002.001z"
@@ -483,10 +508,256 @@
             </div>
         </div>
 
+<!-- ================== 独立页面：用户档案编辑 ================== -->
+
+<div id="persona-edit-screen" class="screen">
+  <header class="app-header">
+    <button class="back-btn" id="persona-edit-back-btn"></button>
+    <div class="title-container">
+      <h1 class="title"></h1>
+    </div>
+    <div class="action-btn-group">
+      <button class="action-btn" id="persona-edit-delete-btn" title="删除档案">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"
+            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+      <button type="submit" form="persona-edit-form" class="action-btn" title="保存">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <div class="char-edit-hero">
+    <div class="char-edit-hero-bg" id="persona-edit-hero-bg"></div>
+    <input type="file" id="persona-edit-avatar-upload" accept="image/*" style="display:none">
+    <div class="char-edit-avatar-wrap">
+      <label for="persona-edit-avatar-upload" class="char-edit-avatar-clickable">
+        <img src="" id="persona-edit-avatar-preview" class="char-edit-avatar" alt="avatar">
+        <div class="char-edit-avatar-camera-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <div class="char-edit-body">
+    <!-- 名字居中，无圆形按钮 -->
+    <div class="char-edit-profile-row">
+      <div class="char-edit-name-block">
+        <input type="text" id="persona-edit-nickname" class="char-edit-name-input" placeholder="显示昵称">
+        <textarea id="persona-edit-status" class="char-edit-status persona-edit-status-input" placeholder="在线" maxlength="60" rows="1"></textarea>
+      </div>
+    </div>
+
+    <div class="char-info-tab-bar">
+      <button class="char-info-tab-btn active" data-tab="profile">个人资料</button>
+      <button class="char-info-tab-btn" data-tab="stats">统计</button>
+    </div>
+
+    <div class="char-info-tab-content">
+      <div class="char-info-tab-panel active" data-panel="profile">
+        <form id="persona-edit-form">
+          <div class="info-group">
+            <label>• 姓名</label>
+            <input type="text" id="persona-edit-realname" required placeholder="角色在设定中的真实姓名">
+          </div>
+          <div class="info-group">
+            <label>• 人设</label>
+            <textarea id="persona-edit-desc" rows="10" placeholder="详细描述身份背景、性格特征…"></textarea>
+          </div>
+        </form>
+      </div>
+
+      <div class="char-info-tab-panel" data-panel="stats">
+        <div class="char-info-stats-placeholder">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="width:48px;height:48px;margin-bottom:12px;"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+          <p>统计功能开发中</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
+<div id="character-edit-screen" class="screen">
+  <header class="app-header">
+    <button class="back-btn" id="character-edit-back-btn"></button>
+    <div class="title-container">
+      <h1 class="title"></h1>
+    </div>
+<div class="action-btn-group">
+  <button class="action-btn" id="character-edit-delete-btn" title="删除角色">
+    <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path
+                            d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+  </button>
+  <button type="submit" form="character-edit-form" class="action-btn" title="保存">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <polyline points="20 6 9 17 4 12"></polyline>
+    </svg>
+  </button>
+</div>
+  </header>
+
+  <div class="char-edit-hero">
+    <div class="char-edit-hero-bg" id="character-edit-hero-bg"></div>
+    <input type="hidden" id="character-edit-id">
+    <input type="file" id="character-edit-avatar-upload" accept="image/*" style="display:none">
+    <div class="char-edit-avatar-wrap">
+      <label for="character-edit-avatar-upload" class="char-edit-avatar-clickable">
+        <img src="" id="character-edit-avatar-preview" class="char-edit-avatar" alt="avatar">
+        <div class="char-edit-avatar-camera-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+            <circle cx="12" cy="13" r="4"></circle>
+          </svg>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <div class="char-edit-body">
+    <div class="char-edit-profile-row">
+      <div class="char-edit-name-block">
+        <input type="text" id="character-edit-remarkname" class="char-edit-name-input" placeholder="角色昵称">
+        <span class="char-edit-status" id="character-edit-status-display">在线</span>
+      </div>
+      <div class="char-edit-circle-btns">
+        <button class="char-circle-btn" id="peek-btn" title="偷看手机">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="char-info-tab-bar">
+      <button class="char-info-tab-btn active" data-tab="profile">个人资料</button>
+      <button class="char-info-tab-btn" data-tab="stats">统计</button>
+    </div>
+
+    <div class="char-info-tab-content">
+      <div class="char-info-tab-panel active" data-panel="profile">
+        <form id="character-edit-form">
+          <div class="info-group">
+            <label>• 姓名</label>
+            <input type="text" id="character-edit-realname" required>
+          </div>
+          <div class="info-group">
+            <label>• 人设</label>
+            <textarea id="character-edit-desc" rows="10" placeholder="详细描述角色性格、背景、说话风格…"></textarea>
+          </div>          
+        </form>
+      </div>
+
+      <div class="char-info-tab-panel" data-panel="stats">
+<!-- 将这段代码替换原本的 char-info-stats-placeholder -->
+<div class="stats-dashboard">
+  <!-- 第一部分：顶部两块卡片 -->
+  <div class="stats-top-cards">
+    <div class="info-group stats-card">
+      <div class="stats-label">聊天总数</div>
+      <div class="stats-value">
+        <span id="stat-msg-count">0</span>
+        <span class="stats-unit">条</span>
+      </div>
+    </div>
+    <div class="info-group stats-card stats-card-blue">
+      <div class="stats-label">Token预估</div>
+      <div class="stats-value">
+        <span id="stat-total-tokens">0</span>
+        <span class="stats-unit">Tk</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 第二部分：详细条形图 -->
+  <div class="info-group stats-chart-group">
+    <div class="stats-bars-container">
+      
+<!-- 基础 -->
+      <div class="stats-bar-col">
+        <div class="stats-bar-bg">
+          <div class="stats-bar-fill" id="bar-fill-base">
+            <div class="stats-bar-circle" id="bar-circle-base">0</div>
+          </div>
+        </div>
+        <div class="stats-bar-label">基础</div>
+      </div>
+
+      <!-- ======= 新增：人设 ======= -->
+      <div class="stats-bar-col">
+        <div class="stats-bar-bg">
+          <div class="stats-bar-fill" id="bar-fill-persona">
+            <div class="stats-bar-circle" id="bar-circle-persona">0</div>
+          </div>
+        </div>
+        <div class="stats-bar-label">人设</div>
+      </div>
+      <!-- ========================= -->
+
+      <!-- 上下文 -->
+      <div class="stats-bar-col">
+        <div class="stats-bar-bg">
+          <div class="stats-bar-fill" id="bar-fill-context">
+            <div class="stats-bar-circle" id="bar-circle-context">0</div>
+          </div>
+        </div>
+        <div class="stats-bar-label">上下文</div>
+      </div>
+      
+      <!-- 世界书 -->
+      <div class="stats-bar-col">
+        <div class="stats-bar-bg">
+          <div class="stats-bar-fill" id="bar-fill-wb">
+            <div class="stats-bar-circle" id="bar-circle-wb">0</div>
+          </div>
+        </div>
+        <div class="stats-bar-label">世界书</div>
+      </div>
+
+      <!-- 记忆 -->
+      <div class="stats-bar-col">
+        <div class="stats-bar-bg">
+          <div class="stats-bar-fill" id="bar-fill-memory">
+            <div class="stats-bar-circle" id="bar-circle-memory">0</div>
+          </div>
+        </div>
+        <div class="stats-bar-label">记忆</div>
+      </div>
+
+      <!-- 论坛 -->
+      <div class="stats-bar-col">
+        <div class="stats-bar-bg">
+          <div class="stats-bar-fill" id="bar-fill-forum">
+            <div class="stats-bar-circle" id="bar-circle-forum">0</div>
+          </div>
+        </div>
+        <div class="stats-bar-label">论坛</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+
 <!-- === 搜索结果页面 === -->
 <div id="search-results-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" id="exit-search-results-btn" data-target="chat-room-screen">‹</button>
+        <button class="back-btn" id="exit-search-results-btn" data-target="chat-room-screen"></button>
         <div class="title-container">
             <h1 class="title">搜索结果</h1>
         </div>
@@ -511,7 +782,7 @@
         <!-- 世界书页面 -->
         <div id="world-book-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="home-screen">‹</button>
+                <button class="back-btn" data-target="home-screen"></button>
                 <div class="title-container">
                     <h1 class="title">世界书</h1>
                 </div>
@@ -536,7 +807,7 @@
         </div>
         <div id="edit-world-book-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="world-book-screen">‹</button>
+                <button class="back-btn" data-target="world-book-screen"></button>
                 <div class="title-container">
                     <h1 class="title" id="edit-world-book-title">创建/编辑条目</h1>
                 </div>
@@ -573,7 +844,7 @@
         <!-- 设置页面 -->
 <div id="settings-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="home-screen">‹</button>
+        <button class="back-btn" data-target="home-screen"></button>
         <div class="title-container">
             <h1 class="title">设&nbsp;&nbsp;置</h1>
         </div>
@@ -751,7 +1022,7 @@
 <!-- api设置页面 -->
         <div id="api-settings-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container"><h1 class="title">API 设置</h1></div>
         <div class="placeholder"></div>
     </header>
@@ -824,7 +1095,7 @@
 <!-- 存储分析页面 -->
 <div id="storage-analysis-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container">
             <h1 class="title">存储备份</h1>
         </div>
@@ -879,7 +1150,7 @@
 <!-- 壁纸设置页面 -->
         <div id="wallpaper-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container"><h1 class="title">更换壁纸</h1></div>
         <div class="placeholder"></div>
     </header>
@@ -916,7 +1187,7 @@
     <!-- 字体设置页面 -->
         <div id="font-settings-screen" class="screen">
         <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container">
         <h1 class="title">字体设置</h1></div>
         <div class="placeholder"></div>
@@ -937,7 +1208,7 @@
 <!-- 全局设置页面 -->        
         <div id="customize-screen" class="screen">
         <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container">
         <h1 class="title">主屏幕自定义</h1>
         </div>
@@ -949,7 +1220,7 @@
 <!-- 教程页面 -->        
 <div id="tutorial-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container">
             <h1 class="title">教程与更新</h1>
         </div>
@@ -961,7 +1232,7 @@
 <!-- ★ 新增：开发者控制台页面 -->
 <div id="dev-console-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="settings-screen">‹</button>
+        <button class="back-btn" data-target="settings-screen"></button>
         <div class="title-container">
             <h1 class="title">系统日志</h1>
         </div>
@@ -990,83 +1261,138 @@
         </div>
         <input type="file" id="image-upload-input" accept="image/*" style="display:none;">
 
-        <!-- Private Chat Settings -->
-        <div id="chat-settings-sidebar" class="settings-sidebar">
-            <div class="header">聊天设置</div>
-            <div class="content">
-                <form id="chat-settings-form">
-                    <div class="avatar-setting"><img src="" alt="角色头像" id="setting-char-avatar-preview"
-                            class="avatar-preview"><input type="file" id="setting-char-avatar-upload" accept="image/*"
-                            style="display:none;"><label for="setting-char-avatar-upload" class="btn btn-primary"
-                            style="flex-grow:1;">更换角色头像</label></div>
-                    <!-- 替换开始：将原来的备注单行改为 姓名+备注 并排 -->
-                    <div class="form-group" style="display: flex; gap: 10px;">
-                        <div style="flex: 1;">
-                            <label for="setting-char-real-name">角色姓名</label>
-                            <input type="text" id="setting-char-real-name" placeholder="设定中的名字">
-                        </div>
-                        <div style="flex: 1;">
-                            <label for="setting-char-remark">角色昵称</label>
-                            <input type="text" id="setting-char-remark" placeholder="列表显示名">
-                        </div>
-                    </div>
-                    <!-- 替换结束 -->
-                    <div class="form-group"><label for="setting-char-persona">角色人设</label><textarea
-                            id="setting-char-persona" placeholder="详细描述角色的性格、背景、说话风格等。"></textarea></div>
-<!-- 新的侧边栏结构：我的信息 (只读 + 绑定) -->
-<!-- 我的信息部分修改后的结构 -->
-<hr class="divider">
-    <div class="avatar-setting">
-        <img src="" alt="我的头像" id="setting-my-avatar-preview" class="avatar-preview">
-        <input type="hidden" id="setting-my-avatar-src">
-        <button type="button" class="btn btn-primary" id="bind-user-persona-btn">更换我的身份</button>
+<!-- ================== Private Chat Settings (侧边栏) ================== -->
+<div id="chat-settings-sidebar" class="settings-sidebar redesigned-sidebar">
+<div class="sidebar-top-section">
+        <!-- 1. 头像叠加居中区 -->
+        <div class="overlapping-avatars-center">
+            <div class="avatar-wrapper char-avatar-wrapper">
+                <img src="" alt="角色头像" id="setting-char-avatar-preview" class="avatar-preview">
+            </div>
+            <div class="avatar-wrapper user-avatar-wrapper">
+                <img src="" alt="我的头像" id="setting-my-avatar-preview" class="avatar-preview">
+            </div>
         </div>
-        <div class="form-group" style="display: flex; gap: 10px;">
-        <div style="flex-grow: 1;">
 
-                    <label for="setting-my-realname-display">我的姓名</label>
-                    <span id="setting-my-realname-display" class="sidebar-info-value">未设置</span>
-                    <input type="hidden" id="setting-my-name">
+        <!-- 2. 心跳折线 -->
+        <div class="heartbeat-divider">
+            <svg width="220" height="16" viewBox="0 0 220 16" preserveAspectRatio="none">
+                <!-- 折线在正中心 100-120 的位置跳动 -->
+                <path d="M0,8 L95,8 L100,2 L105,14 L110,6 L115,10 L120,8 L220,8" stroke="#90caf9" stroke-width="2" fill="none" stroke-linejoin="round"/>
+            </svg>
+        </div>
+
+        <!-- 3. 对称名字 -->
+        <div class="names-row">
+            <div class="name-block">
+                <span id="setting-char-remark-display" class="name-text-span">未设置</span>
+            </div>
+                        <div class="name-block">
+                <span id="setting-my-nickname-display" class="name-text-span">未设置</span>
+            </div>
+        </div>
+
+        <!-- 4. 对称按钮 -->
+        <div class="actions-row">
+            <!-- 左侧：角色操作 -->
+            <div class="action-group">
+                <div class="icon-btn-wrapper mini-btn edit-char-btn" id="sidebar-edit-char-btn" title="编辑角色">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
                 </div>
-                 <div style="flex-grow: 1;">
-                    <label for="setting-my-nickname-display">我的昵称</label>
-                    <span id="setting-my-nickname-display" class="sidebar-info-value">未设置</span>
-                    <input type="hidden" id="setting-my-nickname">
+                                <div class="icon-btn-wrapper mini-btn" id="sidebar-peek-btn" title="偷看角色手机">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
                 </div>
             </div>
-            
-
-    <div class="form-group">
-        <label for="setting-my-persona">我的人设</label>
-        <textarea id="setting-my-persona" class="readonly-field" placeholder="绑定身份后自动填充" readonly></textarea>
+                        <!-- 右侧：用户操作 -->
+            <div class="action-group">
+                <div class="icon-btn-wrapper mini-btn" id="edit-user-persona-btn" title="编辑昵称">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </div>
+                <div class="icon-btn-wrapper mini-btn" id="bind-user-persona-btn" title="更换身份">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                </div>
+            </div>
+        </div>
     </div>
 
-<hr class="divider">
-<div class="form-group">
-    <button type="button" class="btn btn-secondary" id="link-world-book-btn">关联世界书</button>
-</div>
-<div class="form-group" style="display: flex; justify-content: space-between; align-items: center; padding: 10px; border: 1px solid #DAF0FC; border-radius: 10px; background-color: #F5FBFF;">
-    <label for="setting-bilingual-mode" style="margin-bottom: 0; color: var(--secondary-color); font-weight: 600;">双语聊天模式</label>
-    <input type="checkbox" id="setting-bilingual-mode" style="width: auto; height: 20px; width: 20px;">
-</div>
-<div class="form-group">
-    <label for="setting-theme-color">聊天气泡外观</label>
-    <select id="setting-theme-color"></select>
-</div>
-<hr class="divider">
-<div class="form-group">
-    <label for="setting-max-memory">最大记忆轮数</label>
-    <input type="number" id="setting-max-memory" value="10" min="1">
-</div>
-                    <div class="form-group"><label for="setting-chat-bg-upload" class="btn btn-primary" style="font-weight: bold;">更换聊天背景</label><input type="file" id="setting-chat-bg-upload"
-                            accept="image/*" style="display:none;"></div>
-                    <button type="submit" class="btn btn-primary">保存设置</button>
-                </form>
-<hr class="divider">
-                <button type="button" class="btn btn-danger" id="clear-chat-history-btn">清空聊天记录</button>
+    <!-- 下半部分：白色底色，左上圆角，列表菜单 -->
+    <div class="sidebar-bottom-section">
+        <div class="bottom-header"></div>
+        
+        <form id="chat-settings-form" class="bottom-content-scroll">
+            
+<!-- ====== 隐藏的表单数据 ====== -->
+            <input type="file" id="setting-char-avatar-upload" accept="image/*" style="display:none;">
+            <!-- 把背景上传控件也集中放在这里隐藏，防止破坏 CSS 布局 -->
+            <input type="file" id="setting-chat-bg-upload" accept="image/*" style="display:none;">
+            
+            <input type="hidden" id="setting-char-real-name">
+            <input type="hidden" id="setting-char-remark">
+            <textarea id="setting-char-persona" style="display:none;"></textarea>
+            
+            <input type="hidden" id="setting-my-avatar-src">
+            <input type="hidden" id="setting-my-name">
+            <input type="hidden" id="setting-my-nickname">
+            <textarea id="setting-my-persona" style="display:none;"></textarea>
+            <span id="setting-my-realname-display" style="display:none;"></span>
+            
+            <!-- 隐藏的记忆轮数 Input，用来配合原有保存逻辑 -->
+            <input type="hidden" id="setting-max-memory" value="10">
+            <!-- ============================== -->
 
+            <!-- 设置项列表 -->
+            <div class="settings-card menu-list-style">
+                
+                <!-- 关联世界书 -->
+                <div class="settings-item" id="link-world-book-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-book"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+                    <div class="item-details"><span class="item-name">关联世界书</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                <!-- 最大记忆轮数 (Prompt触发) -->
+                <div class="settings-item" id="setting-max-memory-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-cpu"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg></div>
+                    <div class="item-details"><span class="item-name">最大记忆轮数</span></div>
+                    <span id="setting-max-memory-display" class="item-value">10</span>
+                    <svg class="chevron-icon" style="margin-left: 5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                <!-- 聊天气泡外观 -->
+                <div class="settings-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-message-circle"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></div>
+                    <div class="item-details"><span class="item-name">聊天气泡外观</span></div>
+                    <select id="setting-theme-color" class="inline-select"></select>
+                    <svg class="chevron-icon" style="margin-left: 5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                <!-- 双语聊天模式 -->
+                <div class="settings-item toggle-setting" style="cursor: default;">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-type"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg></div>
+                    <div class="item-details"><span class="item-name">双语聊天模式</span></div>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-bilingual-mode">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <!-- 更换聊天背景 -->
+                <label class="settings-item" for="setting-chat-bg-upload" style="margin-bottom:0; cursor:pointer;">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-image"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
+                    <div class="item-details"><span class="item-name">更换聊天背景</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </label>                
+                <!-- 清空聊天记录 (移入菜单作为普通选项卡，红字/红图标预警) -->
+                <div class="settings-item" id="clear-chat-history-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></div>
+                    <div class="item-details"><span class="item-name">清空聊天记录</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
             </div>
-        </div>
+
+            <!-- 底部按钮操作区 (仅留保存) -->
+            <div class="bottom-actions">
+                <button type="submit" class="btn btn-primary action-btn-full">保存设置</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 
         <!-- Group Chat Settings -->
@@ -1146,7 +1472,7 @@
 <div id="memory-journal-screen" class="screen">
     <!-- Header 和 Tab 保持不变 -->
     <header class="app-header">
-        <button class="back-btn" data-target="chat-room-screen">‹</button>
+        <button class="back-btn" data-target="chat-room-screen"></button>
         <div class="title-container">
             <h1 class="title">记忆档案</h1>
         </div>
@@ -1194,7 +1520,7 @@
 <!-- ================= 1. 总结详情页 (Summary Detail) ================= -->
 <div id="summary-detail-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="memory-journal-screen">‹</button>
+        <button class="back-btn" data-target="memory-journal-screen"></button>
         <div class="title-container">
             <h1 class="title">总结详情</h1>
         </div>
@@ -1218,7 +1544,7 @@
 <!-- ================= 2. 日记详情页 (Journal Detail) ================= -->
 <div id="journal-detail-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="memory-journal-screen">‹</button>
+        <button class="back-btn" data-target="memory-journal-screen"></button>
         <!-- 标题移除，空着或者放个装饰 -->
         <div class="title-container"></div> 
         <div class="action-btn-group">
@@ -1257,13 +1583,14 @@
 </div>
 
 
-<!-- 偷看手机页面 -->
-        <div id="peek-screen" class="screen">
-            <header class="app-header">
-                <button class="back-btn" data-target="chat-room-screen">‹</button>
-                <div class="title-container">
-                    <h1 class="title">Ta的手机</h1>
-                </div>
+<!-- ================== 偷看手机页面 ================== -->
+<div id="peek-screen" class="screen">
+    <header class="app-header">
+        <!-- ⭐️ 移除了 data-target 并增加 id -->
+        <button class="back-btn" id="peek-back-btn"></button>
+        <div class="title-container">
+            <h1 class="title">Ta的手机</h1>
+        </div>
                 <button class="action-btn" id="peek-settings-btn"><svg viewBox="0 0 24 24" fill="currentColor">
                         <rect x="3" y="5" width="18" height="1.5" rx="0.75" />
                         <rect x="3" y="11" width="18" height="1.5" rx="0.75" />
@@ -1277,7 +1604,7 @@
                 <div id="peek-messages-screen" class="screen">
 
             <header class="app-header">
-                <button class="back-btn" data-target="peek-screen">‹</button>
+                <button class="back-btn" data-target="peek-screen"></button>
                 <div class="title-container">
                     <h1 class="title">Ta的消息</h1>
                 </div>
@@ -1302,7 +1629,7 @@
         <!-- Peek Conversation Screen -->
         <div id="peek-conversation-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="peek-messages-screen">‹</button>
+                <button class="back-btn" data-target="peek-messages-screen"></button>
                 <div class="title-container">
                     <h1 class="title" id="peek-conversation-title">...</h1>
                 </div>
@@ -1336,7 +1663,7 @@
 
         <div id="peek-album-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="peek-screen">‹</button>
+                <button class="back-btn" data-target="peek-screen"></button>
                 <div class="title-container">
                     <h1 class="title">相册</h1>
                 </div>
@@ -1357,7 +1684,7 @@
 <!-- 1. 替换后的 Peek Unlock Screen (社交小号) -->
         <div id="peek-unlock-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="peek-screen">‹</button>
+                <button class="back-btn" data-target="peek-screen"></button>
                 <div class="title-container">
                     <h1 class="title" id="unlock-header-title">...</h1>
                 </div>
@@ -1407,7 +1734,7 @@
         <!-- Peek Steps App Screen -->
         <div id="peek-steps-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="peek-screen">‹</button>
+                <button class="back-btn" data-target="peek-screen"></button>
                 <div class="title-container">
                     <h1 class="title">步数</h1>
                 </div>
@@ -1466,7 +1793,7 @@
         <div id="forum-screen" class="screen has-bottom-nav">
             <!-- Header: 只有返回和标题 -->
             <header class="app-header">
-                <button class="back-btn" data-target="home-screen">‹</button>
+                <button class="back-btn" data-target="home-screen"></button>
                 <div class="title-container">
                     <h1 class="title">喵 坛</h1>
                 </div>
@@ -1524,7 +1851,7 @@
         <div id="world-screen" class="screen has-bottom-nav">
             <header class="app-header">
                 <!-- 新增：返回按钮，指向 forum-screen -->
-                <button class="back-btn" data-target="forum-screen">‹</button>
+                <button class="back-btn" data-target="forum-screen"></button>
 
                 <div class="title-container">
                     <h1 class="title">世 界</h1>
@@ -1623,7 +1950,7 @@
         <div id="favorites-screen" class="screen has-bottom-nav">
             <header class="app-header">
                 <!-- ... header 内容保持不变 ... -->
-                <button class="back-btn" data-target="forum-screen">‹</button>
+                <button class="back-btn" data-target="forum-screen"></button>
                 <div class="title-container">
                     <h1 class="title">收 藏</h1>
                 </div>
@@ -1664,7 +1991,7 @@
     
     <!-- 顶部导航 (透明) -->
     <header class="app-header">
-        <button class="back-btn" data-target="forum-screen">‹</button>
+        <button class="back-btn" data-target="forum-screen"></button>
         <div style="width: 40px;"></div>
     </header>
 
@@ -1821,7 +2148,7 @@
         <div id="forum-post-detail-screen" class="screen">
             <!-- 1. 静态 Header -->
             <header class="app-header">
-                <button class="back-btn" data-target="forum-screen">‹</button>
+                <button class="back-btn" data-target="forum-screen"></button>
                 <div class="title-container">
                     <h1 class="title">详 情</h1>
                 </div>
@@ -1943,7 +2270,7 @@
 <div id="rpg-title-screen" class="screen rpg-centered-col">
     <!-- 复用 App Header，绝对定位透明背景 -->
     <header class="app-header rpg-header-absolute">
-        <button class="back-btn" data-target="home-screen">‹</button>
+        <button class="back-btn" data-target="home-screen"></button>
     </header>
 
     <h1 class="rpg-main-title">永恒传说</h1>
@@ -1960,7 +2287,7 @@
 <!-- 【✪开始】HTML: 角色创建页 (3x3布局 + 2:1分割) -->
 <div id="rpg-create-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" data-target="rpg-title-screen">‹</button>
+        <button class="back-btn" data-target="rpg-title-screen"></button>
         <div class="title-container">
             <h1 class="title">创建角色</h1>
         </div>
@@ -2079,7 +2406,7 @@
 <!-- 【新增】档案选择/管理页 -->
 <div id="rpg-profile-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" id="rpg-profile-back-btn">‹</button>
+        <button class="back-btn" id="rpg-profile-back-btn"></button>
         <div class="title-container">
             <h1 class="title">冒险档案</h1>
         </div>
@@ -2092,7 +2419,7 @@
 <!-- 3. 存档读取页 -->
 <div id="rpg-load-screen" class="screen" >
     <header class="app-header">
-        <button class="back-btn" id="rpg-save-back-btn">‹</button>
+        <button class="back-btn" id="rpg-save-back-btn"></button>
         <div class="title-container">
             <h1 class="title">读取存档</h1>
         </div>
@@ -2108,7 +2435,7 @@
 <!-- 4. 游戏主界面 (修复结构版) -->
 <div id="rpg-game-screen" class="screen rpg-screen-base">
     <div class="app-header">
-        <button class="back-btn" id="rpg-back-to-title-btn">‹</button>
+        <button class="back-btn" id="rpg-back-to-title-btn"></button>
         <div class="title-container">
             <h1 class="title" id="rpg-header-title">加载中...</h1>
         </div>
@@ -2183,7 +2510,7 @@
 <!-- 【新增】状态详情/修改页 (优化布局版) -->
 <div id="rpg-status-screen" class="screen">
     <header class="app-header">
-        <button class="back-btn" id="rpg-status-back-btn">‹</button>
+        <button class="back-btn" id="rpg-status-back-btn"></button>
         <div class="title-container">
             <h1 class="title">队伍状态</h1>
         </div>
@@ -2280,7 +2607,7 @@
 <div id="rpg-pause-screen" class="screen">
     <header class="app-header">
         <!-- 这里的返回键充当“继续游戏”的功能 -->
-        <button class="back-btn" id="rpg-pause-back-btn">‹</button>
+        <button class="back-btn" id="rpg-pause-back-btn"></button>
         <div class="title-container">
             <h1 class="title">暂停</h1>
         </div>
@@ -2313,7 +2640,7 @@
  <!-- 番茄钟页面 -->           
         <div id="pomodoro-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="home-screen">‹</button>
+                <button class="back-btn" data-target="home-screen"></button>
                 <div class="title-container">
                     <h1 class="title">专注任务</h1>
                 </div>
@@ -2338,7 +2665,7 @@
         <!-- Pomodoro Focus Screen -->
         <div id="pomodoro-focus-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="pomodoro-screen">‹</button>
+                <button class="back-btn" data-target="pomodoro-screen"></button>
                 <div class="title-container">
                     <h1 class="title">专注中</h1>
                 </div>
@@ -2856,7 +3183,191 @@
             </div>
         </form>
     </div>
-</div>       
+</div> 
+
+<!-- ===== 通话类型选择底部菜单 ===== -->
+<div id="call-type-actionsheet" class="action-sheet-overlay">
+    <div class="action-sheet">
+        <button class="action-sheet-button" id="start-voice-call-btn">语音通话</button>
+        <button class="action-sheet-button" id="start-video-call-btn">视频通话</button>
+        <button class="action-sheet-button action-sheet-cancel" id="cancel-call-type-btn">取消</button>
+    </div>
+</div>
+
+<!-- ===== 通话界面 ===== -->
+<div id="call-overlay" style="display:none">
+
+  <!-- ══════════════════════════════════════════
+       等待接通屏
+       ══════════════════════════════════════════ -->
+  <div id="call-waiting">
+    <div id="call-bg-blur"></div>
+
+    <!-- 姓名 + 状态 -->
+    <div id="call-waiting-info">
+      <div id="call-waiting-name"></div>
+      <div id="call-waiting-status">正在接通</div>
+    </div>
+
+    <!-- 主动拨出时：挂断按钮居中（flex容器居中，shake动画只转rotate） -->
+    <div id="call-waiting-end-wrap">
+      <button id="call-end-btn-waiting" class="call-round-btn call-round-red call-end-shake" title="挂断">
+        <svg viewBox="0 0 202.541 202.541" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M202.482,51.982c-1.07,25.305-10.387,63.51-48.689,101.813
+            c-38.304,38.303-76.508,47.619-101.813,48.69c-0.877,0.037-1.751,0.056-2.625,0.056
+            c-16.634,0-32.289-6.496-44.083-18.289c-7.017-7.017-7.017-18.434,0-25.451l29.421-29.421
+            c3.399-3.399,7.918-5.271,12.726-5.271c4.807,0,9.326,1.872,12.725,5.271l11.699,11.699
+            c0.764,0.055,1.727,0.099,2.859,0.099c9.159,0,27.25-2.726,45.5-20.976
+            c21.063-21.063,21.394-41.879,20.896-48.34l-11.718-11.718
+            c-7.017-7.017-7.017-18.434-0.001-25.45l29.422-29.422
+            C162.196,1.872,166.715,0,171.523,0s9.326,1.872,12.726,5.271
+            C196.569,17.593,203.216,34.619,202.482,51.982z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- 来电模式：接听 / 拒接（JS控制显隐） -->
+    <div id="incoming-call-btns" style="display:none">
+      <button id="incoming-call-decline-btn" class="call-round-btn call-round-red" title="拒接">
+        <svg viewBox="0 0 202.541 202.541" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M202.482,51.982c-1.07,25.305-10.387,63.51-48.689,101.813
+            c-38.304,38.303-76.508,47.619-101.813,48.69c-0.877,0.037-1.751,0.056-2.625,0.056
+            c-16.634,0-32.289-6.496-44.083-18.289c-7.017-7.017-7.017-18.434,0-25.451l29.421-29.421
+            c3.399-3.399,7.918-5.271,12.726-5.271c4.807,0,9.326,1.872,12.725,5.271l11.699,11.699
+            c0.764,0.055,1.727,0.099,2.859,0.099c9.159,0,27.25-2.726,45.5-20.976
+            c21.063-21.063,21.394-41.879,20.896-48.34l-11.718-11.718
+            c-7.017-7.017-7.017-18.434-0.001-25.45l29.422-29.422
+            C162.196,1.872,166.715,0,171.523,0s9.326,1.872,12.726,5.271
+            C196.569,17.593,203.216,34.619,202.482,51.982z"/>
+        </svg>
+      </button>
+      <button id="incoming-call-accept-btn" class="call-round-btn call-round-green" title="接听">
+        <svg viewBox="0 0 202.541 202.541" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M202.482,51.982c-1.07,25.305-10.387,63.51-48.689,101.813
+            c-38.304,38.303-76.508,47.619-101.813,48.69c-0.877,0.037-1.751,0.056-2.625,0.056
+            c-16.634,0-32.289-6.496-44.083-18.289c-7.017-7.017-7.017-18.434,0-25.451l29.421-29.421
+            c3.399-3.399,7.918-5.271,12.726-5.271c4.807,0,9.326,1.872,12.725,5.271l11.699,11.699
+            c0.764,0.055,1.727,0.099,2.859,0.099c9.159,0,27.25-2.726,45.5-20.976
+            c21.063-21.063,21.394-41.879,20.896-48.34l-11.718-11.718
+            c-7.017-7.017-7.017-18.434-0.001-25.45l29.422-29.422
+            C162.196,1.872,166.715,0,171.523,0s9.326,1.872,12.726,5.271
+            C196.569,17.593,203.216,34.619,202.482,51.982z"/>
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════
+       接通后屏
+       ══════════════════════════════════════════ -->
+  <div id="call-connected" style="display:none">
+
+<div id="call-connected-bg"></div>
+    <!-- 固定右上角：历史记录（所有模式永远可见） -->
+    <div class="app-header">
+    <div class="placeholder-text"></div>
+        <div class="title-container">
+            <h1 class="title"></h1>
+        </div>
+    <button id="call-history-btn" class="action-btn" title="通话记录">
+      <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+        <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87
+          3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06
+          l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28
+          2.54.72-1.21-3.5-2.08V8H12z"/>
+      </svg>
+    </button>
+    </div>
+
+    <!-- 中部内容块：旁白区 + 主行（头像+气泡）
+    -->
+    <div id="call-content-block" class="fade-in-element">
+
+      <!-- 旁白区（固定高度，视频时有内容，语音时 .hidden 收起） -->
+      <div id="call-narration-area" class="hidden"></div>
+
+      <!-- 主行：左列身份 + 右列气泡 -->
+      <div id="call-main-row">
+
+        <!-- 左列：头像 / 名字 / 计时器（竖排） -->
+        <div id="call-identity">
+          <img id="call-avatar-img" src="" alt="">
+          <div id="call-char-name"></div>
+          <div id="call-timer">00:00</div>
+        </div>
+
+        <!-- 右列：气泡区（AI对话 + 用户消息） -->
+        <div id="call-bubble-wrap">
+          <div id="call-dialogue-area">
+            <div id="call-dialogue-inner"></div>
+          </div>
+          <div id="call-user-area"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 底部三按钮（绝对定位，永远不被内容推动） -->
+    <div id="call-bottom-bar">
+      <button id="call-switch-btn" class="call-round-btn call-round-white" title="切换为语音通话">
+        <!-- 视频图标（默认，接通后根据模式更新） -->
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M21.15 6.17C20.74 5.95 19.88 5.72 18.71 6.54L17.24 7.58C17.13 4.47 15.78 3.25 12.5 3.25H6.5C3.08 3.25 1.75 4.58 1.75 8V16C1.75 18.3 3 20.75 6.5 20.75H12.5C15.78 20.75 17.13 19.53 17.24 16.42L18.71 17.46C19.33 17.9 19.87 18.04 20.3 18.04C20.67 18.04 20.96 17.93 21.15 17.83C21.56 17.62 22.25 17.05 22.25 15.62V8.38C22.25 6.95 21.56 6.38 21.15 6.17ZM11 11.38C9.97 11.38 9.12 10.54 9.12 9.5C9.12 8.46 9.97 7.62 11 7.62C12.03 7.62 12.88 8.46 12.88 9.5C12.88 10.54 12.03 11.38 11 11.38Z" fill="currentColor"/>
+      </button>
+
+      <button id="call-mic-btn" class="call-round-btn call-round-white" title="输入"
+              style="width:72px;height:72px;">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none">
+          <path fill="currentColor" stroke="currentColor" stroke-linecap="round"
+            stroke-linejoin="round" stroke-width="2"
+            d="M9 6a3 3 0 0 1 3-3v0a3 3 0 0 1 3 3v5a3 3 0 0 1-3 3v0a3 3 0 0 1-3-3V6z"/>
+          <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+            stroke-width="2"
+            d="M12 18v0a7 7 0 0 1-7-7v0-1m7 8v0a7 7 0 0 0 7-7v0-1m-7 8v3"/>
+        </svg>
+      </button>
+
+      <button id="call-end-btn" class="call-round-btn call-round-red" title="挂断">
+        <svg viewBox="0 0 202.541 202.541" xmlns="http://www.w3.org/2000/svg">
+          <path fill="currentColor" d="M202.482,51.982c-1.07,25.305-10.387,63.51-48.689,101.813
+            c-38.304,38.303-76.508,47.619-101.813,48.69c-0.877,0.037-1.751,0.056-2.625,0.056
+            c-16.634,0-32.289-6.496-44.083-18.289c-7.017-7.017-7.017-18.434,0-25.451l29.421-29.421
+            c3.399-3.399,7.918-5.271,12.726-5.271c4.807,0,9.326,1.872,12.725,5.271l11.699,11.699
+            c0.764,0.055,1.727,0.099,2.859,0.099c9.159,0,27.25-2.726,45.5-20.976
+            c21.063-21.063,21.394-41.879,20.896-48.34l-11.718-11.718
+            c-7.017-7.017-7.017-18.434-0.001-25.45l29.422-29.422
+            C162.196,1.872,166.715,0,171.523,0s9.326,1.872,12.726,5.271
+            C196.569,17.593,203.216,34.619,202.482,51.982z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- 输入展开栏（覆盖底部，input-mode-active 时升起） -->
+    <div id="call-input-bar">
+      <input type="text" id="call-message-input" placeholder="输入消息…">
+      <button id="call-send-btn" class="call-input-btn">发送</button>
+      <button id="call-ai-reply-btn" class="call-input-btn call-input-btn-ai" title="AI回复">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+          <path d="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 1,1 20,12A8,8 0 0,1
+            12,20M16.24,7.76C15.07,6.58 13.53,6 12,6V12L7.76,16.24C10.1,18.58 13.9,18.58
+            16.24,16.24C18.58,13.9 18.58,10.1 16.24,7.76Z"/>
+        </svg>
+      </button>
+    </div>
+
+  </div><!-- /#call-connected -->
+
+</div><!-- /#call-overlay -->
+
+<!-- 通话历史侧边栏（在 overlay 外，z-index:250 高于 overlay） -->
+<div id="call-history-panel">
+  <div id="call-history-header">
+    <span>通话记录</span>
+    <button id="call-history-close-btn">×</button>
+  </div>
+  <div id="call-history-list"></div>
+</div>
+      
         <!-- NEW: Group Recipient Selection Modal -->
         <div id="group-recipient-selection-modal" class="modal-overlay">
             <div class="modal-window">
@@ -3460,10 +3971,9 @@
                     <label for="ins-widget-avatar-url-input">头像URL</label>
                     <input type="url" id="ins-widget-avatar-url-input" class="form-group" placeholder="粘贴图片URL">
                 </div>
-                <p style="text-align:center; color:#888; margin: -10px 0 15px;">或</p>
+                <p style="text-align:center; color:#888; margin: -25px 0 15px;">或</p>
                 <input type="file" id="ins-widget-avatar-file-upload" accept="image/*" style="display:none;">
-                <label for="ins-widget-avatar-file-upload" class="btn btn-secondary"
-                    style="width:100%; margin-bottom: 20px;">从本地上传</label>
+                <label for="ins-widget-avatar-file-upload" class="btn btn-secondary">从本地上传</label>
                 <button type="submit" class="btn btn-primary">保存</button>
             </form>
         </div>
@@ -3580,10 +4090,15 @@
     <script src="js/chat/chat_feature_sticker.js"></script>
     <script src="js/chat/chat_feature_basic.js"></script>
     <script src="js/chat/chat_feature_offline.js"></script>
-        <script src="js/chat/chat_feature_proactive.js"></script>
+    <script src="js/chat/chat_feature_proactive.js"></script>
+    <script src="js/chat/chat_feature_call.js"></script>
     <script src="js/chat/chat_ai_service.js"></script>
     <script src="js/chat/chat_bubble_factory.js"></script>
         <script src="js/chat/chat_actions.js"></script>
+        
+        <script src="js/chat/char_info.js"></script>
+        <script src="js/chat/user_info.js"></script>
+        
     <script src="js/chat/chat_room.js"></script>
 
     <script src="js/chat/summary.js"></script>
