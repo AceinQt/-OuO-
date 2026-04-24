@@ -3,13 +3,15 @@
 // 1. 定义全局设置的白名单
 const globalSettingKeys =[
     'apiSettings', 'wallpaper', 'homeScreenMode', 'fontUrl', 'customIcons',
-    'apiPresets', 'bubbleCssPresets', 'globalCss',
+    'apiPresets', 'embeddingSettings', 'bubbleCssPresets', 'globalCss',
     'globalCssPresets', 'homeSignature',
     'homeWidgetSettings', 'insWidgetSettings', 'homeStatusBarColor','homeNavigationBarColor',
     'pomodoroTasks', 'pomodoroSettings' ,
     'enableTopSafeArea', 'enableBottomSafeArea', 
     'enableScreenAdaptation',
-    'enableSwipeBack'
+    'enableSwipeBack',
+    // ★ 学习模块设置（绑定人设/API预设，存量小放 globalSettings）
+    'studySettings'
 ];
 
 // 2. 初始化内存数据库对象 (db)
@@ -53,7 +55,14 @@ window.db = {
     pomodoroTasks:[],
     pomodoroSettings: { boundCharId: null, userPersona: '', focusBackground: '', taskCardBackground: '', encouragementMinutes: 25, pokeLimit: 5, globalWorldBookIds:[] },
     insWidgetSettings: { avatar1: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', bubble1: 'love u.', avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg', bubble2: 'miss u.' },
-    homeWidgetSettings: typeof defaultWidgetSettings !== 'undefined' ? defaultWidgetSettings : {}
+    homeWidgetSettings: typeof defaultWidgetSettings !== 'undefined' ? defaultWidgetSettings : {},
+
+    // ★ 学习模块独立数组（存大量数据，放独立 Dexie 表）
+    studyBooks: [],
+    studyQuestions: [],
+    studyRecords: [],
+    // ★ 学习模块配置（存量小，放 globalSettings）
+    studySettings: { boundPersonaId: null, textApiPresetId: null, embeddingApiPresetId: null },
 };
 
 // 3. Dexie 数据库配置
@@ -94,6 +103,42 @@ dexieDB.version(4).stores({
     console.log("Upgrading database to version 4 (Message table added)...");
 });
 
+// ★★★ Version 5 (学习模块独立表) ★★★
+dexieDB.version(5).stores({
+    characters: '&id', groups: '&id', worldBooks: '&id', myStickers: '&id', globalSettings: 'key',
+    userPersonas: '&id', forumPosts: '&id', rpgProfiles: '&id', forumMetadata: 'key', peekData: '&charId',
+    messages: '&id, chatId, timestamp',
+    // ★ 学习模块（书籍/题目/答题记录量可能很大，独立存储）
+    studyBooks:     '&id, category',
+    studyQuestions: '&id, bookId',
+    studyRecords:   '&id, bookId, questionId',
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 5 (Study module tables added)...");
+});
+
+// ★★★ Version 6 (记忆/日记独立表，提升发消息速度) ★★★
+dexieDB.version(6).stores({
+    characters: '&id', groups: '&id', worldBooks: '&id', myStickers: '&id', globalSettings: 'key',
+    userPersonas: '&id', forumPosts: '&id', rpgProfiles: '&id', forumMetadata: 'key', peekData: '&charId',
+    messages: '&id, chatId, timestamp',
+    studyBooks: '&id, category', studyQuestions: '&id, bookId', studyRecords: '&id, bookId, questionId',
+    memories: '&id, chatId, memType'
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 6 (Memory tables added)...");
+});
+
+// ★★★ Version 7 (向量切块独立表) ★★★
+dexieDB.version(7).stores({
+    characters: '&id', groups: '&id', worldBooks: '&id', myStickers: '&id', globalSettings: 'key',
+    userPersonas: '&id', forumPosts: '&id', rpgProfiles: '&id', forumMetadata: 'key', peekData: '&charId',
+    messages: '&id, chatId, timestamp',
+    studyBooks: '&id, category', studyQuestions: '&id, bookId', studyRecords: '&id, bookId, questionId',
+    memories: '&id, chatId, memType',
+    memoryChunks: '&id, chatId'
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 7 (MemoryChunks table added)...");
+});
+
 window.loadData = async () => {
     try {
         console.log("📦 正在加载数据...");
@@ -103,12 +148,18 @@ window.loadData = async () => {
             characters, groups, worldBooks, myStickers, settingsArray,
             newUserPersonas, newForumPosts, newRpgProfiles, newForumMeta,
             newPeekData,
-            newMessages 
+            newMessages,
+            newStudyBooks, newStudyQuestions, newStudyRecords,
+            newMemories,
+            newChunks
         ] = await Promise.all([
             dexieDB.characters.toArray(), dexieDB.groups.toArray(), dexieDB.worldBooks.toArray(),
             dexieDB.myStickers.toArray(), dexieDB.globalSettings.toArray(), dexieDB.userPersonas.toArray(),
             dexieDB.forumPosts.toArray(), dexieDB.rpgProfiles.toArray(), dexieDB.forumMetadata.toArray(),
-            dexieDB.peekData.toArray(), dexieDB.messages.toArray()
+            dexieDB.peekData.toArray(), dexieDB.messages.toArray(),
+            dexieDB.studyBooks.toArray(), dexieDB.studyQuestions.toArray(), dexieDB.studyRecords.toArray(),
+            dexieDB.memories.toArray(),
+            dexieDB.memoryChunks.toArray()
         ]);
 
         // ★ 核心安全锁：优先读取持久化迁移标记，防止多标签页状态不同步
@@ -121,6 +172,16 @@ window.loadData = async () => {
         } else {
             needsMigration = characters.some(c => c.history && c.history.length > 0) || groups.some(g => g.history && g.history.length > 0);
             window.isMessageMigrated = !needsMigration;
+        }
+
+        // ★ 同理：V7 chunk 迁移安全锁
+        const chunkMigFlagEarly = settingsArray.find(s => s.key === 'migrationV7Done');
+        if (chunkMigFlagEarly && chunkMigFlagEarly.value === true) {
+            window.isChunkMigrated = true;
+        } else {
+            // 还没迁移：只要有任意 char/group 的 memoryChunks 非空就说明数据还在 char 上
+            window.isChunkMigrated = !characters.some(c => c.memoryChunks && c.memoryChunks.length > 0)
+                                  && !groups.some(g => g.memoryChunks && g.memoryChunks.length > 0);
         }
 
         const messagesByChatId = {};
@@ -296,6 +357,102 @@ window.loadData = async () => {
         characters.forEach(c => { c.history = messagesByChatId[c.id] ||[]; });
         groups.forEach(g => { g.history = messagesByChatId[g.id] ||[]; });
 
+        // =========================================================
+        // ★ V6 记忆迁移：memorySummaries / memoryJournals / longTermSummaries → memories 表
+        // =========================================================
+        const memMigrationFlag = settingsArray.find(s => s.key === 'migrationV6Done');
+        if (!memMigrationFlag) {
+            const migrationMemItems = [];
+            const processMemMigration = (objs) => {
+                objs.forEach(obj => {
+                    const extract = (arr, memType) => (arr || []).forEach(item => {
+                        if (!item.id) item.id = `mem_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+                        migrationMemItems.push({ ...item, chatId: obj.id, memType });
+                    });
+                    extract(obj.memorySummaries, 'short');
+                    extract(obj.memoryJournals, 'journal');
+                    extract(obj.longTermSummaries, 'long');
+                    delete obj.memorySummaries;
+                    delete obj.memoryJournals;
+                    delete obj.longTermSummaries;
+                });
+            };
+            processMemMigration(characters);
+            processMemMigration(groups);
+
+            if (migrationMemItems.length > 0) {
+                console.log(`📦 V6记忆迁移：共 ${migrationMemItems.length} 条，写入 memories 表...`);
+                const chunkSize = 1000;
+                for (let i = 0; i < migrationMemItems.length; i += chunkSize) {
+                    await dexieDB.memories.bulkPut(migrationMemItems.slice(i, i + chunkSize));
+                }
+                newMemories.push(...migrationMemItems);
+                await dexieDB.characters.bulkPut(characters);
+                await dexieDB.groups.bulkPut(groups);
+                console.log("✅ V6记忆迁移完成");
+            }
+            try { await dexieDB.globalSettings.put({ key: 'migrationV6Done', value: true }); } catch(e) { console.warn('⚠️ V6迁移标记写入失败:', e); }
+        }
+
+        // =========================================================
+        // ★ V7 向量迁移：memoryChunks → memoryChunks 独立表
+        // =========================================================
+        const chunkMigrationFlag = settingsArray.find(s => s.key === 'migrationV7Done');
+        if (!chunkMigrationFlag) {
+            const migrationChunks = [];
+            const processChunkMigration = (objs) => {
+                objs.forEach(obj => {
+                    (obj.memoryChunks || []).forEach(chunk => {
+                        migrationChunks.push({ ...chunk, chatId: obj.id });
+                    });
+                    delete obj.memoryChunks;
+                });
+            };
+            processChunkMigration(characters);
+            processChunkMigration(groups);
+
+            if (migrationChunks.length > 0) {
+                console.log(`📦 V7向量迁移：共 ${migrationChunks.length} 块，写入 memoryChunks 表...`);
+                const chunkSize = 500;
+                for (let i = 0; i < migrationChunks.length; i += chunkSize) {
+                    await dexieDB.memoryChunks.bulkPut(migrationChunks.slice(i, i + chunkSize));
+                }
+                newChunks.push(...migrationChunks);
+                await dexieDB.characters.bulkPut(characters);
+                await dexieDB.groups.bulkPut(groups);
+                console.log("✅ V7向量迁移完成");
+            }
+            try { await dexieDB.globalSettings.put({ key: 'migrationV7Done', value: true }); } catch(e) { console.warn('⚠️ V7迁移标记写入失败:', e); }
+            window.isChunkMigrated = true;
+        }
+
+        // ★ 将 memories 表数据挂载回 char/group 对象（供现有代码透明访问）
+        const memoriesByChatId = {};
+        newMemories.forEach(m => {
+            if (!memoriesByChatId[m.chatId]) memoriesByChatId[m.chatId] = { short: [], journal: [], long: [] };
+            if (memoriesByChatId[m.chatId][m.memType]) memoriesByChatId[m.chatId][m.memType].push(m);
+        });
+        characters.forEach(c => {
+            const mems = memoriesByChatId[c.id];
+            c.memorySummaries  = mems ? (mems.short   || []) : [];
+            c.memoryJournals   = mems ? (mems.journal || []) : [];
+            c.longTermSummaries = mems ? (mems.long   || []) : [];
+        });
+        groups.forEach(g => {
+            const mems = memoriesByChatId[g.id];
+            g.memorySummaries   = mems ? (mems.short || []) : [];
+            g.longTermSummaries = mems ? (mems.long  || []) : [];
+        });
+
+        // ★ 将 memoryChunks 表数据挂载回 char/group 对象
+        const chunksByChatId = {};
+        newChunks.forEach(c => {
+            if (!chunksByChatId[c.chatId]) chunksByChatId[c.chatId] = [];
+            chunksByChatId[c.chatId].push(c);
+        });
+        characters.forEach(c => { c.memoryChunks = chunksByChatId[c.id] || []; });
+        groups.forEach(g     => { g.memoryChunks = chunksByChatId[g.id] || []; });
+
         // 基础数据赋值
         db.characters = characters || []; db.groups = groups ||[];
         db.worldBooks = worldBooks ||[]; db.myStickers = myStickers ||[];
@@ -383,6 +540,11 @@ window.loadData = async () => {
         // =========================================================
         globalSettingKeys.forEach(key => { if (settings[key] !== undefined) db[key] = settings[key]; });
 
+        // ★ 学习模块数据赋值
+        db.studyBooks     = newStudyBooks     || [];
+        db.studyQuestions = newStudyQuestions || [];
+        db.studyRecords   = newStudyRecords   || [];
+
         // 兜底检查
         db.characters.forEach(c => {
             if (c.isPinned === undefined) c.isPinned = false;
@@ -420,6 +582,11 @@ window.saveData = async () => {
                     const o = {...c}; 
                     // ★ 修复致命隐患：如果用户没做迁移，千万别把记录给强制剔除丢了
                     if(window.isMessageMigrated) delete o.history; 
+                    // ★ V6：记忆字段已独立存储，不写回 characters 表
+                    delete o.memorySummaries;
+                    delete o.memoryJournals;
+                    delete o.longTermSummaries;
+                    if(window.isChunkMigrated) delete o.memoryChunks; // ★ V7：迁移完成后才剥离
                     return o; 
                 });
                 await dexieDB.characters.bulkPut(safeChars);
@@ -428,6 +595,10 @@ window.saveData = async () => {
                 const safeGroups = db.groups.map(g => { 
                     const o = {...g}; 
                     if(window.isMessageMigrated) delete o.history; 
+                    // ★ V6：同上
+                    delete o.memorySummaries;
+                    delete o.longTermSummaries;
+                    if(window.isChunkMigrated) delete o.memoryChunks; // ★ V7：迁移完成后才剥离
                     return o; 
                 });
                 await dexieDB.groups.bulkPut(safeGroups);
@@ -484,6 +655,13 @@ window.saveData = async () => {
         if (db.myStickers) await dexieDB.myStickers.bulkPut(db.myStickers);
     } catch (e) { console.error("❌ 通用设置保存失败:", e); }
 
+    // 9. 学习模块（独立表）
+    try {
+        if (db.studyBooks     && db.studyBooks.length     > 0) await dexieDB.studyBooks.bulkPut(db.studyBooks);
+        if (db.studyQuestions && db.studyQuestions.length > 0) await dexieDB.studyQuestions.bulkPut(db.studyQuestions);
+        if (db.studyRecords   && db.studyRecords.length   > 0) await dexieDB.studyRecords.bulkPut(db.studyRecords);
+    } catch (e) { console.error("❌ 学习模块保存失败:", e); }
+
     // ⭐⭐⭐ 新增：更新保存时间戳(用于多标签页同步) ⭐⭐⭐
     const now = Date.now();
     window.dbLoadTimestamp = now;
@@ -506,6 +684,11 @@ window.saveSingleChat = async (chatId, chatType) => {
             if (chat) {
                 const safeChat = {...chat}; 
                 if(window.isMessageMigrated) delete safeChat.history; // ★同理防御
+                // ★ V6：记忆字段独立存储，不写入 characters 表
+                delete safeChat.memorySummaries;
+                delete safeChat.memoryJournals;
+                delete safeChat.longTermSummaries;
+                if(window.isChunkMigrated) delete safeChat.memoryChunks; // ★ V7：迁移完成后才剥离
                 await dexieDB.characters.put(safeChat); // 只覆写当前这一个角色
             }
         } else if (chatType === 'group') {
@@ -513,6 +696,10 @@ window.saveSingleChat = async (chatId, chatType) => {
             if (group) {
                 const safeGroup = {...group}; 
                 if(window.isMessageMigrated) delete safeGroup.history;
+                // ★ V6：同上
+                delete safeGroup.memorySummaries;
+                delete safeGroup.longTermSummaries;
+                if(window.isChunkMigrated) delete safeGroup.memoryChunks; // ★ V7：迁移完成后才剥离
                 await dexieDB.groups.put(safeGroup); // 只覆写当前这一个群聊
             }
         }
@@ -539,6 +726,54 @@ window.clearChatHistoryInDB = async (chatId) => {
         const keys = await dexieDB.messages.where({chatId}).primaryKeys();
         await dexieDB.messages.bulkDelete(keys);
     } catch (e) { console.error("❌ 清空消息失败:", e); }
+};
+
+// --- ★ V6：记忆/日记/长期总结的精准保存与删除 ---
+// memType: 'short'(短期总结) | 'journal'(日记) | 'long'(长期总结)
+window.saveMemoryItem = async (item, chatId, memType) => {
+    try {
+        await dexieDB.memories.put({ ...item, chatId, memType });
+    } catch (e) { console.error("❌ 记忆条目保存失败:", e); }
+};
+
+window.deleteMemoryItem = async (itemId) => {
+    try {
+        await dexieDB.memories.delete(itemId);
+    } catch (e) { console.error("❌ 记忆条目删除失败:", e); }
+};
+
+// 清空某个角色/群组的全部记忆（角色删除时调用）
+window.clearChatMemoriesInDB = async (chatId) => {
+    try {
+        const keys = await dexieDB.memories.where({ chatId }).primaryKeys();
+        if (keys.length) await dexieDB.memories.bulkDelete(keys);
+    } catch (e) { console.error("❌ 清空记忆失败:", e); }
+};
+
+// --- ★ V6：向量切块的精准保存与删除 ---
+// replaceChunksToDB：切块完成后全量替换（先清再存）
+window.replaceChunksToDB = async (chunks, chatId) => {
+    try {
+        await dexieDB.memoryChunks.where({ chatId }).delete();
+        if (chunks && chunks.length > 0) {
+            await dexieDB.memoryChunks.bulkPut(chunks.map(c => ({ ...c, chatId })));
+        }
+    } catch (e) { console.error("❌ 向量切块替换失败:", e); }
+};
+
+// saveChunksToDB：局部更新（embedding后、清理后、accessCount更新后）
+window.saveChunksToDB = async (chunks) => {
+    try {
+        if (!chunks || chunks.length === 0) return;
+        await dexieDB.memoryChunks.bulkPut(chunks);
+    } catch (e) { console.error("❌ 向量切块保存失败:", e); }
+};
+
+// 清空某角色的全部切块（角色删除时调用）
+window.clearChatChunksInDB = async (chatId) => {
+    try {
+        await dexieDB.memoryChunks.where({ chatId }).delete();
+    } catch (e) { console.error("❌ 清空向量切块失败:", e); }
 };
 
 // --- 专门用于高效保存 Peek 数据的机制 ---
@@ -648,4 +883,58 @@ window.saveUserPersonaTable = async () => {
         await dexieDB.userPersonas.clear();
         if (db.userPersonas.length > 0) await dexieDB.userPersonas.bulkPut(db.userPersonas);
     } catch (e) { console.error("❌ 用户档案表保存失败:", e); }
+};
+
+// ============================================================
+// ★ 学习模块 — 精准保存函数 (供 study_db.js 调用)
+// ============================================================
+
+// 单条书籍 put（新增或更新）
+window.saveStudyBookToDB = async (book) => {
+    try { await dexieDB.studyBooks.put(book); }
+    catch (e) { console.error("❌ [Study] 书籍保存失败:", e); }
+};
+
+// 删除书籍及其题目与记录
+window.deleteStudyBookFromDB = async (bookId) => {
+    try {
+        await dexieDB.studyBooks.delete(bookId);
+        const qKeys = await dexieDB.studyQuestions.where('bookId').equals(bookId).primaryKeys();
+        if (qKeys.length) await dexieDB.studyQuestions.bulkDelete(qKeys);
+        const rKeys = await dexieDB.studyRecords.where('bookId').equals(bookId).primaryKeys();
+        if (rKeys.length) await dexieDB.studyRecords.bulkDelete(rKeys);
+        console.log(`✅ [Study] 书籍 ${bookId} 及关联数据已删除`);
+    } catch (e) { console.error("❌ [Study] 书籍删除失败:", e); }
+};
+
+// 单条题目 put
+window.saveStudyQuestionToDB = async (question) => {
+    try { await dexieDB.studyQuestions.put(question); }
+    catch (e) { console.error("❌ [Study] 题目保存失败:", e); }
+};
+
+// 批量题目 put（生成题库时使用）
+window.bulkSaveStudyQuestionsToDB = async (questions) => {
+    try { if (questions.length) await dexieDB.studyQuestions.bulkPut(questions); }
+    catch (e) { console.error("❌ [Study] 批量题目保存失败:", e); }
+};
+
+// 删除单条题目
+window.deleteStudyQuestionFromDB = async (qId) => {
+    try { await dexieDB.studyQuestions.delete(qId); }
+    catch (e) { console.error("❌ [Study] 题目删除失败:", e); }
+};
+
+// 单条答题记录 put
+window.saveStudyRecordToDB = async (record) => {
+    try { await dexieDB.studyRecords.put(record); }
+    catch (e) { console.error("❌ [Study] 答题记录保存失败:", e); }
+};
+
+// 学习设置（绑定人设/API预设）精准保存
+window.saveStudySettingsToDB = async () => {
+    try {
+        await dexieDB.globalSettings.put({ key: 'studySettings', value: db.studySettings });
+        console.log("✅ [Study] 学习设置已保存");
+    } catch (e) { console.error("❌ [Study] 学习设置保存失败:", e); }
 };

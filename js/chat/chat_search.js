@@ -263,21 +263,18 @@ function jumpToMessageInChat(messageId) {
     // Index 99 (最新) -> (100-99)/20 = 0.05 -> ceil = 1
     // Index 0 (最旧) -> (100-0)/20 = 5 -> ceil = 5
     const totalMessages = chat.history.length;
-    // 使用全局变量 MESSAGES_PER_PAGE，如果未定义请检查 chat_room.js
-    const targetPage = Math.ceil((totalMessages - msgIndex) / MESSAGES_PER_PAGE);
+// 计算跳转渲染窗口：以目标消息为中心，前后各 1 页
+    //    避免渲染整段历史（可能几万条），也确保消息在 DOM 里
+    const JUMP_WINDOW = MESSAGES_PER_PAGE * 2;
+    const jumpStart = Math.max(0, msgIndex - MESSAGES_PER_PAGE);
+    const jumpEnd   = Math.min(totalMessages, jumpStart + JUMP_WINDOW);
+    window._jumpRenderStart = jumpStart;
+    window._jumpRenderEnd   = jumpEnd;
 
-    // 3. 更新全局页码
-    if (typeof currentPage !== 'undefined') {
-        currentPage = targetPage;
-    } else {
-        // 如果 currentPage 无法访问，可能需要 window.currentPage 或者重构
-        console.warn('currentPage variable not found');
-    }
-
-    // 4. 切换回聊天室
+    // 3. 切换回聊天室
     switchScreen('chat-room-screen');
 
-    // 5. 强制重绘
+    // 4. 强制重绘（renderMessages 内部会消费 _jumpRenderStart/End）
     if (typeof renderMessages === 'function') {
         renderMessages(false, false);
     }

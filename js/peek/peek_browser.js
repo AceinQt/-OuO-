@@ -26,7 +26,9 @@ function renderPeekBrowser(historyItems) {
 
     screen.innerHTML = `
         <header class="app-header">
-            <button class="back-btn" data-target="peek-screen"></button>
+            <button class="back-btn" data-target="peek-screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
+    </svg></button>
             <div class="title-container"><h1 class="title">浏览器</h1></div>
             <button class="action-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"></path></svg></button>
         </header>
@@ -59,7 +61,7 @@ async function generateAndRenderPeekBrowser(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model } = db.apiSettings;
+    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -106,16 +108,7 @@ www.example.com/tech-review-2026
 #SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:最近有没有什么特别想吃的？][19:16|${senderName}的消息:我刚刚看到一个不错的菜谱，周末我们一起做做看？]
 `;
 
-        const requestBody = { model: model, messages: [{ role: 'user', content: systemPrompt }], temperature: 0.85 };
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
-        const result = await response.json();
-        const contentStr = result.choices[0].message.content.trim();
+        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const browserRawText = parts[0] || '';

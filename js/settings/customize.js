@@ -87,7 +87,7 @@ function setupCustomizeApp() {
 
 function renderCustomizeForm() {
     customizeForm.innerHTML = ''; 
-    const iconOrder = ['chat-list-screen', 'world-book-screen', 'forum-screen', 'settings-screen', 'pomodoro-screen','rpg-title-screen'];
+    const iconOrder = ['chat-list-screen', 'world-book-screen', 'forum-screen', 'settings-screen', 'study-screen','rpg-title-screen'];
     let iconsContentHTML = '';
 
     iconOrder.forEach(id => {

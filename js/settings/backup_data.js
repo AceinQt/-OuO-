@@ -259,7 +259,9 @@ async function importBackupData(data, isCloudPartialRestore = false) {
                     dexieDB.myStickers.clear(), dexieDB.userPersonas.clear(), dexieDB.globalSettings.clear(),
                     dexieDB.forumPosts.clear(), dexieDB.peekData.clear(), dexieDB.rpgProfiles.clear(),
                     dexieDB.forumMetadata.clear(),
-                    dexieDB.messages.clear() // 全量恢复时清空消息表
+                    dexieDB.messages.clear(),  // 全量恢复时清空消息表
+                    dexieDB.memories.clear(),  // ★ V6：清空记忆表
+                    dexieDB.memoryChunks.clear() // ★ V6：清空向量切块表
                 ]);
             }
             message = "全量数据已恢复";
@@ -321,6 +323,45 @@ async function importBackupData(data, isCloudPartialRestore = false) {
             
             await dexieDB.messages.bulkPut(importMsgs);
             window.isMessageMigrated = true; // ★ 修复：导入后标记迁移完成，防止 saveData 把 history 写回 IndexedDB 导致下次加载重复触发升级弹窗
+        }
+
+        // ★ V6：将备份中 character/group 携带的记忆字段写入 memories 独立表
+        const importMemItems = [];
+        const extractMemories = (objs) => {
+            (objs || []).forEach(obj => {
+                const push = (arr, memType) => (arr || []).forEach(item => {
+                    if (!item.id) item.id = `mem_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    importMemItems.push({ ...item, chatId: obj.id, memType });
+                });
+                push(obj.memorySummaries,  'short');
+                push(obj.memoryJournals,   'journal');
+                push(obj.longTermSummaries,'long');
+            });
+        };
+        extractMemories(db.characters);
+        extractMemories(db.groups);
+        if (importMemItems.length > 0) {
+            if (data.characters) await dexieDB.memories.where('chatId').anyOf(data.characters.map(c=>c.id)).delete();
+            if (data.groups)     await dexieDB.memories.where('chatId').anyOf(data.groups.map(g=>g.id)).delete();
+            await dexieDB.memories.bulkPut(importMemItems);
+        }
+
+        // ★ V6：将备份中 character/group 携带的 memoryChunks 写入 memoryChunks 独立表
+        const importChunks = [];
+        const extractChunks = (objs) => {
+            (objs || []).forEach(obj => {
+                (obj.memoryChunks || []).forEach(chunk => {
+                    if (!chunk.id) chunk.id = `chunk_${obj.id}_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
+                    importChunks.push({ ...chunk, chatId: obj.id });
+                });
+            });
+        };
+        extractChunks(db.characters);
+        extractChunks(db.groups);
+        if (importChunks.length > 0) {
+            if (data.characters) await dexieDB.memoryChunks.where('chatId').anyOf(data.characters.map(c=>c.id)).delete();
+            if (data.groups)     await dexieDB.memoryChunks.where('chatId').anyOf(data.groups.map(g=>g.id)).delete();
+            await dexieDB.memoryChunks.bulkPut(importChunks);
         }
 
         // 兜底补全
@@ -591,7 +632,10 @@ async function performOptimizedCloudBackup() {
     enableTopSafeArea: db.enableTopSafeArea,
     enableBottomSafeArea: db.enableBottomSafeArea,
     enableScreenAdaptation: db.enableScreenAdaptation,
-    enableSwipeBack: db.enableSwipeBack
+    enableSwipeBack: db.enableSwipeBack,
+
+        // ★ 学习模块设置（量小，放 systemData）
+        studySettings: db.studySettings,
     };
 
     // 2. 聊天数据 (聊天、群组、Peek)
@@ -602,7 +646,12 @@ async function performOptimizedCloudBackup() {
         
         characters: db.characters || [],
         groups: db.groups || [],
-        peekData: db.peekData || {}
+        peekData: db.peekData || {},
+
+        // ★ 学习模块大表（数据量可能很大，随聊天数据一起备份）
+        studyBooks:     db.studyBooks     || [],
+        studyQuestions: db.studyQuestions || [],
+        studyRecords:   db.studyRecords   || [],
     };
 
     // ★★★ 修复:增加备份验证 ★★★

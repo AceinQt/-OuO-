@@ -142,7 +142,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model } = db.apiSettings;
+    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -212,16 +212,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
 #SECRET_CHAT_NIGHT_85%#[23:15|${senderName}的消息:你睡了吗？][23:16|${senderName}的消息:感觉有点丧，不知道该跟谁说...]
 `;
 
-        const requestBody = { model: model, messages: [{ role: 'user', content: systemPrompt }], temperature: 0.85 };
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
-        const result = await response.json();
-        const contentStr = result.choices[0].message.content.trim();
+        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const unlockRawText = parts[0] || '';

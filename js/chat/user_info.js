@@ -14,19 +14,21 @@ function setupUserPersonaScreen() {
     }
 
     // 1. 返回按钮
-    const backBtn = document.getElementById('persona-edit-back-btn');
-    if (backBtn) {
-        const newBackBtn = backBtn.cloneNode(true);
-        backBtn.parentNode.replaceChild(newBackBtn, backBtn);
-        newBackBtn.addEventListener('click', () => {
-            const source = personaScreen.dataset.source;
-            if (source === 'chat-room') {
-                switchScreen('chat-room-screen');
-            } else {
-                goBackToContacts();
-            }
-        });
-    }
+const backBtn = document.getElementById('persona-edit-back-btn');
+if (backBtn) {
+    const newBackBtn = backBtn.cloneNode(true);
+    backBtn.parentNode.replaceChild(newBackBtn, backBtn);
+    newBackBtn.addEventListener('click', () => {
+        const source = personaScreen.dataset.source; // ← 补上这行
+        if (source === 'chat-room') {
+            switchScreen('chat-room-screen');
+        } else if (source === 'group-info') {
+            switchScreen('group-info-screen');
+        } else {
+            goBackToContacts();
+        }
+    });
+}
 
     // 2. 头像上传
     const personaAvatarUpload = document.getElementById('persona-edit-avatar-upload');
@@ -139,12 +141,14 @@ function setupUserPersonaScreen() {
             if (typeof renderContacts === 'function') renderContacts();
 
             const source = personaScreen.dataset.source;
-            if (source === 'chat-room') {
-                switchScreen('chat-room-screen');
-                if (typeof loadSettingsToSidebar === 'function') loadSettingsToSidebar();
-            } else {
-                goBackToContacts();
-            }
+if (source === 'chat-room') {
+    switchScreen('chat-room-screen');
+    if (typeof loadSettingsToSidebar === 'function') loadSettingsToSidebar();
+} else if (source === 'group-info') {
+    switchScreen('group-info-screen');  // ← 补上
+} else {
+    goBackToContacts();
+}
         });
     }
 

@@ -200,7 +200,7 @@ async function generateAndRenderPeekMessages(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model } = db.apiSettings;
+    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -236,16 +236,7 @@ async function generateAndRenderPeekMessages(options = {}) {
         systemPrompt += getPeekProactiveFormatPrompt(char);
         systemPrompt += `\n请严格按照以下标签文本格式输出，**每段对话之间使用 ===SEP=== 分隔**。在所有对话结束后，使用 ===PROACTIVE_MESSAGES=== 分割，再输出主动消息。\n\n输出格式示例：\n#PARTNER#\n与Ta对话的人的称呼\n#HISTORY#\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\npartner: 对方发送的消息内容\n===SEP===\n#PARTNER#\n与Ta对话的人的称呼\n#HISTORY#\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\n===PROACTIVE_MESSAGES===\n#SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:突然好想吃我妈做的排骨啊(T_T)][19:16|${senderName}的消息:你吃晚饭了吗？]\n`;
 
-        const requestBody = { model: model, messages:[{ role: 'user', content: systemPrompt }], temperature: 0.85 };
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
-        const result = await response.json();
-        const contentStr = result.choices[0].message.content.trim();
+        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const messagesRawText = parts[0] || '';

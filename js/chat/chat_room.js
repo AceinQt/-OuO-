@@ -606,11 +606,22 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
 let start, end;
 
 if (!isLoadMore) {
-    // ★ 初始化：按"可见气泡数"计算切片，保证一次渲染就够，无需穿透
-    start = _calcInitialStart(chat);  // 同时更新 currentPage
-    end = totalMessages;
+    // ★ 【跳转覆盖】：search 跳转时设置 _jumpRenderStart/End，优先使用
+    if (typeof window._jumpRenderStart === 'number' && window._jumpRenderStart >= 0) {
+        start = window._jumpRenderStart;
+        end   = (typeof window._jumpRenderEnd === 'number' && window._jumpRenderEnd > start)
+                    ? window._jumpRenderEnd
+                    : totalMessages;
+        currentPage = Math.ceil((totalMessages - start) / MESSAGES_PER_PAGE) || 1;
+        window._jumpRenderStart = -1;
+        window._jumpRenderEnd   = -1;
+    } else {
+        // ★ 正常初始化：按"可见气泡数"计算切片
+        start = _calcInitialStart(chat);  // 同时更新 currentPage
+        end   = totalMessages;
+    }
 } else {
-    end = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
+    end   = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
     start = Math.max(0, end - MESSAGES_PER_PAGE);
 }
 
@@ -1085,7 +1096,7 @@ function getLastValidInteractMsg(chat) {
 }
 
 async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = false) {
-    if (!db.apiSettings || !db.apiSettings.timePerceptionEnabled) return;
+    if (!chat.timePerceptionEnabled) return;
 
     // 1. 直接调用提取出来的公共函数
     const lastValidMsg = getLastValidInteractMsg(chat);
@@ -1112,17 +1123,7 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
             timestamp: now.getTime() - 2 
         };
 
-        let contextContent = '';
-        if (lastValidMsg.role === 'assistant') {
-            // 上条是AI发的：AI自己沉默了很久后被触发回复
-            contextContent = `[系统情景通知：距离你上一条发送的消息已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。请注意时间流逝带来的情境变化。]`;
-        } else if (isAiReplyTrigger) {
-            // 上条是用户发的，但用户没有发新消息，而是手动点击了AI回复按钮
-            contextContent = `[系统情景通知：距离用户的上一条消息已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。用户一直没有继续说话，请注意这段时间流逝带来的情境变化。]`;
-        } else {
-            // 上条是用户发的，用户刚刚发送了新消息才触发
-            contextContent = `[系统情景通知：距离用户的上一条消息已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。用户刚才打破了沉默，请注意时间流逝带来的情境变化。]`;
-        }
+const contextContent = `[系统情景通知：距离上一次互动已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。请注意这段时间流逝带来的情境和心理变化，结合上下文自然地继续互动。]`;
         
         const contextMessage = {
             id: `msg_context_timesense_${Date.now()}`, 

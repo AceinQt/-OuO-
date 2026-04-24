@@ -13,6 +13,9 @@ function setupCharacterEditScreen() {
             const source = charScreen.dataset.source;
             if (source === 'chat-room') {
                 switchScreen('chat-room-screen');
+            } else if (source === 'group-info') {
+                // 从群聊信息页面的成员列表进入时，原路返回 group-info
+                switchScreen('group-info-screen');
             } else {
                 goBackToContacts();
             }

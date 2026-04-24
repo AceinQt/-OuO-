@@ -159,7 +159,7 @@ function updateThemeColorForScreen(targetId, targetScreen) {
     }
 
     // 3. 🎯 【关键处理】角色主页、用户主页的特殊处理
-    if (targetId === 'persona-edit-screen' || targetId === 'character-edit-screen') {
+    if (targetId === 'persona-edit-screen' || targetId === 'character-edit-screen' || targetId === 'peek-memo-detail-screen') {
         setAndroidThemeColor('#f2f2f7'); // 替换为护眼灰
         document.body.style.backgroundColor = '#f2f2f7';
         return;
@@ -423,11 +423,70 @@ const AppUI = {
         return this.show({ type: 'alert', content, title, confirmText: btnText });
     },
 
-    async confirm(content, title = "确认操作", confirmText = "确定", cancelText = "取消") {
+async confirm(content, title = "确认操作", confirmText = "确定", cancelText = "取消") {
         return this.show({ type: 'confirm', content, title, confirmText, cancelText });
     },
 
     async prompt(content, placeholder = "", title = "请输入", confirmText = "确定", cancelText = "取消") {
         return this.show({ type: 'prompt', content, placeholder, title, confirmText, cancelText });
+    }, // <--- 注意：这里必须要加一个逗号
+
+    /**
+     * 下拉选择弹窗
+     * @param {Array<{value:string, label:string}>} options  选项列表
+     * @param {object} opts  { title, confirmText, cancelText }
+     * @returns {Promise<string|null>}  返回选中的 value，取消返回 null
+     */
+    async select(options = [], { title = '请选择', confirmText = '确定', cancelText = '取消' } = {}) {
+        return new Promise((resolve) => {
+            const overlay        = document.getElementById('app-global-dialog');
+            const titleEl        = document.getElementById('global-dialog-title');
+            const contentEl      = document.getElementById('global-dialog-content');
+            const actionsEl      = document.getElementById('global-dialog-actions');
+            const inputContainer = document.getElementById('global-dialog-input-container');
+
+            if (!overlay) return resolve(null);
+
+            titleEl.innerText   = title;
+            contentEl.innerText = '';
+            actionsEl.innerHTML = '';
+
+            // 把 input-container 里的 input 临时替换成 select
+            inputContainer.style.display = 'block';
+            inputContainer.innerHTML = `
+                <select id="global-dialog-select" class="appui-select">
+                    ${options.map(o =>
+                        `<option value="${String(o.value).replace(/"/g,'&quot;')}">${o.label}</option>`
+                    ).join('')}
+                </select>`;
+
+            const close = () => {
+                overlay.classList.remove('visible');
+                // 还原 input-container 为原始 input，避免影响后续弹窗
+                inputContainer.innerHTML = '<input type="text" id="global-dialog-input" autocomplete="off">';
+                inputContainer.style.display = 'none';
+            };
+
+            const createBtn = (text, cls, onClick) => {
+                const btn = document.createElement('button');
+                btn.className   = `btn ${cls}`;
+                btn.style.flex  = '1';
+                btn.style.padding = '10px';
+                btn.innerText   = text;
+                btn.onclick = (e) => { e.stopPropagation(); close(); onClick(); };
+                return btn;
+            };
+
+            const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(null));
+            const confirmBtn = createBtn(confirmText, 'btn-primary',  () => {
+                const sel = document.getElementById('global-dialog-select');
+                resolve(sel ? sel.value : null);
+            });
+            actionsEl.appendChild(confirmBtn);
+            actionsEl.appendChild(cancelBtn);
+
+            overlay.classList.add('visible');
+        });
     }
+    
 };

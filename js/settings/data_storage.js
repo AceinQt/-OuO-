@@ -2,21 +2,25 @@
 
 const dataStorage = {
     categoryColors: {
-        settings: '#0462C2',
-        worldBooks: '#1080E6',       
-        characters: '#3A9EF6',       
-        forum: '#7EBEFB',            
-        rpg: '#BADBFC',              
+        settings:        '#0C3A6C',
+        worldBooks:      '#05519F',
+        characters:      '#0462C2',
+        memory:          '#1080E6',
+        study:           '#3A9EF6',
+        forum:           '#7EBEFB',
+        rpg:             '#BADBFC',
         personalization: '#E0EDFE'
     },
 
     categoryNames: {
-        characters: '角色与聊天',
-        worldBooks: '世界书',
-        forum: '喵坛',
-        rpg: '游戏',
+        characters:      '角色与聊天',
+        worldBooks:      '世界书',
+        memory:          '记忆与向量',
+        study:           '学习',
+        forum:           '喵坛',
+        rpg:             '游戏',
         personalization: '个性化',
-        settings: '系统设置'
+        settings:        '系统设置'
     },
 
     getStorageInfo: async function () {
@@ -37,6 +41,8 @@ const dataStorage = {
         let categorizedSizes = {
             characters: 0,
             worldBooks: 0,
+            memory: 0,
+            study: 0,
             forum: 0,
             rpg: 0,
             personalization: 0,
@@ -44,26 +50,51 @@ const dataStorage = {
         };
 
         try {
-            // 1. 角色与聊天 (包含 PeekData)
-            (db.characters || []).forEach(char => categorizedSizes.characters += stringify(char));
-            (db.groups || []).forEach(group => categorizedSizes.characters += stringify(group));
-            // ★★★ 补充: PeekData (可能很大) ★★★
+            // 1. 角色与聊天 (包含 PeekData，不含已剥离的记忆/向量字段)
+            (db.characters || []).forEach(char => {
+                const safeChar = { ...char };
+                delete safeChar.memorySummaries;
+                delete safeChar.memoryJournals;
+                delete safeChar.longTermSummaries;
+                delete safeChar.memoryChunks;
+                // history 已挂载回内存，直接 stringify 统计消息体积，无需估算
+                categorizedSizes.characters += stringify(safeChar);
+            });
+            (db.groups || []).forEach(group => {
+                const safeGroup = { ...group };
+                delete safeGroup.memorySummaries;
+                delete safeGroup.longTermSummaries;
+                delete safeGroup.memoryChunks;
+                categorizedSizes.characters += stringify(safeGroup);
+            });
             categorizedSizes.characters += stringify(db.peekData);
 
             // 2. 世界书
             categorizedSizes.worldBooks += stringify(db.worldBooks);
-            
-            // 3. 论坛 (扁平化计算)
+
+            // ★ 3. 记忆与向量（从独立表精确统计，不依赖内存挂载）
+            if (typeof dexieDB !== 'undefined') {
+                try {
+                    const [allMemories, allChunks] = await Promise.all([
+                        dexieDB.memories.toArray(),
+                        dexieDB.memoryChunks.toArray()
+                    ]);
+                    allMemories.forEach(m => categorizedSizes.memory += stringify(m));
+                    allChunks.forEach(c => categorizedSizes.memory += stringify(c));
+                } catch(e) {}
+            }
+
+            // 4. 论坛
             categorizedSizes.forum += stringify(db.forumPosts);
             categorizedSizes.forum += stringify(db.forumBindings);
-            categorizedSizes.forum += stringify(db.forumUserIdentity); // 包含 anonCode, customDetailCss 等
+            categorizedSizes.forum += stringify(db.forumUserIdentity);
             categorizedSizes.forum += stringify(db.watchingPostIds);
             categorizedSizes.forum += stringify(db.favoritePostIds);
 
-            // 4. RPG
+            // 5. RPG
             categorizedSizes.rpg += stringify(db.rpgProfiles);
 
-            // 5. 个性化 (补充漏掉的组件设置)
+            // 6. 个性化
             categorizedSizes.personalization += stringify(db.userPersonas);
             categorizedSizes.personalization += stringify(db.myStickers);
             categorizedSizes.personalization += stringify(db.wallpaper);
@@ -72,19 +103,22 @@ const dataStorage = {
             categorizedSizes.personalization += stringify(db.globalCss);
             categorizedSizes.personalization += stringify(db.globalCssPresets);
             categorizedSizes.personalization += stringify(db.homeSignature);
-            // ★★★ 补充: 桌面组件与Ins组件设置 ★★★
             categorizedSizes.personalization += stringify(db.insWidgetSettings);
             categorizedSizes.personalization += stringify(db.homeWidgetSettings);
 
-            // 6. 系统设置 (补充漏掉的状态栏颜色)
+            // 7. 系统设置
             categorizedSizes.settings += stringify(db.apiSettings);
             categorizedSizes.settings += stringify(db.apiPresets);
             categorizedSizes.settings += stringify(db.pomodoroSettings);
             categorizedSizes.settings += stringify(db.pomodoroTasks);
             categorizedSizes.settings += stringify(db.homeScreenMode);
             categorizedSizes.settings += stringify(db.fontUrl);
-            // ★★★ 补充: 状态栏颜色 ★★★
             categorizedSizes.settings += stringify(db.homeStatusBarColor);
+
+            // ★ 8. 学习模块（独立表）
+            categorizedSizes.study += stringify(db.studyBooks);
+            categorizedSizes.study += stringify(db.studyQuestions);
+            categorizedSizes.study += stringify(db.studyRecords);
 
             const totalSize = Object.values(categorizedSizes).reduce((sum, size) => sum + size, 0);
             return { totalSize, categorizedSizes };
@@ -207,7 +241,7 @@ function renderStorageDetails(container, info) {
     container.classList.add('storage-details-container');
 
     // 定义类别的显示顺序（与顶部定义的顺序一致）
-    const categoryOrder = ['settings', 'worldBooks', 'characters', 'forum', 'rpg', 'personalization'];
+    const categoryOrder = ['settings', 'worldBooks', 'characters', 'memory', 'study', 'forum', 'rpg', 'personalization'];
 
     // 按照预定义的顺序排序
     const sortedData = categoryOrder
@@ -231,24 +265,25 @@ function renderStorageDetails(container, info) {
             </div>
             <div class="storage-item-right">
                 <span class="storage-detail-size">${formatBytes(item.value)}</span>
-                <button class="btn-export-sm">导出</button>
+                ${item.key !== 'memory' ? `<button class="btn-export-sm">导出</button>` : '<span style="font-size:11px;color:#aaa;">随角色导出</span>'}
             </div>
         `;
-        
-        const exportBtn = row.querySelector('.btn-export-sm');
-        
-        exportBtn.onclick = async function(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            if (window.exportPartialData) {
-                window.exportPartialData(item.key);
-            } else {
-                await AppUI.alert('功能加载中...');
-            }
-        };
 
-        exportBtn.ontouchstart = function() { this.style.filter = 'brightness(0.9)'; };
-        exportBtn.ontouchend = function() { this.style.filter = 'brightness(1)'; };
+        const exportBtn = row.querySelector('.btn-export-sm');
+        if (exportBtn) {
+            exportBtn.onclick = async function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (window.exportPartialData) {
+                    window.exportPartialData(item.key);
+                } else {
+                    await AppUI.alert('功能加载中...');
+                }
+            };
+
+            exportBtn.ontouchstart = function() { this.style.filter = 'brightness(0.9)'; };
+            exportBtn.ontouchend = function() { this.style.filter = 'brightness(1)'; };
+        }
 
         container.appendChild(row);
     });

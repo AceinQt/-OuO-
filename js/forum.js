@@ -531,6 +531,12 @@ function setupMePageFeature() {
                             historyLimitInput.value = currentBindings.historyLimit || 50;
                         }
                     }
+                    
+                    const forumApiSel = document.getElementById('forum-api-preset-select');
+if (forumApiSel && typeof window.populateChatApiPresetSelect === 'function') {
+    window.populateChatApiPresetSelect(forumApiSel);
+    forumApiSel.value = currentBindings.apiPresetName || '';
+}
 
                     // --- 填充世界书列表 ---
                     worldBookList.innerHTML = '';
@@ -596,12 +602,13 @@ function setupMePageFeature() {
                         }
 
                         db.forumBindings = {
-                            worldBookIds: selectedWorldBookIds,
-                            charIds: selectedCharIds,
-                            userPersonaIds: db.forumBindings ? db.forumBindings.userPersonaIds : [],
-                            useChatHistory: useHistory,
-                            historyLimit: limit
-                        };
+    worldBookIds: selectedWorldBookIds,
+    charIds: selectedCharIds,
+    userPersonaIds: db.forumBindings ? db.forumBindings.userPersonaIds : [],
+    useChatHistory: useHistory,
+    historyLimit: limit,
+    apiPresetName: (document.getElementById('forum-api-preset-select') || {}).value || ''
+};
 
 await saveForumMeta();
 showToast('世界设定已保存');
@@ -1961,13 +1968,75 @@ function getForumGenerationContext() {
                 return randomPrefix + randomNoun;
             }
 
+/** 获取论坛功能的 API 配置（优先读 forumBindings.apiPresetName，fallback 全局默认） */
+function _getForumApiConfig() {
+    const presetName = (db.forumBindings || {}).apiPresetName || '';
+    if (presetName) {
+        const preset = (db.apiPresets || []).find(p => p.name === presetName && (!p.type || p.type === 'chat'));
+        if (preset && preset.data) {
+            const d = preset.data;
+            return {
+    url: d.url || d.apiUrl || '',
+    key: d.key || d.apiKey || '',
+    model: d.model || '',
+    stream: d.streamEnabled !== false,
+    temperature: d.temperature ?? 1.0   // ← 加这行
+};
+        }
+    }
+    const s = db.apiSettings || {};
+    return {
+        url: s.url || s.apiUrl || '',
+        key: s.key || s.apiKey || '',
+        model: s.model || '',
+        stream: s.streamEnabled !== false,
+    temperature: s.temperature
+    };
+}
 
+/** 流式 fetch，返回完整文本；onChunk(delta, accumulated) 实时回调 */
+async function _forumStreamFetch(url, key, requestBody, onChunk) {
+    const response = await fetch(`${url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ ...requestBody, stream: true })
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let full = '';
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta?.content || '';
+                if (delta) {
+                    full += delta;
+                    if (onChunk) onChunk(delta, full);
+                }
+            } catch { /* 忽略解析错误 */ }
+        }
+    }
+    return full;
+}
 
 
 
             async function handleForumRefresh() {
 savedForumScrollY = 0;
-                const { url, key, model } = db.apiSettings;
+                const { url, key, model, stream, temperature } = _getForumApiConfig();
                 if (!url || !key || !model) {
                     showToast('请先配置API');
                     return;
@@ -2079,21 +2148,29 @@ savedForumScrollY = 0;
         }
 
                     const requestBody = {
-                        model: model,
-                        messages: [{ role: "user", content: systemPrompt }],
-                        temperature: 1.0, // 提高创造性
-                    };
+    model: model,
+    messages: [{ role: "user", content: systemPrompt }],
+    temperature: temperature,
+};
 
-                    const response = await fetch(`${url}/v1/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-                        body: JSON.stringify(requestBody)
-                    });
-
-                    if (!response.ok) throw new Error(`API error: ${response.status}`);
-
-                    const result = await response.json();
-                    const contentStr = result.choices[0].message.content;
+let contentStr;
+if (stream) {
+    const streamSpan = loadingDiv.querySelector('span');
+    let charCount = 0;
+    contentStr = await _forumStreamFetch(url, key, requestBody, (delta) => {
+        charCount += delta.length;
+        if (streamSpan) streamSpan.textContent = `正在生成帖子内容... (${charCount} 字)`;
+    });
+} else {
+    const response = await fetch(`${url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify(requestBody)
+    });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    const result = await response.json();
+    contentStr = result.choices[0].message.content;
+}
  // --- 强力清理：兼容 <think> <thought> thinking 等所有思考标签 ---
 let cleanContent = contentStr;
 
@@ -2282,12 +2359,11 @@ function renderForumPosts(posts, isAppend = false) {
 }
 
             async function handleGenerateComments(post) {
-                const { url, key, model } = db.apiSettings;
-
-                if (!url || !key || !model) {
-                    showToast('请先在设置中配置 API 地址、Key 和模型');
-                    return;
-                }
+                const { url, key, model, stream, temperature } = _getForumApiConfig();
+if (!url || !key || !model) {
+    showToast('请先配置 API');
+    return;
+}
 
                 const aiBtn = document.getElementById('detail-ai-btn');
 
@@ -2328,33 +2404,31 @@ ${commentsHistoryStr}
 5. **直接返回文本**，每行一条，格式必须为 "用户名:评论内容"。`;
 
                     const requestBody = {
-                        model: model,
-                        messages: [{ role: "user", content: systemPrompt }],
-                        temperature: 1.0
-                    };
+    model: model,
+    messages: [{ role: "user", content: systemPrompt }],
+    temperature: temperature
+};
 
-                    const response = await fetch(`${url}/v1/chat/completions`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-                        body: JSON.stringify(requestBody)
-                    });
-
-                    if (!response.ok) {
-                        throw new Error(`API 请求失败: ${response.status}`);
-                    }
-
-                    const result = await response.json();
-
-                    // --- 增强的错误检查 ---
-                    if (result.error) {
-                        throw new Error('API 返回错误: ' + result.error.message);
-                    }
-
-                    if (!result.choices || !result.choices[0] || !result.choices[0].message) {
-                        throw new Error('API 返回结构异常，未包含 choices');
-                    }
-
-                    const contentStr = result.choices[0].message.content;
+let contentStr;
+if (stream) {
+    let charCount = 0;
+    const hideLoadingRef = hideLoading; // 保留引用
+    contentStr = await _forumStreamFetch(url, key, requestBody, (delta) => {
+        charCount += delta.length;
+        // 可选：通过 toast 文字反映进度（不强制）
+    });
+} else {
+    const response = await fetch(`${url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify(requestBody)
+    });
+    if (!response.ok) throw new Error(`API 请求失败: ${response.status}`);
+    const result = await response.json();
+    if (result.error) throw new Error('API 返回错误: ' + result.error.message);
+    if (!result.choices?.[0]?.message) throw new Error('API 返回结构异常，未包含 choices');
+    contentStr = result.choices[0].message.content;
+}
                     
                     // 检查是否被内容审查拦截 (返回空内容)
                     if (!contentStr || contentStr.trim() === "") {

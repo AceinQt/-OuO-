@@ -200,6 +200,98 @@ window.PeekDeleteManager = {
 };
 
 // ==========================================
+// 工具函数：获取Peek功能使用的API配置
+// 优先使用角色的 peekScreenSettings.peekApiPreset 指定预设
+// 无配置时降级到全局默认 db.apiSettings
+// ==========================================
+function getPeekApiConfig(charId) {
+    const char = charId ? db.characters.find(c => c.id === charId) : null;
+    const presetName = char?.peekScreenSettings?.peekApiPreset;
+
+    if (presetName) {
+        const preset = (db.apiPresets || [])
+            .filter(p => !p.type || p.type === 'chat')
+            .find(p => p.name === presetName);
+        if (preset?.data) {
+            const d = preset.data;
+            return {
+                url:           d.url || d.apiUrl || '',
+                key:           d.key || d.apiKey || '',
+                model:         d.model || '',
+                streamEnabled: d.streamEnabled !== false,
+                temperature:   d.temperature !== undefined ? d.temperature : 0.8
+            };
+        }
+    }
+
+    // 降级：全局默认
+    const s = db.apiSettings || {};
+    return {
+        url:           s.url || s.apiUrl || '',
+        key:           s.key || s.apiKey || '',
+        model:         s.model || '',
+        streamEnabled: s.streamEnabled !== false,
+        temperature:   s.temperature !== undefined ? s.temperature : 0.8
+    };
+}
+
+// ==========================================
+// 工具函数：统一的Peek API调用
+// 支持流式（读完再返回）和非流式，对外统一返回 Promise<string>
+// Peek内容需要结构化解析，流式也必须等全部传输完毕
+// ==========================================
+async function callPeekApi({ url, key, model, messages, temperature = 0.85, streamEnabled = false }) {
+    const requestBody = {
+        model,
+        messages,
+        temperature,
+        stream: !!streamEnabled
+    };
+
+    const response = await fetch(`${url}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify(requestBody)
+    });
+
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+
+    if (!streamEnabled) {
+        const result = await response.json();
+        return result.choices[0].message.content.trim();
+    }
+
+    // 流式：逐行读取SSE，累积完整文本后返回
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+    let buffer = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // 最后一行可能不完整，留给下次
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+                const parsed = JSON.parse(data);
+                const delta = parsed.choices?.[0]?.delta?.content;
+                if (delta) fullText += delta;
+            } catch (_) { /* 忽略格式异常行 */ }
+        }
+    }
+
+    return fullText;
+}
+
+// ==========================================
 // 工具函数：生成公用背景提要（人设、世界书、记忆、上下文）
 // ==========================================
 function getPeekBasePromptContext(char, mainChatContext) {
@@ -423,7 +515,7 @@ function renderPeekScreen() {
             if (id === 'album') generateAndRenderPeekAlbum();
             else if (id === 'browser') generateAndRenderPeekBrowser();
             else if (id === 'steps') generateAndRenderPeekSteps();
-            else if (id === 'drafts') generateAndRenderPeekDrafts();
+            else if (id === 'drafts') openPeekDraftsScreen();
             else if (id === 'memos') generateAndRenderPeekMemos();
             else if (id === 'transfer') generateAndRenderPeekTransfer();
             else if (id === 'messages') generateAndRenderPeekMessages();
@@ -474,6 +566,20 @@ function renderPeekSettings() {
     });
     
     document.getElementById('peek-context-limit').value = peekSettings.contextLimit !== undefined ? peekSettings.contextLimit : 50;
+
+    // 渲染 API 预设选择框
+    const peekApiPresetSel = document.getElementById('peek-api-preset-select');
+    if (peekApiPresetSel) {
+        const chatPresets = (db.apiPresets || []).filter(p => !p.type || p.type === 'chat');
+        peekApiPresetSel.innerHTML = '<option value="">全局默认</option>';
+        chatPresets.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.name;
+            opt.textContent = p.name;
+            peekApiPresetSel.appendChild(opt);
+        });
+        peekApiPresetSel.value = peekSettings.peekApiPreset || '';
+    }
 }
 
 // ==========================================
@@ -634,6 +740,9 @@ function setupPeekFeature() {
         if (limit < 0) limit = 0;
         character.peekScreenSettings.contextLimit = limit;
 
+        const peekApiPresetSel = document.getElementById('peek-api-preset-select');
+        character.peekScreenSettings.peekApiPreset = peekApiPresetSel ? peekApiPresetSel.value : '';
+
         await saveSingleChat(window.activePeekCharId, 'private');
         renderPeekScreen();
         showToast('已保存！');
@@ -704,6 +813,16 @@ if (conversation) {
     if (typeof initPeekUnlock === 'function') {
         initPeekUnlock();
     }
+    
+    // 初始化草稿箱的静态事件绑定
+    if (typeof initPeekDraftsEvents === 'function') {
+        initPeekDraftsEvents();
+    }
+    
+    // 初始化备忘录的静态事件绑定
+    if (typeof initPeekMemosEvents === 'function') {
+        initPeekMemosEvents();
+    }
 
     // 绑定长按多选删除
     PeekDeleteManager.bindEvents();
@@ -729,7 +848,7 @@ if (conversation) {
         }
     );
 
-    PeekDeleteManager.attachLongPress(document.getElementById('peek-memos-screen'), '.memo-item', 'memos', 'memos', () => renderMemosList(peekContentCache.memos?.memos));
+    PeekDeleteManager.attachLongPress(document.getElementById('peek-memos-screen'), '.memo-card-item', 'memos', 'memos', () => renderMemosList(peekContentCache.memos?.memos));
     PeekDeleteManager.attachLongPress(document.getElementById('peek-cart-screen'), '.cart-item', 'cart', 'items', () => renderPeekCart(peekContentCache.cart?.items));
     PeekDeleteManager.attachLongPress(document.getElementById('peek-transfer-station-screen'), '.transfer-item', 'transfer', 'entries', () => renderPeekTransferStation(peekContentCache.transfer?.entries));
     PeekDeleteManager.attachLongPress(document.getElementById('peek-browser-screen'), '.browser-history-item', 'browser', 'history', () => renderPeekBrowser(peekContentCache.browser?.history));

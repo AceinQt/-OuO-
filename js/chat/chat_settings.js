@@ -226,6 +226,7 @@ function setupChatSettings() {
     }
 }
             
+// --- 替换 loadSettingsToSidebar 函数 ---
 function loadSettingsToSidebar() {
     const e = db.characters.find(c => c.id === currentChatId);
     if (e) {
@@ -264,27 +265,43 @@ function loadSettingsToSidebar() {
         document.getElementById('setting-my-realname-display').textContent = myRealName;
         document.getElementById('setting-my-persona').value = myPersona;
         document.getElementById('chat-settings-form').dataset.pendingBindId = e.boundPersonaId || '';
-        document.getElementById('setting-max-memory').value = e.maxMemory;
-        document.getElementById('setting-bilingual-mode').checked = e.bilingualModeEnabled || false;
 
-   document.getElementById('setting-max-memory').value = e.maxMemory || 10;
-const maxMemDisplay = document.getElementById('setting-max-memory-display');
-if (maxMemDisplay) {
-    maxMemDisplay.textContent = e.maxMemory || 10;
-}
-document.getElementById('setting-bilingual-mode').checked = e.bilingualModeEnabled || false;     
+        document.getElementById('setting-max-memory').value = e.maxMemory || 10;
+        const maxMemDisplay = document.getElementById('setting-max-memory-display');
+        if (maxMemDisplay) {
+            maxMemDisplay.textContent = e.maxMemory || 10;
+        }
+        
+        document.getElementById('setting-bilingual-mode').checked = e.bilingualModeEnabled || false;
+        const timePEl = document.getElementById('setting-time-perception');
+        if (timePEl) timePEl.checked = e.timePerceptionEnabled || false; 
         
         // 【核心变更】读取当前气泡预设并映射到选择框
         window.populateChatThemeSelects();
         const themeSelect = document.getElementById('setting-theme-color');
         
-        // 如果当前并不是名为 default 或 默认，则去尝试回显它原本的主题名
         if (e.useCustomBubbleCss && e.bubbleThemeName && e.bubbleThemeName !== 'default' && e.bubbleThemeName !== '默认') {
             const optExists = Array.from(themeSelect.options).some(o => o.value === `preset:${e.bubbleThemeName}`);
             themeSelect.value = optExists ? `preset:${e.bubbleThemeName}` : 'default';
         } else {
-            // 不然全部回显为默认
             themeSelect.value = 'default';
+        }
+
+        // 👇【修复】：在侧边栏打开时填充 API 预设下拉框，并回显角色的配置
+        const apiPresetSel = document.getElementById('setting-chat-api-preset');
+        if (apiPresetSel) {
+            if (typeof window.populateChatApiPresetSelect === 'function') {
+                window.populateChatApiPresetSelect(apiPresetSel);
+            } else {
+                const presets = (db.apiPresets || []).filter(p => !p.type || p.type === 'chat');
+                apiPresetSel.innerHTML = '<option value="">全局默认</option>';
+                presets.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.name; opt.textContent = p.name;
+                    apiPresetSel.appendChild(opt);
+                });
+            }
+            apiPresetSel.value = e.chatApiPreset || '';
         }
     }
 }
@@ -307,15 +324,15 @@ async function saveSettingsFromSidebar() {
         
         e.maxMemory = document.getElementById('setting-max-memory').value;
         e.bilingualModeEnabled = document.getElementById('setting-bilingual-mode').checked;
+        const timePEl = document.getElementById('setting-time-perception');
+        if (timePEl) e.timePerceptionEnabled = timePEl.checked;
 
-        // 【核心变更】保存预设：让 default 也能够去读取自制的外观！
+        // 保存预设
         const themeVal = document.getElementById('setting-theme-color').value;
         
         if (themeVal === 'default') {
             const defaultPreset = _getBubblePresets().find(p => p.name === '默认');
             e.theme = 'white_blue';
-            
-            // 简化逻辑：直接获取，由 !! 判断真伪
             e.customBubbleCss = (defaultPreset && defaultPreset.css) ? defaultPreset.css : '';
             e.useCustomBubbleCss = !!e.customBubbleCss;
             e.bubbleThemeName = 'default';
@@ -328,6 +345,12 @@ async function saveSettingsFromSidebar() {
                 e.customBubbleCss = preset.css;
                 e.bubbleThemeName = presetName;
             }
+        }
+
+        // 👇【修复】：在此处将下拉框选中的 API 预设名称写入数据库
+        const apiPresetSel = document.getElementById('setting-chat-api-preset');
+        if (apiPresetSel) {
+            e.chatApiPreset = apiPresetSel.value;
         }
 
         await saveSingleChat(currentChatId, currentChatType);

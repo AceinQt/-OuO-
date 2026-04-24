@@ -159,7 +159,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         let cleanResponse = fullResponse;
         cleanResponse = cleanResponse.replace(/^```\w*\s*$/gm, '');
 
-        const contentSplitRegex = /###\s*🎭\s*(?:正文|剧情正文|剧情).*/i;
+        const contentSplitRegex = /###\s*🎭\s*(?:正文|思考).*/i;
         if (contentSplitRegex.test(cleanResponse)) {
             const parts = cleanResponse.split(contentSplitRegex);
             if (parts.length > 1) {
@@ -580,8 +580,26 @@ async function getAiReply(chatId, chatType, isBackground = false) {
     }
 
     if (isGenerating && !isBackground) return;
-    const { url, key, model, provider } = db.apiSettings;
-const streamEnabled = db.apiSettings.streamEnabled ?? true; // 默认true
+
+    // 👇 【核心修复 1】：必须先获取 chat 对象，再往下执行读取操作，否则会报错中断
+    const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
+    if (!chat) return;
+
+    // 获取有效 API 配置：优先用该聊天自定义的预设，否则用全局 db.apiSettings
+    let effectiveApiSettings = db.apiSettings || {};
+    if (chat.chatApiPreset) {
+        const _chatPreset = (db.apiPresets || []).find(x =>
+            x.name === chat.chatApiPreset && (!x.type || x.type === 'chat')
+        );
+        if (_chatPreset && _chatPreset.data) {
+            // 合并：预设覆盖全局，但全局的其他字段（如 activePreset）仍保留
+            effectiveApiSettings = { ...db.apiSettings, ..._chatPreset.data };
+        }
+    }
+    
+    const { url, key, model, provider } = effectiveApiSettings;
+    const streamEnabled = effectiveApiSettings.streamEnabled ?? true; // 默认true
+    
     if (!url || !key || !model) {
         if (!isBackground) {
             showToast('请先在"api"应用中完成设置！');
@@ -589,19 +607,18 @@ const streamEnabled = db.apiSettings.streamEnabled ?? true; // 默认true
         }
         return;
     }
-    const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
-    if (!chat) return;
     
     // 只有在前台处理时，才修改 UI 和 锁定发信状态
     if (!isBackground) {
         isGenerating = true;
         if (chatType === 'private' && chat.callMode) {
-    document.getElementById('call-switch-btn')?.setAttribute('disabled', '');
-    document.getElementById('call-mic-btn')?.setAttribute('disabled', '');
-}
+            document.getElementById('call-switch-btn')?.setAttribute('disabled', '');
+            document.getElementById('call-mic-btn')?.setAttribute('disabled', '');
+        }
         if (chatType === 'private' && chat.callMode && typeof clearCallDialogue === 'function') {
-    clearCallDialogue();
-}
+            clearCallDialogue();
+        }
+        
         // ★ 通话中AI回复：头像光晕
         if (chatType === 'private' && chat.callMode) {
             document.getElementById('call-identity')?.classList.add('ai-generating');
@@ -621,14 +638,22 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
         messageArea.scrollTop = messageArea.scrollHeight;
     }
     
+    let retrievedContext = '';
+    if (chat.vectorMemoryEnabled) {
+        retrievedContext = await buildRetrievedMemoryContext(
+            chat.history || [],
+            chat
+        );
+    }
+    
     try {
         let systemPrompt, requestBody;
-        const isCompatibilityMode = db.apiSettings.compatibilityModeEnabled || false; 
+        const isCompatibilityMode = effectiveApiSettings.compatibilityModeEnabled || false; 
         if (chatType === 'private') {
-            systemPrompt = generatePrivateSystemPrompt(chat);
+            systemPrompt = generatePrivateSystemPrompt(chat, retrievedContext);
         } else {
-            systemPrompt = generateGroupSystemPrompt(chat);
-        }
+            systemPrompt = generateGroupSystemPrompt(chat, retrievedContext);
+}
 
         let rawHistory = chat.history.slice(-chat.maxMemory);
         const historySlice = rawHistory.filter(msg => {
@@ -698,23 +723,17 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
                 const role = (msg.role === 'assistant' || msg.role === 'model') ? 'model' : 'user';
                 let parts;
                 
-                let processingContent = msg.content;
-                if (chat.offlineModeEnabled) {                       
-                    processingContent = processingContent.replace(/\[system-narration:([\s\S]*?)\]/g, '\n\n$1');
-                    processingContent = processingContent.replace(/(\[.*?更新状态为[:：][\s\S]*?\])/g, '\n\n$1');
-                    if (role === 'user') {
-                        processingContent = processingContent.replace(/的消息：/g, '说：');
-                    }
-                }
-
                 if (msg.parts && msg.parts.length > 0) {
-                     parts = msg.parts.map(p => {
-                        if (p.type === 'text' || p.type === 'html') {
-                            let text = p.text; 
-                            if (chat.offlineModeEnabled && role === 'user') {
-                                text = text.replace(/的消息：/g, '说：');
-                            }
-                            return { text: text };
+     parts = msg.parts.map(p => {
+        if (p.type === 'text' || p.type === 'html') {
+            let text = p.text; 
+            if (!chat.offlineModeEnabled && !chat.callMode) {
+                text = text.replace(/\[system-narration:([\s\S]*?)\]/g, '$1');
+            }
+            if (chat.offlineModeEnabled && role === 'user') {
+                text = text.replace(/的消息：/g, '说：');
+            }
+            return { text: text };
                         } else if (p.type === 'image') {
                             let mimeType = 'image/jpeg';
                             let data = p.data;
@@ -763,28 +782,21 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
             }
 
             requestBody = {
-                contents: contents,
-                system_instruction: { parts: [{ text: systemPrompt }] },
-                generationConfig: {}
-            };
+    contents: contents,
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    generationConfig: {
+        temperature: effectiveApiSettings.temperature !== undefined ? effectiveApiSettings.temperature : 0.8
+    }
+};
         }
         else {
             let apiMessages = [{ role: 'system', content: systemPrompt }];
             
             historySlice.forEach(msg => {
                 let content;
-                let rawContent = msg.content;
-                if (chat.offlineModeEnabled) {                       
-                    rawContent = rawContent.replace(/\[system-narration:([\s\S]*?)\]/g, '\n\n$1');
-                    rawContent = rawContent.replace(/(\[.*?更新状态为[:：][\s\S]*?\])/g, '\n\n$1');
-                    if (msg.role === 'user') {
-                        rawContent = rawContent.replace(/的消息：/g, '说：');
-                    }
-                }
-
                 if (msg.role === 'user' && msg.quote) {
-                     const replyTextMatch = rawContent.match(/\[.*?[:：]([\s\S]+?)\]/); 
-                     const replyText = replyTextMatch ? replyTextMatch[1] : rawContent;
+                     const replyTextMatch = msg.content.match(/\[.*?[:：]([\s\S]+?)\]/); 
+                     const replyText = replyTextMatch ? replyTextMatch[1] : msg.content;
                      content = `[${chat.myName}引用"${msg.quote.content}"并回复：${replyText}]`;
                 } else {
                     if (msg.parts && msg.parts.length > 0) {
@@ -807,18 +819,21 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
                         } else {
                             // 没有图片时，始终拼接成纯字符串，兼容所有API
                             content = msg.parts.map(p => {
-                                if (p.type === 'text' || p.type === 'html') {
-                                    let text = p.text;
-                                    if (chat.offlineModeEnabled && msg.role === 'user') {
-                                        text = text.replace(/的消息：/g, '说：');
-                                    }
-                                    return text;
-                                }
+    if (p.type === 'text' || p.type === 'html') {
+        let text = p.text;
+        if (!chat.offlineModeEnabled && !chat.callMode) {
+            text = text.replace(/\[system-narration:([\s\S]*?)\]/g, '$1');
+        }
+        if (chat.offlineModeEnabled && msg.role === 'user') {
+            text = text.replace(/的消息：/g, '说：');
+        }
+        return text;
+    }
                                 return '';
                             }).join('').trim();
                         }
                     } else {
-                        content = rawContent;
+                        content = msg.content;
                     }
                 }
 
@@ -844,7 +859,8 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
                 apiMessages.splice(insertIndex, 0, instructionMsg);
             }
 
-            requestBody = { model: model, messages: apiMessages, stream: streamEnabled };
+            const _temp = effectiveApiSettings.temperature !== undefined ? effectiveApiSettings.temperature : 0.8;
+requestBody = { model: model, messages: apiMessages, stream: streamEnabled, temperature: _temp };
         }
 
         const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:streamGenerateContent?key=${getRandomValue(key)}` : `${url}/v1/chat/completions`;

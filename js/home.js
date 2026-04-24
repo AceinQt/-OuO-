@@ -67,7 +67,7 @@ function setupHomeScreen() {
     // 这里列出所有在 index.html 里写了 id 的 APP
     const appKeys = [
         'chat-list-screen', 
-        'pomodoro-screen', 
+        'study-screen', 
         'forum-screen', 
         'rpg-title-screen',
         'settings-screen', 

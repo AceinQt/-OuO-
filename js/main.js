@@ -172,6 +172,8 @@ const resetChatListTabs = () => {
 
 // 4. 路由表 (Router)
 const pageActions = {
+    'study-screen': () => window.StudyModule?.renderMain(),
+    'api-settings-screen': openApiSettingsScreen,
     'world-book-screen': typeof renderWorldBookList !== 'undefined' ? renderWorldBookList : null,
     'customize-screen': typeof renderCustomizeForm !== 'undefined' ? renderCustomizeForm : null,
     'tutorial-screen': typeof renderTutorialContent !== 'undefined' ? renderTutorialContent : null,
@@ -375,6 +377,7 @@ window.init = async () => {
         if (typeof setupInsWidgetAvatarModal === 'function') setupInsWidgetAvatarModal();
         if (typeof setupRpgGame === 'function') setupRpgGame();
         if (typeof setupUserPersonaScreen === 'function') setupUserPersonaScreen();
+        if (typeof setupGroupInfoScreen === 'function') setupGroupInfoScreen();
 
         // 绑定特殊按钮
         const delWbBtn = document.getElementById('delete-selected-world-books-btn');

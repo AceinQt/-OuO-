@@ -31,12 +31,12 @@ function setupGroupChatSystem() {
         renderMemberSelectionList();
         // 重置表单
         createGroupForm.reset();
-        
+
         // 清空隐藏域
-        if(document.getElementById('group-my-persona')) document.getElementById('group-my-persona').value = '';
-        if(document.getElementById('group-selected-persona-id')) document.getElementById('group-selected-persona-id').value = '';
-        if(document.getElementById('group-my-name')) document.getElementById('group-my-name').value = '';
-        if(document.getElementById('group-my-nickname')) document.getElementById('group-my-nickname').value = '';
+        if (document.getElementById('group-my-persona')) document.getElementById('group-my-persona').value = '';
+        if (document.getElementById('group-selected-persona-id')) document.getElementById('group-selected-persona-id').value = '';
+        if (document.getElementById('group-my-name')) document.getElementById('group-my-name').value = '';
+        if (document.getElementById('group-my-nickname')) document.getElementById('group-my-nickname').value = '';
 
         // 重置绑定按钮状态
         const bindBtn = document.getElementById('create-group-select-persona-btn');
@@ -49,7 +49,7 @@ function setupGroupChatSystem() {
         createGroupModal.classList.add('visible');
     });
 
-    // 2. 创建群聊弹窗中的“绑定人设”按钮逻辑
+    // 2. 创建群聊弹窗中的"绑定人设"按钮逻辑
     const createGroupBindBtn = document.getElementById('create-group-select-persona-btn');
     if (createGroupBindBtn) {
         // 防止重复绑定，先克隆替换
@@ -83,7 +83,7 @@ function setupGroupChatSystem() {
         e.preventDefault();
         const selectedMemberIds = Array.from(memberSelectionList.querySelectorAll('input:checked')).map(input => input.value);
         const groupName = groupNameInput.value.trim();
-        
+
         // 获取新的字段
         const myRealName = document.getElementById('group-my-name').value.trim();
         const myNickname = document.getElementById('group-my-nickname').value.trim();
@@ -106,17 +106,17 @@ function setupGroupChatSystem() {
             name: groupName,
             avatar: 'https://i.postimg.cc/fTLCngk1/image.jpg',
             me: {
-                realName: myRealName,      // 新增：真名
-                nickname: myNickname,      // 昵称
-                persona: myPersona,        // 人设
-                avatar: myAvatar,          // 头像
-                boundPersonaId: boundPersonaId // 绑定ID
+                realName: myRealName,
+                nickname: myNickname,
+                persona: myPersona,
+                avatar: myAvatar,
+                boundPersonaId: boundPersonaId
             },
             members: selectedMemberIds.map(charId => {
                 const char = db.characters.find(c => c.id === charId);
                 return {
                     id: `member_${char.id}`,
-                    originalCharId: char.id, // 重要：用于同步
+                    originalCharId: char.id,
                     realName: char.realName,
                     groupNickname: char.remarkName,
                     persona: char.persona,
@@ -132,15 +132,32 @@ function setupGroupChatSystem() {
             useCustomBubbleCss: (typeof _getBubblePresets === 'function' && _getBubblePresets().find(p => p.name === '默认')?.css) ? true : false,
             customBubbleCss: (typeof _getBubblePresets === 'function') ? (_getBubblePresets().find(p => p.name === '默认')?.css || '') : '',
             bubbleThemeName: 'default',
-            worldBookIds:[]
+            worldBookIds: []
         };
         db.groups.push(newGroup);
         await saveSingleChat(newGroup.id, 'group');
         renderChatList();
         createGroupModal.classList.remove('visible');
-        showToast(`群聊“${groupName}”创建成功！`);
+        showToast(`群聊"${groupName}"创建成功！`);
     });
 
+    // 4. 跳转到群聊信息页面（group_info）
+    const sidebarGroupInfoBtn = document.getElementById('sidebar-group-info-btn');
+    if (sidebarGroupInfoBtn) {
+        sidebarGroupInfoBtn.addEventListener('click', () => {
+            const group = db.groups.find(g => g.id === currentChatId);
+            if (!group) return showToast('找不到群聊信息');
+
+            // 关闭侧边栏
+            const sidebar = document.getElementById('group-settings-sidebar');
+            if (sidebar) sidebar.classList.remove('open');
+
+            // 打开群聊信息页面
+            if (typeof openGroupInfoScreen === 'function') {
+                openGroupInfoScreen(group, 'chat-room');
+            }
+        });
+    }
 
     // 6. 群头像上传
     document.getElementById('setting-group-avatar-upload').addEventListener('change', async (e) => {
@@ -186,7 +203,7 @@ function setupGroupChatSystem() {
     document.getElementById('clear-group-chat-history-btn').addEventListener('click', async () => {
         const group = db.groups.find(g => g.id === currentChatId);
         if (!group) return;
-        if (await AppUI.confirm(`你确定要清空群聊“${group.name}”的所有聊天记录吗？这个操作是不可恢复的！`, "系统提示", "确认", "取消")) {
+        if (await AppUI.confirm(`你确定要清空群聊"${group.name}"的所有聊天记录吗？这个操作是不可恢复的！`, "系统提示", "确认", "取消")) {
             group.history = [];
             await clearChatHistoryInDB(currentChatId);
             await saveSingleChat(currentChatId, 'group');
@@ -198,8 +215,9 @@ function setupGroupChatSystem() {
     });
 
     // 9. 群成员点击事件
+    // 注意：排除 .group-member-me（我自己的头像），那个由 renderGroupMembersInSettings 内单独绑定
     groupMembersListContainer.addEventListener('click', e => {
-        const memberDiv = e.target.closest('.group-member');
+        const memberDiv = e.target.closest('.group-member:not(.group-member-me)');
         const addBtn = e.target.closest('.add-member-btn');
         if (memberDiv) {
             openGroupMemberEditModal(memberDiv.dataset.id);
@@ -225,7 +243,7 @@ function setupGroupChatSystem() {
     });
 
     // 11. 提交成员编辑
-editGroupMemberForm.addEventListener('submit', async (e) => {
+    editGroupMemberForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const memberId = document.getElementById('editing-member-id').value;
         const group = db.groups.find(g => g.id === currentChatId);
@@ -237,31 +255,30 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
             member.groupNickname = newNickname;
             member.realName = document.getElementById('edit-member-real-name').value;
             member.persona = document.getElementById('edit-member-persona').value;
-            
+
             if (oldNickname !== newNickname) {
-               // 只有真正改了昵称并发送通知时才触发时间跳过
-               await processTimePerception(group, currentChatId, 'group');
-               const myName = group.me.realName;
-               const messageContent = `[${myName}修改${member.realName}的群昵称为：${newNickname}]`;
-               const message = {
-                   id: `msg_${Date.now()}`,
-                   role: 'user',
-                   content: messageContent,
-                   parts: [{ type: 'text', text: messageContent }],
-                   timestamp: Date.now()
-               };
-               group.history.push(message);
-               addMessageBubble(message, group.id, 'group'); // 立即显示气泡
-               await saveMessageToDB(message, currentChatId, 'group');
-               showToast('成员昵称已变更');
-           }
-            
+                // 只有真正改了昵称并发送通知时才触发时间跳过
+                await processTimePerception(group, currentChatId, 'group');
+                const myName = group.me.realName;
+                const messageContent = `[${myName}修改${member.realName}的群昵称为：${newNickname}]`;
+                const message = {
+                    id: `msg_${Date.now()}`,
+                    role: 'user',
+                    content: messageContent,
+                    parts: [{ type: 'text', text: messageContent }],
+                    timestamp: Date.now()
+                };
+                group.history.push(message);
+                addMessageBubble(message, group.id, 'group');
+                await saveMessageToDB(message, currentChatId, 'group');
+                showToast('成员昵称已变更');
+            }
+
             await saveSingleChat(currentChatId, 'group');
             renderGroupMembersInSettings(group);
             document.querySelectorAll(`.message-wrapper[data-sender-id="${member.id}"] .group-nickname`).forEach(el => {
                 el.textContent = member.groupNickname;
             });
-            
         }
         editGroupMemberModal.classList.remove('visible');
     });
@@ -295,14 +312,14 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
     confirmInviteBtn.addEventListener('click', async () => {
         const group = db.groups.find(g => g.id === currentChatId);
         if (!group) return;
-        
+
         const selectedCharIds = Array.from(inviteMemberSelectionList.querySelectorAll('input:checked')).map(input => input.value);
-        
+
         if (selectedCharIds.length > 0) {
             // 真正邀请了人才触发时间跳过
             await processTimePerception(group, currentChatId, 'group');
         }
-        
+
         selectedCharIds.forEach(charId => {
             const char = db.characters.find(c => c.id === charId);
             if (char) {
@@ -348,7 +365,7 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
         createMemberForGroupModal.classList.remove('visible');
     });
 
-    // 13. 设置：我的头像上传
+    // 13. 设置：我的头像上传（隐藏 input，供保存逻辑读取）
     document.getElementById('setting-group-my-avatar-upload').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -356,7 +373,7 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
                 const compressedUrl = await compressImage(file, { quality: 0.8, maxWidth: 400, maxHeight: 400 });
                 document.getElementById('setting-group-my-avatar-preview').src = compressedUrl;
             } catch (error) {
-                showToast('头像压缩失败')
+                showToast('头像压缩失败');
             }
         }
     });
@@ -372,14 +389,14 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
 
         if (currentGroupAction.type === 'transfer') {
             const form = document.getElementById('send-transfer-form');
-            if(form) form.reset();
+            if (form) form.reset();
             const modal = document.getElementById('send-transfer-modal');
-            if(modal) modal.classList.add('visible');
+            if (modal) modal.classList.add('visible');
         } else if (currentGroupAction.type === 'gift') {
             const form = document.getElementById('send-gift-form');
-            if(form) form.reset();
+            if (form) form.reset();
             const modal = document.getElementById('send-gift-modal');
-            if(modal) modal.classList.add('visible');
+            if (modal) modal.classList.add('visible');
         }
     });
 
@@ -390,6 +407,24 @@ editGroupMemberForm.addEventListener('submit', async (e) => {
         renderCategorizedWorldBookList(document.getElementById('world-book-selection-list'), db.worldBooks, group.worldBookIds || [], 'wb-select-group');
         document.getElementById('world-book-selection-modal').classList.add('visible');
     });
+
+    // 16. 最大记忆轮数：点击菜单唤起输入弹窗（与私聊一致）
+    const groupMaxMemoryItem = document.getElementById('setting-group-max-memory-item');
+    if (groupMaxMemoryItem) {
+        groupMaxMemoryItem.addEventListener('click', async () => {
+            const currentVal = document.getElementById('setting-group-max-memory').value || 10;
+            const result = await AppUI.prompt('请输入最大记忆轮数', currentVal, '最大记忆轮数', '确定', '取消');
+            if (result !== null) {
+                const num = parseInt(result, 10);
+                if (!isNaN(num) && num > 0) {
+                    document.getElementById('setting-group-max-memory').value = num;
+                    document.getElementById('setting-group-max-memory-display').textContent = num;
+                } else {
+                    showToast('请输入有效的正整数');
+                }
+            }
+        });
+    }
 }
 
 // --- 辅助函数 ---
@@ -411,72 +446,71 @@ function renderMemberSelectionList() {
 function loadGroupSettingsToSidebar() {
     const group = db.groups.find(g => g.id === currentChatId);
     if (!group) return;
-    
+
+    // ── 顶部：群头像 + 群名称显示（只读）────────────────
     document.getElementById('setting-group-avatar-preview').src = group.avatar;
+    const nameDisplay = document.getElementById('setting-group-name-display');
+    if (nameDisplay) nameDisplay.textContent = group.name;
+    // 隐藏 input 保留群名，供保存逻辑读取
     document.getElementById('setting-group-name').value = group.name;
-    
-    // --- 填充我的信息 (支持真名和绑定) ---
-    // 如果有绑定ID，尝试从全局档案库获取最新数据 (实现同步读取)
-    let myAvatar = group.me.avatar;
+
+    // ── 我的信息（填充隐藏字段，供保存逻辑使用）─────────
+    let myAvatar   = group.me.avatar;
     let myRealName = group.me.realName || group.me.nickname; // 兼容旧数据
     let myNickname = group.me.nickname;
-    let myPersona = group.me.persona;
+    let myPersona  = group.me.persona;
 
     if (group.me.boundPersonaId) {
         const p = db.userPersonas.find(up => up.id === group.me.boundPersonaId);
         if (p) {
-            myAvatar = p.avatar;
+            myAvatar   = p.avatar;
             myRealName = p.realName;
-            myPersona = p.persona;
+            myPersona  = p.persona;
         }
     }
 
+    // 隐藏字段（saveGroupSettingsFromSidebar 读取）
     document.getElementById('setting-group-my-avatar-preview').src = myAvatar;
-    document.getElementById('setting-group-my-realname').value = myRealName;
-    document.getElementById('setting-group-my-nickname').value = myNickname;
-    document.getElementById('setting-group-my-persona').value = myPersona;
-
-    // 存储绑定ID到 form 标签上，方便保存时读取
+    document.getElementById('setting-group-my-realname').value     = myRealName;
+    document.getElementById('setting-group-my-nickname').value     = myNickname;
+    document.getElementById('setting-group-my-persona').value      = myPersona;
     document.getElementById('group-settings-form').dataset.pendingBindId = group.me.boundPersonaId || '';
 
-    // --- 绑定按钮逻辑 ---
-    const groupBindBtn = document.getElementById('bind-group-user-persona-btn');
-    if (groupBindBtn) {
-        const newGroupBindBtn = groupBindBtn.cloneNode(true);
-        groupBindBtn.parentNode.replaceChild(newGroupBindBtn, groupBindBtn);
+    // ── 记忆轮数 ─────────────────────────────────────────
+    document.getElementById('setting-group-max-memory').value = group.maxMemory || 10;
+    const maxMemDisplay = document.getElementById('setting-group-max-memory-display');
+    if (maxMemDisplay) maxMemDisplay.textContent = group.maxMemory || 10;
+    const groupTimePEl = document.getElementById('setting-group-time-perception');
+if (groupTimePEl) groupTimePEl.checked = group.timePerceptionEnabled || false;
 
-        newGroupBindBtn.addEventListener('click', () => {
-            if (typeof window.openSelectPersonaModal === 'function') {
-                window.openSelectPersonaModal((p) => {
-                    if (p) {
-                        document.getElementById('setting-group-my-avatar-preview').src = p.avatar;
-                        document.getElementById('setting-group-my-realname').value = p.realName;
-                        document.getElementById('setting-group-my-nickname').value = p.nickname;
-                        document.getElementById('setting-group-my-persona').value = p.persona;
-                        // 暂存 ID
-                        document.getElementById('group-settings-form').dataset.pendingBindId = p.id;
-                        showToast('已选择新身份，请记得保存');
-                    }
-                });
-            }
+    // ── 渲染成员列表（含我的头像排第一）─────────────────
+    renderGroupMembersInSettings(group);
+
+const groupApiPresetSel = document.getElementById('setting-group-api-preset');
+if (groupApiPresetSel) {
+    if (typeof window.populateChatApiPresetSelect === 'function') {
+        window.populateChatApiPresetSelect(groupApiPresetSel);
+    } else {
+        const presets = (db.apiPresets || []).filter(p => !p.type || p.type === 'chat');
+        groupApiPresetSel.innerHTML = '<option value="">全局默认</option>';
+        presets.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.name; opt.textContent = p.name;
+            groupApiPresetSel.appendChild(opt);
         });
     }
-
-    document.getElementById('setting-group-max-memory').value = group.maxMemory;
-    renderGroupMembersInSettings(group);
-    
-    // 【核心变更】读取当前气泡预设并映射到选择框
+    groupApiPresetSel.value = group.chatApiPreset || '';
+}
+    // ── 气泡外观 ─────────────────────────────────────────
     if (typeof window.populateChatThemeSelects === 'function') {
         window.populateChatThemeSelects();
     }
     const themeSelect = document.getElementById('setting-group-theme-color');
     if (themeSelect) {
-        // 【修复】如果群聊当前并不是名为 default 或 默认，则去尝试回显它原本的主题名
         if (group.useCustomBubbleCss && group.bubbleThemeName && group.bubbleThemeName !== 'default' && group.bubbleThemeName !== '默认') {
             const optExists = Array.from(themeSelect.options).some(o => o.value === `preset:${group.bubbleThemeName}`);
             themeSelect.value = optExists ? `preset:${group.bubbleThemeName}` : 'default';
         } else {
-            // 不然全部回显为默认
             themeSelect.value = 'default';
         }
     }
@@ -484,6 +518,32 @@ function loadGroupSettingsToSidebar() {
 
 function renderGroupMembersInSettings(group) {
     groupMembersListContainer.innerHTML = '';
+
+    // ── 我自己（第一个，金色描边）────────────────────────
+    const meDiv = document.createElement('div');
+    meDiv.className = 'group-member group-member-me';
+    meDiv.innerHTML = `
+        <img src="${group.me.avatar}" alt="${group.me.nickname}">
+        <span>${group.me.nickname}</span>
+    `;
+    // 点击弹窗修改群昵称
+    meDiv.addEventListener('click', async () => {
+        const currentNickname = document.getElementById('setting-group-my-nickname').value || group.me.nickname;
+        const result = await AppUI.prompt('修改我的群昵称', currentNickname, '群昵称', '确定', '取消');
+        if (result !== null && result.trim()) {
+            const trimmed = result.trim();
+            document.getElementById('setting-group-my-nickname').value = trimmed;
+            meDiv.querySelector('span').textContent = trimmed;
+        }
+    });
+    groupMembersListContainer.appendChild(meDiv);
+
+    // ── 我与其他成员之间的竖线分隔 ───────────────────────
+    const separator = document.createElement('div');
+    separator.className = 'group-member-me-separator';
+    groupMembersListContainer.appendChild(separator);
+
+    // ── 其他成员 ─────────────────────────────────────────
     group.members.forEach(member => {
         const memberDiv = document.createElement('div');
         memberDiv.className = 'group-member';
@@ -491,6 +551,8 @@ function renderGroupMembersInSettings(group) {
         memberDiv.innerHTML = `<img src="${member.avatar}" alt="${member.groupNickname}"><span>${member.groupNickname}</span>`;
         groupMembersListContainer.appendChild(memberDiv);
     });
+
+    // ── 添加按钮 ──────────────────────────────────────────
     const addBtn = document.createElement('div');
     addBtn.className = 'add-member-btn';
     addBtn.innerHTML = `<div class="add-icon">+</div><span>添加</span>`;
@@ -518,7 +580,7 @@ function renderGroupRecipientSelectionList(actionText) {
 async function saveGroupSettingsFromSidebar() {
     const group = db.groups.find(g => g.id === currentChatId);
     if (!group) return;
-    
+
     const oldName = group.name;
     const newName = document.getElementById('setting-group-name').value;
     const oldMeNickname = group.me.nickname;
@@ -534,7 +596,7 @@ async function saveGroupSettingsFromSidebar() {
         sendRenameNotification(group, newName);
     }
     group.avatar = document.getElementById('setting-group-avatar-preview').src;
-    
+
     // --- 保存我的信息 ---
     const pendingBindId = document.getElementById('group-settings-form').dataset.pendingBindId;
     if (oldMeNickname !== newMeNickname) {
@@ -543,35 +605,36 @@ async function saveGroupSettingsFromSidebar() {
             id: `msg_${Date.now()}_self_rename`,
             role: 'user',
             content: messageContent,
-            parts:[{ type: 'text', text: messageContent }],
+            parts: [{ type: 'text', text: messageContent }],
             timestamp: Date.now()
         };
         group.history.push(message);
-        await saveMessageToDB(message, currentChatId, 'group'); 
+        await saveMessageToDB(message, currentChatId, 'group');
     }
 
-    group.me.avatar = document.getElementById('setting-group-my-avatar-preview').src;
-    group.me.realName = document.getElementById('setting-group-my-realname').value;
-    group.me.nickname = document.getElementById('setting-group-my-nickname').value;
-    group.me.persona = document.getElementById('setting-group-my-persona').value;
+    group.me.avatar    = document.getElementById('setting-group-my-avatar-preview').src;
+    group.me.realName  = document.getElementById('setting-group-my-realname').value;
+    group.me.nickname  = document.getElementById('setting-group-my-nickname').value;
+    group.me.persona   = document.getElementById('setting-group-my-persona').value;
 
     if (pendingBindId) {
         group.me.boundPersonaId = pendingBindId;
     }
-    
+
     group.maxMemory = document.getElementById('setting-group-max-memory').value;
+    const groupTimePEl = document.getElementById('setting-group-time-perception');
+if (groupTimePEl) group.timePerceptionEnabled = groupTimePEl.checked;
+
 
     // 【核心变更】保存群聊气泡预设
-        const themeSelect = document.getElementById('setting-group-theme-color');
+    const themeSelect = document.getElementById('setting-group-theme-color');
     if (themeSelect) {
         const themeVal = themeSelect.value;
         if (themeVal === 'default') {
-            // 【修复】让群聊保存 default 时也能够去读取自制的外观！
-            const presets = (typeof _getBubblePresets === 'function') ? _getBubblePresets() :[];
+            const presets = (typeof _getBubblePresets === 'function') ? _getBubblePresets() : [];
             const defaultPreset = presets.find(p => p.name === '默认');
-            
+
             group.theme = 'white_blue';
-            // 如果外观里的“默认”确实被修改配有CSS了，我们就让它生效
             if (defaultPreset && defaultPreset.css) {
                 group.useCustomBubbleCss = true;
                 group.customBubbleCss = defaultPreset.css;
@@ -580,11 +643,10 @@ async function saveGroupSettingsFromSidebar() {
                 group.customBubbleCss = '';
             }
             group.bubbleThemeName = 'default';
-            
+
         } else if (themeVal && themeVal.startsWith('preset:')) {
             const presetName = themeVal.replace('preset:', '');
-            // 确保读取预设的函数不会报错
-            const presets = (typeof _getBubblePresets === 'function') ? _getBubblePresets() :[];
+            const presets = (typeof _getBubblePresets === 'function') ? _getBubblePresets() : [];
             const preset = presets.find(p => p.name === presetName);
             if (preset) {
                 group.theme = 'white_blue';
@@ -594,12 +656,14 @@ async function saveGroupSettingsFromSidebar() {
             }
         }
     }
-    
-    // 确保调用 updateCustomBubbleStyle 时函数存在，避免保存时报错
+
     if (typeof updateCustomBubbleStyle === 'function') {
         updateCustomBubbleStyle(currentChatId, group.customBubbleCss, group.useCustomBubbleCss);
     }
-    
+const groupApiPresetSel = document.getElementById('setting-group-api-preset');
+if (groupApiPresetSel) {
+    group.chatApiPreset = groupApiPresetSel.value;
+}
     await saveSingleChat(currentChatId, 'group');
     showToast('群聊设置已保存！');
     chatRoomTitle.textContent = group.name;
@@ -645,13 +709,12 @@ function openGroupMemberEditModal(memberId) {
         realNameInput.disabled = true;
         personaInput.disabled = true;
         personaInput.placeholder = "该内容已与角色库同步，无法在群聊中修改。";
-        // 禁用头像点击更换
-        if(avatarPreview) avatarPreview.style.pointerEvents = 'none';
+        if (avatarPreview) avatarPreview.style.pointerEvents = 'none';
     } else {
         realNameInput.disabled = false;
         personaInput.disabled = false;
         personaInput.placeholder = "详细描述角色的性格、背景等。";
-        if(avatarPreview) avatarPreview.style.pointerEvents = 'auto';
+        if (avatarPreview) avatarPreview.style.pointerEvents = 'auto';
     }
 
     editGroupMemberModal.classList.add('visible');

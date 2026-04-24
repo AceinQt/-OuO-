@@ -1,5 +1,5 @@
-function generateGroupSystemPrompt(group) {
-    const worldBooksBefore = (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).map(wb => wb.content).join('\n');
+function generateGroupSystemPrompt(group, retrievedContext = '') {
+     const worldBooksBefore = (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).map(wb => wb.content).join('\n');
     const worldBooksAfter = (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).map(wb => wb.content).join('\n');
 
     let prompt = `你正在一个名为“404”的线上聊天软件中，在一个名为“${group.name}”的群聊里进行角色扮演。请严格遵守以下所有规则：\n\n`;
@@ -98,6 +98,10 @@ function generateGroupSystemPrompt(group) {
         prompt += `\n重要注意事项：${worldBooksAfter}\n\n`;
     } else {
         prompt += `\n`;
+    }
+    
+    if (retrievedContext) {
+        prompt += `【动态记忆检索】\n以下是与当前对话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`;
     }
 
 

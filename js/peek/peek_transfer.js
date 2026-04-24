@@ -48,7 +48,9 @@ function renderPeekTransferStation(entries) {
 
     screen.innerHTML = `
         <header class="app-header">
-            <button class="back-btn" data-target="peek-screen"></button>
+            <button class="back-btn" data-target="peek-screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
+    </svg></button>
             <div class="title-container">
                 <h1 class="title">文件传输助手</h1>
             </div>
@@ -96,7 +98,7 @@ async function generateAndRenderPeekTransfer(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model } = db.apiSettings;
+    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -138,16 +140,7 @@ https://example.com/interesting-article
 #SECRET_CHAT_NOON_85%#[12:15|${senderName}的消息:我前阵子看到一篇关于心理学的文章，挺有意思的][12:16|${senderName}的消息:https://example.com/interesting-article]
 `;
 
-        const requestBody = { model: model, messages: [{ role: 'user', content: systemPrompt }], temperature: 0.85 };
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
-        const result = await response.json();
-        const contentStr = result.choices[0].message.content.trim();
+        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const transferRawText = parts[0] || '';
