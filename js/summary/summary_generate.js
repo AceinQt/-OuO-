@@ -607,8 +607,13 @@ const rawContent = await _fetchCompletion(url, key, {
 
         // 同步到 chat.memoryChunks，覆盖同 summaryId 旧块（重新生成时）
         if (!chat.memoryChunks) chat.memoryChunks = [];
-        chat.memoryChunks = chat.memoryChunks.filter(c => c.summaryId !== preGeneratedId);
-        chat.memoryChunks.push(...parsedBlocks);
+        chat.memoryChunks = chat.memoryChunks.filter(c => {
+    if (c.summaryId === preGeneratedId) return false; // 同ID（理论上不存在，保留防御）
+    // 清理与本次生成范围完全重叠的旧块（范围内的旧失败块）
+    if (c.startMsgIndex >= (startIndex + 1) && c.endMsgIndex <= endIndex) return false;
+    return true;
+});
+chat.memoryChunks.push(...parsedBlocks);
         await saveChunksToDB(parsedBlocks);
 
         blockIds = parsedBlocks.map(b => b.blockId);

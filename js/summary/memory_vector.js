@@ -333,7 +333,7 @@ async function startEmbedBatch() {
     const chat       = getCurrentChatObject();
     if (!chat?.memoryChunks) return false;
 
-    const pending = chat.memoryChunks.filter(c => !c.embedding && !c.excludeFromEmbed);
+    const pending = chat.memoryChunks.filter(c => !c.embedding && !c.excludeFromEmbed && !!c.summary);
     if (pending.length === 0) {
         if (progressEl) progressEl.textContent = '已全部完成';
         return true;
