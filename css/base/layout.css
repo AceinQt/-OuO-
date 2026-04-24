@@ -83,6 +83,12 @@
     padding-bottom: max(15px , var(--safe-bottom));
 }
 
+/* === API 设置页底部保存区避让 === */
+.api-save-area {
+    /* 基础留白 12px + 结合安全区，防止全面屏遮挡按钮 */
+    padding-bottom: max(12px, var(--safe-bottom)) ;
+}
+
 /* 聊天室底部的输入框外壳 (本身没有额外padding，只需要加上安全区) */
 #chat-room-screen .chat-input-wrapper {
     padding-bottom: var(--safe-bottom);

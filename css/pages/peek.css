@@ -292,46 +292,241 @@
 }
 
 /* =========================================
-   6. Memos & Memo Detail
+   6. Memos & Memo Detail (备忘录 卡片风格 & 胶带纸张)
    ========================================= */
-#peek-memos-screen { background-color: #f9f9f9; }
-#peek-memos-screen .content,
-#peek-memo-detail-screen .content { padding: 0; }
-#peek-memos-list { list-style: none; padding: 0; margin: 0; }
+#peek-memos-screen { 
+    background-color: var(--gray-color); /* 温柔的浅灰背景，与草稿箱统一 */
+}
 
-.memo-item {
-    padding: 15px 20px;
-    border-bottom: 1px solid #eee;
+#peek-memos-screen .app-header{ 
+    background-color: var(--white-color); 
+}
+
+#peek-memos-screen .content {
+    padding: 16px;
+    background-color: transparent;
+}
+
+.memos-card-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.memo-card-item {
+    display: flex;
+    align-items: center; /* 移除 align-items:center 可以让图标靠上，但为了对称可以保留或使用 flex-start */
+    background-color: #FFFFFF;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 16px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, box-shadow 0.2s;
+    position: relative;
 }
 
-.memo-item-title {
-    font-weight: 600; font-size: 16px; color: #333;
-    margin: 0 0 5px 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.memo-card-item:active {
+    background-color: #F2F2F0;
 }
 
-.memo-item-preview {
-    font-size: 14px; color: #777;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* 图标包裹 */
+.memo-card-icon-wrapper {
+    width: 52px;
+    height: 52px;
+    position: relative;
+    margin-right: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-#peek-memo-detail-screen { background-color: #fff; }
-#peek-memo-detail-screen .content { display: flex; flex-direction: column; }
-
-#memo-title-input {
-    border: none; padding: 20px;
-    font-size: 22px; font-weight: bold;
-    outline: none; border-bottom: 1px solid #eee;
+.memo-card-paper {
+    width: 48px;
+    height: 48px;
+    background-color: #fcfcfc;
+    border: 1.5px dashed #E0E0E0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-#memo-content-textarea {
-    flex-grow: 1; border: none; padding: 20px;
-    font-size: 16px; line-height: 1.6;
-    outline: none; resize: none;
-    font-family: var(--font-family);
+.memo-card-paper svg {
+    width: 22px;
+    height: 22px;
+    color: #888; 
 }
+
+.memo-card-content {
+    flex-grow: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.memo-card-title {
+    font-size: 17px;
+    font-weight: 500;
+    color: #1A1A1A;
+    margin-bottom: 6px;
+    line-height: 1.4;
+    /* 取消 nowrap 和隐藏，支持标题多行换行 */
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.memo-card-subtitle {
+    font-size: 14px;
+    color: #888888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 底部加载更多提示 */
+.memo-loading-tip {
+    text-align: center;
+    font-size: 13px;
+    color: #aaa;
+    padding: 15px 0;
+    margin-top: 5px;
+}
+
+/* 占位符样式 */
+.memos-placeholder {
+    display: none;
+    text-align: center;
+    color: #888;
+    margin-top: 60px;
+    line-height: 1.8;
+}
+.memos-placeholder.visible { display: block; }
+.memos-placeholder-sub { font-size: 13px; opacity: 0.6; }
+
+
+/* --- 详情页: 贴着胶带的纸张效果 --- */
+#peek-memo-detail-screen {
+    background-color: var(--gray-color); /* 背景为模拟白板/墙壁 */
+}
+
+/* 详情页专用 Header 透明覆盖并绝对定位 */
+#peek-memo-detail-screen .transparent-header {
+    position: absolute !important; /* 脱离文档流，悬浮在内容上方 */
+    top: 0;
+    left: 0;
+    right: 0;
+    background-color: transparent !important;
+    border-bottom: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important; /* 必须去除毛玻璃，否则下方内容会被模糊 */
+    -webkit-backdrop-filter: none !important;
+    z-index: 20;
+}
+
+#peek-memo-detail-screen .content {
+    /* 移除顶部 padding，改为由纸条的 margin-top 撑开，让内容可以一直滑到屏幕最顶端 */
+    padding: 0 20px max(40px, var(--safe-bottom)) 20px;
+    
+    /* 关键修复：取消 flex 布局改为 block。
+       原先的 flex + align-items:center 在遇到超长内容时会导致纸张顶部被截断，文字溢出。*/
+    display: block; 
+    overflow-y: auto;
+}
+
+.memo-paper-container {
+    position: relative;
+    width: 100%;
+    max-width: 600px;
+    
+    /* 关键修改：
+       1. margin-top: 配合安全区为头部按钮预留高度，初始状态位于按钮下方。 
+       2. auto: 水平居中纸条。
+       上滑时，margin-top 随元素滚动，纸条便能无缝滑入透明 app-header 下方。
+    */
+    margin: calc(70px + var(--safe-top)) auto 20px auto; 
+    
+    background-color: var(--paper-color); /* 便利贴淡淡的米黄色 */
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+    border-radius: 3px; 
+    padding: 40px 25px 30px 25px;
+    height: auto;
+    min-height: 300px;
+}
+
+/* 顶部透明斜向胶带 (原样保持) */
+.memo-tape {
+    position: absolute;
+    top: -15px;
+    left: 50%;
+    transform: translateX(-50%) rotate(-2deg);
+    width: 120px;
+    height: 35px;
+    background-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    border-left: 2px dashed rgba(0,0,0,0.05);
+    border-right: 2px dashed rgba(0,0,0,0.05);
+    z-index: 2;
+}
+.memo-tape::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.2) 100%);
+}
+
+/* 纸条内的大标题 (原样保持) */
+.memo-paper-title {
+    font-size: 24px;
+    font-weight: bold;
+    color: #1A1A1A;
+    margin-bottom: 20px;
+    line-height: 1.4;
+    text-align: center;
+    border-bottom: 1px dashed rgba(0,0,0,0.1);
+    padding-bottom: 15px;
+    word-break: break-word;
+    overflow-wrap: break-word;
+    font-family: 'Georgia', 'Times New Roman', serif;
+}
+
+/* 纸条内的正文内容 (原样保持) */
+.memo-paper-content {
+    font-size: 16px;
+    line-height: 1.8;
+    color: #333;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-all;
+}
+
+/* 内部基础 Markdown 支持 (原样保持) */
+.memo-paper-content h1, 
+.memo-paper-content h2, 
+.memo-paper-content h3 {
+    margin-top: 15px;
+    margin-bottom: 10px;
+    font-weight: bold;
+    color: #222;
+}
+.memo-paper-content p {
+    margin-bottom: 12px;
+}
+.memo-paper-content ul,
+.memo-paper-content ol {
+    padding-left: 25px;
+    margin-bottom: 12px;
+}
+.memo-paper-content strong {
+    font-weight: bold;
+}
+
 
 /* =========================================
    7. Cart Screen
@@ -482,6 +677,8 @@
    10. Drafts Screen
    ========================================= */
 #peek-drafts-screen { background-color: #fff; flex-direction: column; }
+
+#peek-drafts-screen .app-header{ background-color: #fff}
 
 #peek-drafts-screen .content {
     padding: 30px 25px;
@@ -640,16 +837,20 @@
     position: relative;
 }
 
-/* Styles for list items (messages, memos, browser, cart) */
+/* =========================================
+   长按删除多选样式：同步支持新类名
+   ========================================= */
+
+/* 将之前的 .memo-item 统一替换为 .memo-card-item */
 .chat-item.selected, 
-.memo-item.selected, 
+.memo-card-item.selected, 
 .browser-history-item.selected, 
 .cart-item.selected {
     background-color: #EBF5FF !important;
 }
 
 .chat-item.selected::after, 
-.memo-item.selected::after, 
+.memo-card-item.selected::after, 
 .browser-history-item.selected::after, 
 .cart-item.selected::after {
     content: '✓';
@@ -886,4 +1087,148 @@ body.peek-editing-mode .transfer-station-input-area {
     color: #212529;
     width: 24px;
     height: 24px;
+}
+
+/* =========================================
+   Drafts Screen (Claude 卡片风格)
+   ========================================= */
+#peek-drafts-screen { 
+    background-color: #F8F8F6; /* 温柔的浅灰背景 */
+}
+
+#peek-drafts-screen .content {
+    padding: 16px;
+    background-color: transparent;
+}
+
+.drafts-card-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.draft-card-item {
+    display: flex;
+    align-items: center;
+    background-color: #FFFFFF;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 16px;
+    cursor: pointer;
+    transition: background-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.draft-card-item:active {
+    background-color: #F2F2F0;
+}
+
+/* 倾斜的纸张小图标外框 */
+.draft-card-icon-wrapper {
+    width: 52px;
+    height: 52px;
+    position: relative;
+    margin-right: 16px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 模拟倾斜的白纸 */
+.draft-card-paper {
+    width: 40px;
+    height: 56px;
+    background-color: #FDFDFB;
+    border: 0.5px solid #E0E0E0;
+    border-radius: 6px;
+    transform: rotate(-6deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 回正内部图标 */
+.draft-card-paper svg {
+    width: 18px;
+    height: 18px;
+    color: #ccc;
+}
+
+.draft-card-content {
+    flex-grow: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.draft-card-title {
+    font-size: 17px;
+    font-weight: 500;
+    color: #1A1A1A;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.draft-card-subtitle {
+    font-size: 14px;
+    color: #888888;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 占位符样式 */
+.drafts-placeholder {
+    display: none;
+    text-align: center;
+    color: #888;
+    margin-top: 60px;
+    line-height: 1.8;
+}
+.drafts-placeholder.visible { display: block; }
+.drafts-placeholder-sub { font-size: 13px; opacity: 0.6; }
+
+/* 隐藏占位按钮 */
+.hidden-btn { visibility: hidden; pointer-events: none; }
+
+#peek-draft-detail-screen .content {
+    padding: 30px 25px;
+    font-family: 'Georgia', 'Times New Roman', serif;
+    line-height: 1.8; color: #333;
+    flex-grow: 1; overflow-y: auto;
+}
+
+/* =========================================
+   Drafts 长按删除多选样式
+   ========================================= */
+.draft-card-item.selected {
+    background-color: #EBF5FF !important;
+    border-color: var(--primary-color, #007bff);
+}
+
+.draft-card-item.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    background-color: var(--primary-color, #007bff);
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    z-index: 10;
 }

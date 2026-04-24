@@ -126,24 +126,51 @@
     margin-bottom: 20px;
 }
 
+/* --- 日期选择器样式优化 (修复弹窗超出与统一样式) --- */
 .date-input-group {
     display: flex;
     align-items: center;
-    gap: 5px;
+    gap: 4px; /* 减小元素间隙，防止拥挤换行 */
 }
 
 .date-input-field {
-    width: 60px;
-    padding: 8px 5px;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    text-align: center;
+}
+
+#time-range-full .date-input-field {
+    /* 1. 对齐全局表单 input 的样式 (components.css) */
+    border: 1px solid #DAF0FC;
+    border-radius: 10px;
+    background-color: #fff;
+    transition: border-color 0.3s;
+    font-family: inherit;
+    
     text-align: center;
     font-size: 14px;
+    padding: 8px 0; /* 减小左右 padding，避免挤占空间 */
+    width: 38px;    /* 月、日、时的精简宽度 */
+    
+    /* 2. 隐藏 Firefox 的默认数字箭头 */
+    -moz-appearance: textfield; 
+}
+
+/* 隐藏 WebKit (Chrome/Safari) 的默认数字箭头，大幅节省空间且更美观 */
+#time-range-full .date-input-field::-webkit-outer-spin-button,
+#time-range-full .date-input-field::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+/* 统一聚焦状态样式 */
+.date-input-field:focus {
+    outline: none;
+    border-color: var(--primary-color);
 }
 
 .date-label {
-    font-size: 14px;
-    color: #333;
+    font-size: 13px; /* 稍微缩小标签字号 */
+    color: #666;
+    white-space: nowrap; /* 严禁文字换行 */
 }
 
 .date-separator {
@@ -591,4 +618,532 @@
     padding: 10px;
     border: 1px dashed var(--primary-color);
     color: #333;
+}
+
+/* 向量化状态徽标 */
+.chunk-vector-badge {
+    margin-left: 6px;
+    font-size: 10px;
+    font-weight: bold;
+    cursor: default;
+    user-select: none;
+}
+.chunk-vector-badge.vectorized  { color: var(--accent-color, #4caf50); }
+.chunk-vector-badge.unvectorized { color: var(--text-muted, #aaa); }
+
+/* 摘要可编辑区 */
+.chunk-summary-label {
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+.chunk-summary-editable {
+    display: inline-block;
+    min-width: 60px;
+    outline: none;
+    border-bottom: 1px dashed transparent;
+    transition: border-color 0.15s;
+    word-break: break-all;
+    cursor: text;
+}
+.chunk-summary-editable:hover,
+.chunk-summary-editable:focus {
+    border-bottom-color: var(--accent-color, #999);
+    background: var(--input-bg, rgba(0,0,0,0.03));
+    border-radius: 2px;
+}
+
+/* ============================================================
+   向量记忆面板卡片化样式 (Vector Memory Panel)
+============================================================ */
+
+/* 隐藏原本的粗糙 padding，让外层和列表页保持一致的底色 */
+#vector-memory-panel {
+    padding: 0;    
+}
+
+/* 覆盖 journal-card 的基础属性，确保在设置面板里的表现 */
+.vector-card {
+    cursor: default;
+    padding: 20px;
+    margin-bottom: 15px; /* 增加底部间距，解决卡片贴合问题 */
+}
+
+/* 让最后一张卡片不留多余底边距 */
+.vector-card:last-child {
+    margin-bottom: 0;
+}
+
+/* 标题栏不需要点击态 */
+.vector-card .journal-card-header {
+    cursor: default;
+    padding-bottom: 12px;
+}
+
+.vector-card .journal-card-title {
+    margin-bottom: 0;
+    font-size: 17px;
+}
+
+/* --- 卡片 1: 启用开关 (iOS 风格 Slider) --- */
+.vector-header-with-switch {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.vector-text-muted {
+    font-size: 12px;
+    color: #999;
+    margin-top: 6px;
+    line-height: 1.5;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.vector-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+    margin-left: 15px;
+}
+
+.vector-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.vector-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-color: #ddd;
+    transition: .3s;
+    border-radius: 26px;
+}
+
+.vector-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: .3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.vector-switch input:checked + .vector-slider {
+    background-color: var(--primary-color);
+}
+
+.vector-switch input:checked + .vector-slider:before {
+    transform: translateX(22px);
+}
+
+/* --- 卡片 2: 统计数据展示盒 --- */
+.vector-stats-box {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 12px 15px;
+    margin-bottom: 15px;
+    border: 1px solid #eee;
+}
+
+.vector-stat-item {
+    font-size: 14px;
+    color: #444;
+    font-weight: 500;
+    margin-bottom: 6px;
+}
+
+.vector-stat-item:last-child {
+    margin-bottom: 0;
+}
+
+.vector-progress-text {
+    font-size: 12px;
+    color: #666;
+    margin-top: 5px;
+}
+
+/* --- 卡片 3 & 4: 列表行设置 --- */
+.vector-settings-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.vector-setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 0;
+}
+
+.vector-setting-row:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.setting-label {
+    font-size: 14px;
+    color: #555;
+    font-weight: 500;
+}
+
+.setting-input {
+    width: 70px;
+    padding: 6px 8px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 14px;
+    color: #333;
+    background-color: #fff;
+    transition: border-color 0.2s;
+}
+
+.setting-input:focus {
+    outline: none;
+    border-color: var(--primary-color);
+}
+
+/* --- 按钮与动作区组 --- */
+.vector-action-group {
+    display: flex;
+    flex-direction: row;
+    gap: 10px;
+    align-items: center;
+    padding: 0;
+}
+
+.vector-action-group.right-align {
+    justify-content: flex-end;
+    padding-top: 15px;
+}
+
+/* 修复按钮在面板中的样式，确保美观 */
+.vector-card button.btn {    
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+    padding: 6px auto;
+}
+
+.vector-card button.btn-primary:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.vector-card button.btn-secondary {
+    margin-bottom: 0;    
+}
+
+.vector-small-btn {
+    padding: 6px 12px;
+}
+
+#clear-orphan-chunks-btn,
+#reset-access-btn {
+    width: 60px;
+}
+
+.vector-hint-text {
+    font-size: 12px;
+    color: #27ae60;
+    margin-right: auto; /* 靠左对齐 */
+}
+
+.vector-hint-text.danger {
+    color: var(--danger-color, #e74c3c);
+    margin-top: 5px;
+}
+
+#memory-settings-btn svg{
+    fill:none;
+}
+
+/* ============================================================
+   [v1.6] 短期总结分块详情页卡片样式优化（全新圆角卡片化）
+============================================================ */
+
+/* 局部隐藏类，用于控制编辑状态的显隐切换 */
+.chunk-hide {
+    display: none !important;
+}
+
+.summary-blocks-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px; /* 段落卡片间距 */
+}
+
+/* --- 外层卡片 --- */
+.chunk-block {
+    background-color: #ffffff;
+    border-radius: 16px;
+    padding: 18px 20px;
+    border: 1px solid #f2f2f2;
+    transition: box-shadow 0.2s ease;
+}
+
+/* 卡片头部：左标题与标识，右按钮 */
+.chunk-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.chunk-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+    font-family: 'Georgia', 'Times New Roman', serif;
+}
+
+/* 向量化标志在标题左侧 */
+.chunk-vector-badge {
+    margin-left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.chunk-vector-badge.vectorized  { color: #6fbcf0; } /* 类似图片的浅蓝色圆块 */
+.chunk-vector-badge.unvectorized { color: #d0dce8; }
+.chunk-vector-badge.excluded { color: #f08c8c; }
+
+/* 头部操作按钮组居右 */
+.chunk-header-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.chunk-header-actions .icon-btn {
+    background: #f4f8fb;
+    border: none;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6182a6;
+    transition: background 0.2s, color 0.2s;
+}
+
+.chunk-header-actions .icon-btn:hover {
+    background: #e2eaf2;
+    color: #3b5976;
+}
+
+/* Meta 信息栏 (日期与消息范围) */
+.chunk-meta-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: #999;
+    margin-top: 10px;
+}
+
+.chunk-date-input {
+    width: 100px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid #c2d3e4;
+    font-size: 12px;
+}
+
+.chunk-range-start-input,
+.chunk-range-end-input {
+    width: 60px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid #c2d3e4;
+    font-size: 12px;
+    text-align: center;
+}
+
+/* 段落正文内容 */
+.chunk-block-content {
+    line-height: 1.7;
+    font-size: 15px;
+    white-space: pre-wrap;
+    color: #333;
+    min-height: 1em;
+    margin-top: 8px;
+}
+
+/* 正文编辑状态 */
+.chunk-block-content.is-editing {
+    outline: none;
+    border: 1px dashed #8daac7;
+    background: #fafcff;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+/* --- 内部折叠区：浅蓝色小圆角卡片 --- */
+.chunk-meta-wrapper {
+    margin-top: 16px;
+    background-color: #f4f8fb; /* 类似图片底部的浅蓝色背景 */
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.chunk-meta-toggle {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #6182a6;
+    cursor: pointer;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background-color 0.2s;
+    user-select: none;
+}
+
+.chunk-meta-toggle:hover {
+    background-color: #ecf3f9;
+}
+
+.chunk-meta-toggle svg {
+    transition: transform 0.3s ease;
+}
+
+/* 展开时图标旋转 */
+.chunk-meta-wrapper.expanded .chunk-meta-toggle svg {
+    transform: rotate(180deg);
+}
+
+.chunk-block-meta {
+    padding: 0 16px 16px 16px;
+    font-size: 13px;
+    color: #555;
+    border-top: 1px solid rgba(194, 211, 228, 0.3);
+    margin-top: -4px;
+    padding-top: 12px;
+}
+
+/* 展示态文本排版 */
+.chunk-meta-display .meta-row {
+    margin-bottom: 6px;
+    display: flex;
+}
+.chunk-meta-display .meta-row span:first-child {
+    color: #7a95b3;
+    width: 75px;
+    flex-shrink: 0;
+}
+.chunk-meta-display .summary-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed #d0dee9;
+    flex-direction: column;
+    gap: 6px;
+}
+.chunk-meta-display .summary-row span:first-child {
+    color: #7a95b3;
+    width: auto;
+}
+
+/* 编辑态表单排版 */
+.meta-edit-row {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.meta-edit-row span:first-child {
+    width: 75px;
+    flex-shrink: 0;
+    color: #7a95b3;
+}
+.meta-edit-row input, 
+.meta-edit-row select {
+    flex-grow: 1;
+    padding: 6px 10px;
+    border: 1px solid #c2d3e4;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 13px;
+    color: #333;
+    min-width:0;
+}
+.meta-edit-row input:focus, 
+.meta-edit-row select:focus {
+    outline: none;
+    border-color: #8daac7;
+}
+
+.edit-summary-row span:first-child {
+    color: #7a95b3;
+    display: block;
+    margin-bottom: 6px;
+}
+.edit-summary-row textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #c2d3e4;
+    border-radius: 8px;
+    resize: vertical;
+    min-height: 80px;
+    font-family: inherit;
+    font-size: 13px;
+    color: #333;
+    background: #fff;
+}
+.edit-summary-row textarea:focus {
+    outline: none;
+    border-color: #8daac7;
+}
+
+.chunk-retry-btn {
+    margin-top: 12px;
+}
+
+/* ============================================================
+   从 HTML 提取出来的内联样式 (总结详情页)
+============================================================ */
+#summary-detail-screen .content {
+    padding: 20px;
+    font-family: 'Georgia', 'Times New Roman', serif;
+}
+
+#summary-detail-title {
+    margin-top: 0;
+    font-size: 22px;
+}
+
+#summary-range-display {
+    margin-left: auto;
+}
+
+#summary-detail-content {
+    padding: 0;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    font-size: 17px;
+}
+
+/* 修复：覆盖 #summary-detail-content 的 pre-wrap 导致的排版巨大间隙 */
+#summary-detail-content.summary-blocks-container {
+    white-space: normal !important;
+    padding: 0; /* 顺便去掉旧的内边距，让卡片对齐更好看 */
+}
+
+/* 确保内部非正文区域绝对不受空白符影响 */
+.chunk-block {
+    white-space: normal;
 }

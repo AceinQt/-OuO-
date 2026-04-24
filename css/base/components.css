@@ -51,9 +51,10 @@
 
 .app-header .back-btn,
 .app-header .action-btn {
+    -webkit-appearance: none; /* 核心修复：去除 iOS 默认按钮样式 */
+    appearance: none;
     background: none;
-    border: none;
-    font-size: 45px;
+    border: none;    
     color: var(--btn-color);
     cursor: pointer;
     width: 40px;
@@ -92,21 +93,14 @@
     fill: var(--btn-color);
 }
 
+.app-header .back-btn svg {
+    width: 36px;
+    height: 36px;    
+}
+
 .app-header .action-btn img {
     width: 24px;
     height: 24px;
-}
-
-.back-btn::before {
-  content: '';
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border-left: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  border-radius: 1px;
-  transform: rotate(45deg);
-  margin-left: 10px;
 }
 
 .app-header .title-container {

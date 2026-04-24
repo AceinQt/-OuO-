@@ -1,0 +1,92 @@
+/* ==========================================
+   group_info.css
+   ========================================== */
+
+#group-info-screen .app-header {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  z-index: 20;
+  background: transparent;
+  border-bottom: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+#group-info-screen .action-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* 群头像：方形圆角覆盖 */
+#group-info-screen .char-edit-avatar {
+  border-radius: 18px;
+}
+
+/* 群主卡片 */
+.group-info-owner-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 4px;
+}
+
+.group-info-member-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--white-color);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  flex-shrink: 0;
+}
+
+.group-info-member-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.group-info-member-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #222;
+}
+
+.group-info-member-nick {
+  font-size: 12px;
+  color: #999;
+}
+
+/* 成员网格 */
+.group-info-members-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 16px;
+  padding: 8px 4px 4px;
+}
+
+.group-info-member-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.group-info-member-item .group-info-member-avatar {
+  width: 52px;
+  height: 52px;
+}
+
+.group-info-member-item .group-info-member-nick {
+  font-size: 11px;
+  color: #555;
+  text-align: center;
+  max-width: 64px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

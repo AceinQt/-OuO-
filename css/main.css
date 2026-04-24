@@ -1,7 +1,5 @@
 
 
-
-
 /* base */
 @import './base/fonts.css';
 @import './base/reset.css';
@@ -9,11 +7,10 @@
 @import './base/animation.css';
 @import './base/components.css';
 
-
-
 /* pages */
 @import './pages/home.css';
 
+/* chat */
 @import './pages/chat/chat_list.css';
 @import './pages/chat/chat_room.css';
 @import './pages/chat/settings_sidebar.css';
@@ -21,19 +18,29 @@
 @import './pages/chat/chat_modal.css';
 @import './pages/chat/char_info.css';
 @import './pages/chat/user_info.css';
+@import './pages/chat/group_info.css';
 @import './pages/chat/call-overlay.css';
 
-
-
+/* summary */
 @import './pages/summary.css';
+
+/* peek */
 @import './pages/peek.css';
 
+/* forum */
 @import './pages/forum.css';
-@import './pages/rpg_game.css';
-@import './pages/pomodoro.css';
 
+/* rpg */
+@import './pages/rpg_game.css';
+
+/* study */
+@import './pages/study/pomodoro.css';
+@import './pages/study/study.css';
+
+/* worldbook */
 @import './pages/world_book.css';
 
+/* settings */
 @import './pages/settings/settings_screen.css';
 @import './pages/settings/wallpaper.css';
 @import './pages/settings/storage.css';
@@ -42,6 +49,7 @@
 @import './pages/settings/api.css';
 @import './pages/settings/console.css';
 
+/* base */
 @import './base/layout.css';
 @import './base/app_splash.css';
 

@@ -1213,7 +1213,7 @@ fill: var(--primary-color);
 .history-limit-input {
     width: 80px;
     padding: 5px;
-    border: 1px solid var(--primary-color);
+    border: 1px solid #DAF0FC;
     border-radius: 6px;
     margin-left: 10px;
     text-align: center;
@@ -1893,5 +1893,12 @@ background-color: var(--top-pinned-bg);
     font-size: 13px;
     /* 关键：确保它不被压缩 */
     flex-shrink: 0; 
+}
+
+.setting-select {    
+    padding: 6px;
+    border: 1px solid #DAF0FC;
+    border-radius: 8px;
+    background-color: #fff;
 }
 

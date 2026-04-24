@@ -1,101 +1,232 @@
-#api-settings-screen .form-group-select{
- display: flex; 
- justify-content: space-between; 
- align-items: center; 
- padding: 10px; 
- border: 1px solid #DAF0FC; 
- border-radius: 10px; 
- background-color: #F5FBFF;
- margin-bottom:20px;
+/* ============================================================
+   api.css  —  API 设置页样式（v1.6 版本 - 修复重构）
+   ============================================================ */
+
+/* ── 内容滚动区 ─────────────────────────────────────────────── */
+.api-section-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 25px 0 0;
+    display: flex;
+    flex-direction: column;
 }
 
-#api-settings-screen .form-group-select label {
-    display: block;
+/* 底部占位，防止内容被保存按钮遮住 */
+.api-scroll-spacer {
+    height: 20px;
+    flex-shrink: 0;
+}
+
+/* ── 底部保存区 ──────────────────────────────────────────────── */
+.api-save-area {
+    flex-shrink: 0;
+    padding: 10px 0 12px;
+    border-top: 1px solid var(--gray-color);
+    background: var(--white-color);
+}
+
+/* ── 表单开关行 (去除外框底色，保持统一间距) ────────────────────── */
+.form-group-switch {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.form-group-switch label:first-child {
     margin-bottom: 0;
-    color: var(--secondary-color);
-    font-weight: 600;
 }
 
-#api-settings-screen .form-group-select input {
-     height: 20px;
-     width: 20px;
-    padding: 12px;
+/* ── 预设管理按钮组 (5个按钮两端对齐) ────────────────────────── */
+.api-preset-btns-row {
+    display: flex;
+    justify-content: space-between; /* 两端对齐 */
+    align-items: center;
+    width: 100%;                    /* 撑满父容器 */
+    margin-top: 5px;
+}
+
+/* ── Range 滑块样式覆盖 (修复溢出屏幕导致左右滑动的问题) ───── */
+.form-group input[type="range"] {
+    width: 100%;                  /* 强制限制宽度为 100% */
+    max-width: 100%;              /* 防止被内容撑大 */
+    box-sizing: border-box;       /* 防止 padding 撑破容器 */
+    margin: 10px 0 5px 0;         /* 补充一点上下间距，更美观 */
+    padding: 0 !important;        /* 覆盖全局 input 的 padding */
+    height: 6px;
+    border: none !important;      /* 覆盖全局 input 的 border */
+    border-radius: 4px;
+    background-color: #DAF0FC;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.form-group input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+/* ── 图标小按钮 ──────────────────────────────────────────────── */
+.api-icon-btn {
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
     border: 1px solid #DAF0FC;
     border-radius: 10px;
-    background-color: #fff;
-    transition: border-color 0.3s;
-    font-family: var(--font-family);
-    font-size: 14px;
+    background: #F5FBFF;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--secondary-color);
+    padding: 0;
+    transition: all 0.2s;
 }
 
-.api-presets-embedded {
-      padding:12px 12px 0;
-      border-radius:10px;
-      border:1px solid #DAF0FC;
-      background:var(--panel-bg, #fff);
-      box-shadow:var(--panel-shadow, none);
+.api-icon-btn svg {
+    width: 18px;
+    height: 18px;
+    pointer-events: none;
+    flex-shrink: 0;
 }
 
-.api-presets-content {
-     display:flex;
-     align-items:center;
-     gap:8px;
-     margin-bottom:12px;
+.api-icon-btn:active {
+    background: #DAF0FC;
 }
 
-.api-presets-content label {
-      white-space: nowrap;
-      color:#666;
-      font-size: 14px;
+/* 保存按钮 - 蓝色主题 */
+.api-icon-btn.save-btn {
+    color: var(--primary-color, #0099FF);
+    border-color: var(--primary-color, #0099FF);
+    background: rgba(0, 153, 255, 0.05);
 }
 
-.api-presets-content select {
-       flex:3;
-       padding:8px 10px;
-       border-radius:6px;
-       border:1px solid #DAF0FC;
+.api-icon-btn.save-btn:active {
+    background: rgba(0, 153, 255, 0.15);
 }
 
-.api-presets-content .btn {
-        flex:1;
-        border-radius:6px;
-        padding:8px 10px;
-        white-space: nowrap;
-        margin-bottom:0;
-        font-size: 14px;
+/* 删除按钮 - 红色主题 */
+.api-icon-btn.del-btn {
+    color: var(--red-color, #ff3b30);
+    border-color: #ffc9c7;
+    background: #fff8f7;
 }
 
-#api-presets-modal .modal-window{
-        width:90%;
+.api-icon-btn.del-btn:active {
+    background: #ffe0de;
 }
 
-#api-presets-modal  .list-container{
-        max-height:300px;
-        overflow:auto;
-        border:none;
-        padding:0;
-        border-radius:6px;
-        margin-bottom:20px;
+/* ── field-hint（label 内的提示文字）────────────────────────── */
+.field-hint {
+    font-size: 11px;
+    color: #aaa;
+    font-weight: 400;
+    margin-left: 4px;
 }
 
-#api-presets-modal  .list-item{
-        display:flex;
-        padding:10px 0;
+/* ── API 设置页 header 及主体布局 ────────────────────────────── */
+#api-settings-screen .app-header {
+    background-color: var(--gray-color, #f5f5f5);
+    border-bottom: none;
 }
 
-#api-presets-modal  .list-item-title{
-        flex:1;
-        min-width:0;
+#api-settings-screen .app-header .title-container .title,
+#api-settings-screen .app-header .back-btn,
+#api-settings-screen .app-header .action-btn {
+    color: #555;
 }
 
-#api-presets-modal  .list-item-btn{
-        display:flex;
-        gap:6px;
+#api-settings-screen .content {
+    background-color: var(--gray-color, #f5f5f5);
 }
 
-#api-presets-modal  .list-item-btn .btn{
-        padding:8px 10px;
-        white-space: nowrap;
-        border-radius:6px;
-        font-size: 14px;
+#api-settings-screen .tab-content-area {
+    box-sizing: border-box;
+    scrollbar-width: none;
+    padding: 0;
+    display: flex;
+    flex-direction: row;
+    position: relative;
+    width: 100%;
+    flex-grow: 1;
+    overflow: hidden;
+}
+
+.api-sidebar {
+    width: 72px;
+    background-color: var(--gray-color);
+    gap: 10px;
+    display: flex;
+    flex-direction: column;
+    padding: 15px 12px;
+    flex-shrink: 0;
+}
+
+.api-sidebar-btn {
+    width: 48px;
+    height: 48px;
+    text-align: center;
+    font-size: 10px;
+    color: #888;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: all 0.2s;
+    background: none;
+    border: none;
+    border-radius: 50%;
+    outline: none;
+    padding: 5px;
+    font-family: var(--font-miao);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+}
+
+.api-sidebar-btn.active {
+    color: var(--primary-color);
+    background-color: var(--white-color);
+    border-left-color: var(--primary-color);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.api-sidebar-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    transition: transform 0.2s;
+}
+
+.api-content-wrapper {
+    flex: 1;
+    padding: 15px 20px;
+    position: relative;
+    border-top-left-radius: 24px;
+    background-color: var(--white-color);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; 
+}
+
+.api-tab-pane {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    overflow: hidden;
+    animation: fadeInUp 0.3s ease;
+    padding: 0 20px; /* 内容区内边距 */
+}
+
+.api-tab-pane.active {
+    display: flex;
 }
