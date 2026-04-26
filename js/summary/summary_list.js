@@ -902,6 +902,7 @@ const sysPrompt = `请为以下对话片段生成详细总结和摘要。严格�
         const parentSummary = (chat.memorySummaries || []).find(s => s.id === block.summaryId);
         const contentEl = document.getElementById('summary-detail-content');
         if (parentSummary && contentEl) _renderSummaryBlocks(parentSummary, contentEl, chat);
+        renderVectorStats();
         showToast('片段内容已生成！');
 
     } catch (e) {
@@ -922,36 +923,68 @@ async function _addBlankChunkToSummary(item, container) {
 
     let needSaveFirstBlock = false;
 
-    // ── A. 旧总结迁移：把 content 转为第一个块 ──
-    if (!item.blockIds || item.blockIds.length === 0) {
-        item.blockIds = [];
-        if (item.content) {
-            const migratedBlock = {
-                blockId:         `blk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                summaryId:       item.id,
-                chunkIndex:      0,
-                detailedContent: item.content,   // 原有正文整体迁入
-                summary:         '',
-                emotion:         null,
-                emotionScore:    0,
-                parseSuccess:    true,
-                isBlankBlock:    false,          // 迁移块不是"空白块"
-                messageCount:    0
-            };
-            item.blockIds.push(migratedBlock.blockId);
-            chat.memoryChunks = chat.memoryChunks || [];
-            chat.memoryChunks.push(migratedBlock);
-            await saveChunksToDB([migratedBlock]);
+// ── A. 旧总结迁移：把 content 转为第一个块 ──
+const validBlockCount = (chat.memoryChunks || [])
+    .filter(c => (item.blockIds || []).includes(c.blockId)).length;
+
+if (!item.blockIds || item.blockIds.length === 0 || validBlockCount === 0) {
+    item.blockIds = [];
+    if (item.content) {
+
+        // ★ 继承总结的时间戳
+        let inheritedStartTime = null;
+        if (item.occurredAt) {
+            const t = new Date(item.occurredAt);
+            if (!isNaN(t)) inheritedStartTime = t.getTime();
+        } else if (item.startDate) {
+            const t = new Date(item.startDate);
+            if (!isNaN(t)) inheritedStartTime = t.getTime();
+        } else if (item.createdAt) {
+            const t = new Date(item.createdAt);
+            if (!isNaN(t)) inheritedStartTime = t.getTime();
         }
-        needSaveFirstBlock = true;
+
+        // ★ 继承总结的消息范围
+        const inheritedStart = item.range?.start ?? null;
+        const inheritedEnd   = item.range?.end   ?? null;
+        const inheritedCount = (inheritedStart != null && inheritedEnd != null)
+            ? inheritedEnd - inheritedStart + 1
+            : 0;
+
+        const migratedId = `blk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+const migratedBlock = {
+    id:              migratedId,      // ★ Dexie 主键，与 blockId 保持一致
+    blockId:         migratedId,      // ★ 业务引用
+    summaryId:       item.id,
+    chatId:          currentChatId,
+            chunkIndex:      0,
+            detailedContent: item.content,
+            summary:         item.summary || '',   // ★ 如果总结本身有摘要字段也继承
+            emotion:         null,
+            emotionScore:    0,
+            parseSuccess:    true,
+            isBlankBlock:    false,
+            startTime:       inheritedStartTime,   // ★ 继承日期
+            startMsgIndex:   inheritedStart,       // ★ 继承范围起
+            endMsgIndex:     inheritedEnd,         // ★ 继承范围止
+            messageCount:    inheritedCount        // ★ 继承消息数
+        };
+        item.blockIds.push(migratedBlock.blockId);
+        chat.memoryChunks = chat.memoryChunks || [];
+        chat.memoryChunks.push(migratedBlock);
+        await saveChunksToDB([migratedBlock]);
     }
+    needSaveFirstBlock = true;
+}
 
     // ── B. 追加新空白块 ──
-    // 避免同一毫秒重复 blockId
     await new Promise(r => setTimeout(r, 2));
-    const newBlock = {
-        blockId:         `blk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        summaryId:       item.id,
+    const newId = `blk_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+const newBlock = {
+    id:              newId,           // ★ Dexie 主键
+    blockId:         newId,           // ★ 业务引用
+    summaryId:       item.id,
+    chatId:          currentChatId,
         chunkIndex:      item.blockIds.length,
         detailedContent: '',
         summary:         '',

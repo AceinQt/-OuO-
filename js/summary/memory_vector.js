@@ -92,9 +92,17 @@ function renderVectorStats() {
         return;
     }
 
-    // ── [v1.6] 进度展示：消息维度 ──
-    const activeChunks   = chunks.filter(c => !c.excludeFromEmbed);
-const excludedCnt    = chunks.length - activeChunks.length;
+// ── [v1.6] 进度展示：消息维度 ──
+
+// ★ activeChunks：只统计实际可向量化的块（有摘要 + 非空白块 + 未被清理）
+// 与 startEmbedBatch 的 pending 过滤条件对齐
+const activeChunks = chunks.filter(
+    c => !c.excludeFromEmbed && !c.isBlankBlock && !!c.summary
+);
+
+// ★ excludedCnt 只计"已手动清理"的块，不把无摘要块混进去
+const excludedCnt    = chunks.filter(c => c.excludeFromEmbed).length;
+
 const totalMsgs      = activeChunks.reduce((s, c) => s + (c.messageCount || 0), 0);
 const vectorizedMsgs = activeChunks.filter(c => c.embedding)
                                    .reduce((s, c) => s + (c.messageCount || 0), 0);
@@ -104,7 +112,9 @@ chunkStatsEl.textContent  = `共 ${activeChunks.length} 段（${totalMsgs} 条�
     + (excludedCnt > 0 ? `，另有 ${excludedCnt} 段已清理` : '');
 vectorStatsEl.textContent = `已向量化 ${vectorizedMsgs} / ${totalMsgs} 条消息（${vectorizedCnt} 段）`;
 
-const isAllDone = (vectorizedCnt >= activeChunks.length);
+// ★ 全完成的判断也要对齐：0段时也视为全完成（无需向量化）
+const isAllDone = activeChunks.length === 0 || (vectorizedCnt >= activeChunks.length);
+
     if (embedBtn)     embedBtn.disabled     = isAllDone || _isAutoEmbedding;
     if (autoEmbedBtn) autoEmbedBtn.disabled = isAllDone;
 

@@ -7,8 +7,8 @@
 // - formatRetrievedContext() 按分数分三级：高→原文 / 中→短期总结全文 / 低→块摘要
 // - 新增 _reconstructRawText()：通过父总结 range 指针实时重建原文
 
-const DEFAULT_TOP_K       = 5;
-const DEFAULT_QUERY_TURNS = 2;
+const DEFAULT_TOP_K       = 2;
+const DEFAULT_QUERY_TURNS = 1;
 const DEFAULT_MIN_SCORE   = 0.30;
 
 // 分级阈值
@@ -29,10 +29,9 @@ const NEGATIVE_EMOTION_WORDS = new Set([
 // ── [新增] 强正面/浪漫情绪词集合 ────
 const POSITIVE_EMOTION_WORDS = new Set([
     // 英文
-    'warm', 'romantic', 'touching', 'excited', 'love', 'sweet', 'joy',
-    'happy', 'affectionate', 'passionate', 'thrilled', 'moved',
+    'romantic', 'touching', 'excited', 'love', 'sweet', 'affectionate', 'passionate', 'thrilled', 'moved',
     // 中文
-    '温暖', '浪漫', '感动', '心动', '甜蜜', '快乐', '幸福',
+    '浪漫', '感动', '心动', '甜蜜', '幸福',
     '兴奋', '激动', '喜悦', '深情', '温馨'
 ]);
 
