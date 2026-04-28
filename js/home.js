@@ -42,10 +42,20 @@ function setupHomeScreen() {
     }
     const insWidget = db.insWidgetSettings;
 
-    // 2. 更新中央圆圈背景图
+// 2. 更新中央圆圈背景图
     const centralCircle = document.getElementById('home-central-circle');
-    if (centralCircle && db.homeWidgetSettings) {
-        centralCircle.style.backgroundImage = `url('${db.homeWidgetSettings.centralCircleImage}')`;
+    if (centralCircle && db.homeWidgetSettings && db.homeWidgetSettings.centralCircleImage) {
+        let circleImage = db.homeWidgetSettings.centralCircleImage;
+        
+        // 【核心兼容补丁】：专门清洗来自旧版备份的“脏数据”
+        if (circleImage.startsWith('url(')) {
+            // 自动脱去旧版本错误的 url() 包装
+            circleImage = circleImage.replace(/^url\(['"]?(.+?)['"]?\)$/, '$1');
+            // 顺手把内存里的脏数据纠正，保证后续运行正常
+            db.homeWidgetSettings.centralCircleImage = circleImage; 
+        }
+        
+        centralCircle.style.backgroundImage = `url('${circleImage}')`;
     }
 
     // 3. 更新个性签名
@@ -302,8 +312,8 @@ function setupInsWidgetAvatarModal() {
         e.preventDefault();
         const targetAvatar = targetInput.value;
         const bgImage = preview.style.backgroundImage;
-        // 去掉 url("") 的包装
-        const newSrc = bgImage.replace(/^url\(['"](.+)['"]\)$/, '$1');
+// 去掉 url("") 的包装，完美兼容所有手机浏览器
+        const newSrc = bgImage.replace(/^url\(['"]?(.+?)['"]?\)$/, '$1');
 
         if (!targetAvatar || !newSrc) {
             showToast('没有要保存的图片');
