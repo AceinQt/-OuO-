@@ -1,67 +1,6 @@
 // --- js/core/globals.js ---
 
-window.db = {
-    characters: [],
-    userPersonas: [],
-    groups: [],
-    apiSettings: {},
-    wallpaper: 'https://i.postimg.cc/W4Z9R9x4/ins-1.jpg',
-    myStickers: [],
-    homeScreenMode: 'day',
-    enableTopSafeArea: true,
-    enableBottomSafeArea: true,
-    enableScreenAdaptation: false,
-    enableSwipeBack: false,
-    homeStatusBarColor: '#ffffff',
-    homeNavigationBarColor: '#ffffff',
-    worldBooks: [],
-    fontUrl: '',
-    customIcons: {},
-    apiPresets: [],
-    bubbleCssPresets: [],
-    myPersonaPresets: [], // (旧字段兼容)
-    forumPosts: [],    
-    peekData: {}, 
-    globalCss: '',
-    globalCssPresets: [],
-    homeSignature: '编辑个性签名...',
-    favoritePostIds: [],
-    watchingPostIds: [],
-    forumBindings: {
-        worldBookIds: [],
-        charIds: [],
-        userPersonaIds: [],
-        useChatHistory: false,
-        historyLimit: 50
-    },
-    forumUserIdentity: {
-        nickname: '新用户',
-        avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
-        persona: '',
-        realName: '',
-        anonCode: '0311',
-        customDetailCss: ''
-    },
-    rpgProfiles: [],
-    pomodoroTasks: [],
-    pomodoroSettings: {
-        boundCharId: null,
-        userPersona: '',
-        focusBackground: '',
-        taskCardBackground: '',
-        encouragementMinutes: 25,
-        pokeLimit: 5,
-        globalWorldBookIds: [] 
-    },
-    insWidgetSettings: {
-        avatar1: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
-        bubble1: 'love u.',
-        avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
-        bubble2: 'miss u.'
-    },
-    currentViewingPostId: null
-};
-            
+
 // --- 全局常量 ---
 window.MESSAGES_PER_PAGE = 50;
 

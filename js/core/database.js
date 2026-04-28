@@ -14,7 +14,7 @@ const globalSettingKeys =[
     'studySettings'
 ];
 
-// 2. 初始化内存数据库对象 (db)
+// 2. 初始化内存数据库对象 (db) -> 唯一来源
 window.db = {
     characters:[],
     groups:[],
@@ -23,6 +23,7 @@ window.db = {
 
     // --- 独立模块 ---
     userPersonas:[], // 用户档案
+    myPersonaPresets: [], // (旧字段兼容，从globals合并)
     forumPosts:[],   // 论坛帖子
     rpgProfiles:[],  // RPG存档
 
@@ -34,6 +35,8 @@ window.db = {
     forumBindings: { worldBookIds:[], charIds: [], userPersonaIds:[], useChatHistory: false, historyLimit: 50 },
     watchingPostIds: [],
     favoritePostIds:[],
+    currentViewingPostId: null, // 当前查看的帖子ID (从globals合并)
+
     enableTopSafeArea: true,
     enableBottomSafeArea: true,
     enableScreenAdaptation: false,
