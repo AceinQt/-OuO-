@@ -367,7 +367,14 @@ async function importBackupData(data, isCloudPartialRestore = false) {
         // 兜底补全
         if (!db.pomodoroTasks) db.pomodoroTasks =[];
         if (!db.forumUserIdentity) db.forumUserIdentity = { nickname: '新用户', avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', persona: '', realName: '', anonCode: '0311', customDetailCss: '' };
-        if (!db.homeWidgetSettings && typeof defaultWidgetSettings !== 'undefined') db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
+        if (typeof defaultWidgetSettings !== 'undefined') {
+    if (!db.homeWidgetSettings) {
+        db.homeWidgetSettings = JSON.parse(JSON.stringify(defaultWidgetSettings));
+    } else if (!db.homeWidgetSettings.centralCircleImage) {
+        // homeWidgetSettings 存在但 centralCircleImage 是空/undefined，补默认值
+        db.homeWidgetSettings.centralCircleImage = defaultWidgetSettings.centralCircleImage;
+    }
+}
 
         if (typeof saveData === 'function') await saveData(db);
         if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();

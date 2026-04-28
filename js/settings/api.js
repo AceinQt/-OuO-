@@ -158,7 +158,7 @@ function _clearFormFields(type) {
         _setVal('api-chat-key',  '');
         const m = document.getElementById('api-chat-model');
         if (m) m.innerHTML = '<option value="">请先拉取模型列表</option>';
-        _setChecked('api-chat-stream', true);
+        _setChecked('api-chat-stream', false);
         _setChecked('api-chat-compat', false);
         _setVal('api-chat-temp', 0.8);
     } else {
@@ -321,6 +321,7 @@ async function _savePreset(type) {
     _saveAllPresets(all);
 
     // ── 计算最终 activePreset ────────────────────────────────
+
     let activePreset;
     if (setDefault) {
         activePreset = newName;                          // 明确设为默认
@@ -333,26 +334,29 @@ async function _savePreset(type) {
     if (isChat) {
       if (setDefault) {
         // 设为默认：用当前数据更新
-        db.apiSettings = { ...data, activePreset };
+        window.db.apiSettings = { ...data, activePreset };
       } else {
         // 未设为默认：从 activePreset 预设里读数据，保证 db.apiSettings 内容和 activePreset 一致
           const activeData = activePreset
             ? (_getPresets('chat').find(p => p.name === activePreset)?.data || {})
             : {};
-          db.apiSettings = { ...activeData, activePreset };
+          window.db.apiSettings = { ...activeData, activePreset };
       }
       await saveGlobalKeys(['apiSettings']);
     } else {
       if (setDefault) {
-        db.embeddingSettings = { ...data, activePreset };
+        window.db.embeddingSettings = { ...data, activePreset };
       } else {
         // 未设为默认：从 activePreset 预设里读数据，保证 db.apiSettings 内容和 activePreset 一致
           const activeData = activePreset
             ? (_getPresets('embedding').find(p => p.name === activePreset)?.data || {})
             : {};
+          // ★★★ 核心修复：原来这里漏写了对 window.db.embeddingSettings 的赋值，导致存库前内存未更新
+          window.db.embeddingSettings = { ...activeData, activePreset };
       }
       await saveGlobalKeys(['embeddingSettings']);
     }
+
 
     // 更新已加载名、刷新 Select、同步开关状态
     _loadedPresetName[type] = newName;
@@ -646,7 +650,7 @@ function _refreshChatTabUI() {
             const m = document.getElementById('api-chat-model');
             if (m) { m.innerHTML = `<option value="${s.model}">${s.model}</option>`; m.value = s.model; }
         }
-        _setChecked('api-chat-stream', s.streamEnabled !== false);
+_setChecked('api-chat-stream', s.streamEnabled === true);
         _setChecked('api-chat-compat', !!s.compatibilityModeEnabled);
         _setVal('api-chat-temp', s.temperature !== undefined ? s.temperature : 0.8);
         _setPresetNameInput('chat', '未命名预设');
