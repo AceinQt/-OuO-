@@ -1,6 +1,6 @@
 // --- sw.js ---
 
-const CACHE_NAME = 'qchat-cache-Q1.6';
+const CACHE_NAME = 'qchat-cache-Q1.6.1';
 // 每次部署新版本时，把上面的 v1 改成 v2、v3...
 // SW 会自动清理旧缓存，确保用户拿到最新文件
 
