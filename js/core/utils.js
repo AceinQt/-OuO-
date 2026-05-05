@@ -490,3 +490,14 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
     }
     
 };
+
+// ================================================================
+// === historyToPlainText: 聊天记录转纯文本（过滤图片等非文本内容）===
+// ================================================================
+function historyToPlainText(history) {
+    if (!Array.isArray(history)) return '';
+    return history
+        .filter(m => typeof m.content === 'string' && !m.content.startsWith('data:'))
+        .map(m => m.content)
+        .join('\n');
+}
