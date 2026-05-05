@@ -108,7 +108,7 @@ async function generateAndRenderPeekTransfer(options = {}) {
     try {
         const peekSettings = char.peekScreenSettings || {};
         const limitCount = (peekSettings.contextLimit !== undefined) ? peekSettings.contextLimit : 50;
-        const mainChatContext = limitCount > 0 ? char.history.slice(-limitCount).map(m => m.content).join('\n') : "";
+        const mainChatContext = limitCount > 0 ? historyToPlainText(char.history.slice(-limitCount)) : "";
 
         const senderName = char.realName || char.name;
         const baseContextPrompt = getPeekBasePromptContext(char, mainChatContext);

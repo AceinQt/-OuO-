@@ -225,6 +225,24 @@ function getPeekApiConfig(charId) {
     }
 
     // 降级：全局默认
+    const activeName = db.apiSettings?.activePreset;
+    if (activeName) {
+        const preset = (db.apiPresets || [])
+            .filter(p => !p.type || p.type === 'chat')
+            .find(p => p.name === activeName);
+        if (preset?.data) {
+            const d = preset.data;
+            return {
+                url:           d.url || d.apiUrl || '',
+                key:           d.key || d.apiKey || '',
+                model:         d.model || '',
+                streamEnabled: d.streamEnabled !== false,
+                temperature:   d.temperature !== undefined ? d.temperature : 0.8
+            };
+        }
+    }
+
+    // 最终兜底（旧格式兼容）
     const s = db.apiSettings || {};
     return {
         url:           s.url || s.apiUrl || '',
