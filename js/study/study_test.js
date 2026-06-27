@@ -174,9 +174,8 @@ function studyRenderTest() {
   if (!exams.length) {
     bodyEl.innerHTML = `
       <div class="st-center-msg">
-        <p>还没有考卷</p>
         <p style="font-size:13px;color:#aaa;margin-top:6px">
-          点击右上角 <strong>＋</strong> 新建第一份考卷
+          点击右上角 <strong>＋</strong> 新建第一个测试任务吧
         </p>
       </div>`;
     return;
