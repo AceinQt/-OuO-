@@ -1,0 +1,43 @@
+/* study_sidebar.css — 学习模块侧边栏
+   ================================================== */
+
+#study-profile-btn svg {
+  fill: none;
+}
+
+#study-profile-sidebar {
+  background-color: var(--dgray-color);
+}
+
+#study-profile-sidebar .header {
+  background-color: var(--dgray-color);
+  border: none;
+  color: var(--white-color);
+}
+
+#study-profile-sidebar .bottom-content-scroll {
+  border-top-left-radius: 32px;
+  background-color: var(--white-color);
+  padding-top:10px;
+}
+
+#study-profile-sidebar .settings-card {
+  box-shadow:none;  
+}
+
+/* 侧边栏定位（右侧抽屉，复用全局 .settings-sidebar 基础样式） */
+#study-profile-sidebar {
+  left: auto;
+  right: -100%;
+}
+#study-profile-sidebar.active {
+  right: 0;
+}
+
+/* 遮罩（点击空白收起，复用 .reader-toc-overlay 基础样式） */
+#study-profile-overlay {}
+
+/* 值标签（昵称/问候语预览） */
+.st-sidebar-meta-val {
+  flex-shrink: 0;
+}

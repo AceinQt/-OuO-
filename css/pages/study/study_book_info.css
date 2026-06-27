@@ -1,0 +1,290 @@
+/* study_book_info.css — 书籍信息页面（char_info 风格）
+   ================================================== */
+
+/* ── Header ──────────────────────────────────────── */
+#study-book-info-screen .app-header {
+  border: none;
+  background: var(--dgray-color);
+}
+
+#study-book-info-screen .app-header .back-btn svg {
+  color: var(--white-color);
+}
+
+#study-book-info-screen .app-header .title {
+  color: var(--white-color);
+}
+
+#study-book-info-screen .action-btn svg {
+  fill: none;
+  stroke: var(--white-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Hero 背景色块 ────────────────────────────────── */
+.st-bi-hero {
+  height: 150px;
+  background: var(--dgray-color);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.st-bi-hero-bg {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(20px);
+  opacity: 0.38;
+  transform: scale(1.12);
+  z-index: 0;
+}
+
+/* ── 白色主体卡片 ─────────────────────────────────── */
+.st-bi-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--white-color, #fff);
+  border-radius: 20px 20px 0 0;
+  margin-top: 0;
+  overflow: visible;
+  position: relative;
+  z-index: 15;
+  padding-top: 70px;
+}
+
+/* ── 顶部行：封面(左) + 书名区(右)，绝对定位悬浮 ── */
+.st-bi-profile-row {
+  position: absolute;
+  top: -140px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  padding: 0 35px 20px;
+  z-index: 25;
+}
+
+/* ── 封面容器 ─────────────────────────────────────── */
+#study-book-info-screen .st-bi-cover-wrap {
+  position: relative;
+  flex-shrink: 0;
+  flex: 1;
+  cursor: pointer;
+  z-index: 25;
+  transition: transform 0.15s ease;
+}
+#study-book-info-screen .st-bi-cover-wrap:active {
+  transform: scale(0.96);
+}
+
+#study-book-info-screen .st-bi-cover {
+  width: 126px;
+  height: 180px;
+  border-radius: 3px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: var(--cover-bg);
+  box-sizing: border-box;
+  border:none ;
+  box-shadow: 0 2px 9px rgba(100,110,120,0.2);
+}
+
+.st-bi-cover-title {
+  position: relative;
+  z-index: 1;
+  color: var(--white-color);
+  font-size: 14px;
+  font-weight: bold;
+  text-align: center;
+  padding: 0 8px;
+  word-break: break-all;
+  line-height: 1.5;
+  max-height: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+}
+
+/* 相机角标 */
+.st-bi-cover-cam {
+  position: absolute;
+  right: 7px;
+  bottom: 0;
+  width: 24px;
+  height: 24px;
+  background: rgba(255,255,255,0.5);
+  border: 1px solid var(--white-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 2px rgba(0,0,0,0.05);
+  color: var(--white-color);
+  z-index: 26;
+}
+
+/* ── 右侧：书名输入 + 阅读按钮 ────────────────────── */
+.st-bi-title-block {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  height: 180px;
+  position: relative;
+}
+
+#study-book-info-screen #st-bi-title {
+  font-size: 28px;
+  font-weight: 700;
+  background: transparent;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  font-family: var(--font-title, inherit);
+  width: 100%;
+  padding: 2px 0;
+  line-height: 1.3;
+  margin-top: 20px;
+  word-break: break-word;
+  max-height: calc(28px * 1.3 * 2);
+  color: var(--white-color);
+}
+#study-book-info-screen #st-bi-title[data-size="md"] {
+  font-size: 22px;
+  max-height: calc(22px * 1.3 * 2);
+}
+#study-book-info-screen #st-bi-title[data-size="sm"] {
+  font-size: 17px;
+  max-height: calc(17px * 1.3 * 2);
+}
+#study-book-info-screen #st-bi-title::placeholder {
+  color: rgba(255,255,255,0.55);
+}
+
+/* 无封面时（浅灰背景）*/
+#study-book-info-screen.no-cover #st-bi-title {
+  text-shadow: none;
+}
+
+/* ── 开始/继续阅读按钮（毛玻璃胶囊）────────────── */
+.st-bi-read-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: absolute;
+  top: 120px;
+  right: 0;
+  background: var(--white-color);
+  border: 1px solid var(--gray-color);
+  color: var(--dgray-color);
+  border-radius: 28px;
+  padding: 8px 20px;
+  font-size: 16px;
+  font-weight: bold;
+  font-family: var(--font-family, inherit);
+  cursor: pointer;
+  box-shadow: 0 2px 2px rgba(170,180,190,0.5);
+}
+
+#st-bi-read-label {
+  margin-bottom: 2px;
+}
+
+/* ── Tab 栏 ──────────────────────────────────────── */
+#st-bi-tabs {
+  flex-shrink: 0;
+  padding: 0 16px;
+}
+
+/* ── Tab 内容容器 ─────────────────────────────────── */
+#study-book-info-screen .char-info-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+#study-book-info-screen .char-info-tab-panel {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px 0;
+  box-sizing: border-box;
+  display: none;
+}
+#study-book-info-screen .char-info-tab-panel.active {
+  display: block;
+}
+
+/* ── Tab 内容：目录/书签列表 ──────────────────────── */
+.st-bi-tab-content {
+  padding: 4px 0 16px;
+}
+
+.st-bi-list-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--gray-color, #f0f0f0);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+  gap: 12px;
+  box-sizing: border-box;
+  font-family: var(--font-family, inherit);
+}
+.st-bi-list-item:active {
+  background: var(--gray-color, #f2f2f7);
+}
+
+.st-bi-list-idx {
+  min-width: 28px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #bbb;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.st-bi-list-label {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-color, #333);
+  line-height: 1.5;
+  text-align: left;
+}
+
+.st-bi-list-hint {
+  font-size: 11px;
+  color: #aaa;
+  margin-top: 2px;
+  display: block;
+}
+
+.st-bi-list-arrow {
+  flex-shrink: 0;
+  color: #ccc;
+}
+
+.st-bi-empty {
+  text-align: center;
+  padding: 36px 20px;
+  color: #bbb;
+  font-size: 13px;
+  line-height: 2;
+}

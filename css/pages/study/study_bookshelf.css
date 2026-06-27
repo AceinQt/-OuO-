@@ -1,0 +1,396 @@
+/* study_bookshelf.css — 书架页
+   ================================================== */
+
+#study-bookshelf-screen .app-header {
+  border: none;
+  background:#aab4be;
+  color:var(--white-color);
+}
+
+#study-bookshelf-screen .app-header .back-btn svg {
+  color:var(--white-color);
+}
+
+#study-bookshelf-screen .app-header .title {
+  color:var(--white-color);
+}
+
+#study-bookshelf-screen .app-header .action-btn {
+  color:var(--white-color);
+}
+
+
+/* ── 书本网格（一排三列）─────────────────────────── */
+.st-book-grid {
+  display: grid;
+  gap: 16px 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* 单本封面容器 */
+.st-book-cover-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.st-book-cover-wrap:active .st-book-cover {
+  transform: scale(0.95);
+}
+
+/* 书封面主体：竖向长方形，模拟书脊效果 */
+.st-book-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: 12px;
+  background: var(--cover-bg, #4a8de8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 封面书名 */
+.st-book-cover-title {
+  position: relative;
+  z-index: 1;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  word-break: break-all;
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 封面下方：书名文字 + 题数徽标 */
+.st-book-cover-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.st-book-cover-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-color, #333);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.4;
+  min-width: 0;
+}
+
+.st-book-cover-badge {
+  font-size: 10px;
+  color: var(--primary-color, #0099FF);
+  font-weight: 500;
+}
+
+/* 书封进度角标（右上角）*/
+.st-book-prog-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  background: var(--accent-color, #0099FF);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+/* ── 继续阅读卡片（书架页顶部）──────────────────── */
+#st-resume-section {
+  flex-shrink: 0;
+}
+
+/* 覆盖底层基础背景，以适配左下角透出的白色倒角缺口 */
+#study-bookshelf-screen.st-s-layout {
+  background: #ffffff; /* 提供屏幕最底层的白色 */
+  padding: 0;
+  overflow: hidden; /* 防止原生外层滚动 */
+}
+
+
+/* ── S型倒角：上半部（灰色，左下圆角） ──────────────────── */
+.st-s-top {
+  background: #aab4be; /* 雅致的暖灰色底色 */
+  border-bottom-left-radius: 40px; /* 制造出左下方内凹漏出白色的视觉 */
+  position: relative;
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+/* 在顶部右下角向下延伸一块伪元素，用来填充“底部卡片右上倒角”缺掉的部分，从而露出灰色 */
+.st-s-top::after {
+  content: "";
+  position: absolute;
+  bottom: -40px;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  background: #aab4be;
+}
+
+/* ── S型倒角：下半部（白色，右上圆角） ──────────────────── */
+.st-s-bottom {
+  background: #ffffff;
+  border-top-right-radius: 40px;
+  position: relative;
+  z-index: 2; /* 层级高于 top 伪元素，从而完美切割缺角 */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-top: 24px; 
+}
+.st-bookshelf-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.st-bookshelf-inner {
+  padding: 0 20px 40px;
+}
+
+/* ── 新版：继续阅读 Hero 区域 ──────────────────────────── */
+.st-resume-hero {
+  display: flex;
+  padding: 6px 24px 30px 24px;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-resume-hero:active {
+  opacity: 0.85;
+}
+
+.st-resume-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding-right: 20px;
+}
+.st-resume-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+.st-resume-title-hero {
+  font-size: 26px;
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1.25;
+  margin-bottom: 24px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  /* 默认保留，下方档位覆盖 */
+}
+
+.st-resume-title-hero {
+  font-size: clamp(26px, 5vw, 36px);
+  /* clamp(最小, 理想, 最大)：手机宽320时≈16px，375时≈18.75px，430时≈21.5px */
+  /* 若觉得太激进，改成 clamp(18px, 4.5vw, 26px) */
+}
+
+.st-resume-action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* 继续阅读白色进度横线 */
+.st-resume-progress-line {
+  flex: 1;
+  max-width: 130px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.st-resume-progress-fill {
+  height: 100%;
+  background: #ffffff;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+/* 播放按钮 */
+.st-resume-play-btn {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.st-resume-play-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: #ffffff;
+}
+
+/* ── 2. 百分比数字 ───────────────────────────────── */
+.st-resume-pct-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 30px;   /* 留够"100%"的宽度 */
+  text-align: left;
+}
+
+/* 英雄区封面图 + 白色装饰框 */
+.st-resume-right {
+  position: relative;
+  width: 86px;
+  height: 116px;
+  flex-shrink: 0;
+}
+.st-resume-cover-decor {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 4px;
+}
+.st-resume-cover-img {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-color: var(--cover-bg, #b0bcc4);
+  background-size: cover;
+  background-position: center;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  box-sizing: border-box;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+/* ── 底部 Tabs 样式重置（胶囊按钮）──────────────────────── */
+.st-shelf-tabs {
+  display: flex;
+  gap: 12px;
+  padding: 0 20px 10px 20px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  flex-shrink: 0;
+  margin-bottom: 15px; 
+}
+
+.st-cat-tab {
+  background: none;
+  border-radius: 18px;
+  border: 1px solid var(--gray-color);
+  padding: 6px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #aaa;
+  white-space: nowrap;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.2s;
+}
+
+.st-cat-tab.active {
+  background: var(--gray-color);
+  color: var(--btn-color);
+  font-weight: bold;
+}
+
+
+
+/* 适应浅色底图的新默认色，把空封面的书籍字调深 */
+.st-book-cover-title {
+  color: #333;
+}
+
+/* 续读卡片内的封面：固定尺寸，复用 st-book-cover 书脊效果 */
+.st-resume-cover.st-book-cover {
+  width: 68px;
+  height: 92px;
+  flex-shrink: 0;
+  aspect-ratio: unset;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.st-resume-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.st-resume-book-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-color, #333);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-resume-author {
+  font-size: 13px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 18px;
+}
+
+.st-resume-progress-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.st-resume-progress-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--gray-color, #f2f2f7);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.st-resume-progress-fill {
+  height: 100%;
+  background: var(--accent-color, #0099FF);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.st-resume-pct {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-color, #0099FF);
+  flex-shrink: 0;
+  min-width: 34px;
+  text-align: right;
+}

@@ -56,3 +56,10 @@
   background: var(--gray-color);
   border-color: transparent;
 }
+
+#user-persona-modal .sidebar-avatar-container {
+    display: flex;
+    flex-direction: row;
+    gap:20px;
+    margin-bottom:20px;
+}

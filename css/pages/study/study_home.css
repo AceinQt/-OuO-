@@ -1,0 +1,338 @@
+/* text/css */
+
+/* study_home.css — 首页布局与组件
+   ================================================== */
+#study-screen .app-header {
+  background-color: var(--dgray-color);
+  border-bottom: none;
+}
+
+#study-screen .app-header .title {
+  color: transparent;
+}
+
+#study-screen .back-btn {
+  filter: brightness(0) invert(1);
+}
+#study-screen .action-btn {
+  color: #fff;
+  background: transparent;
+  border: none;
+}
+
+.content.st-main-container {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.st-main-body {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.st-tab-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.st-content { padding: 0 20px 40px; }
+.st-main-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── 通用按钮 ──────────────────────────────────────── */
+.st-btn-primary {
+  background: var(--primary-color, #0099FF);
+  color: #fff;
+  font-weight: 600;
+  padding: 14px 20px;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--border-radius, 16px);
+  box-shadow: 0 4px 14px rgba(0, 153, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.15s;
+  font-size: 15px;
+  font-family: inherit;
+}
+.st-btn-primary:active { transform: scale(0.96); }
+.st-btn-primary:disabled { opacity: 0.6; pointer-events: none; }
+
+.st-btn-secondary {
+  background: var(--bg-color, #DAF0FC);
+  color: var(--primary-color, #0099FF);
+  font-weight: 600;
+  padding: 14px 20px;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--border-radius, 16px);
+  display: flex; align-items: center; justify-content: center;
+  gap: 8px; transition: all 0.15s; font-size: 15px; font-family: inherit;
+}
+.st-btn-secondary:active { transform: scale(0.96); }
+
+.st-btn-row { display: flex; gap: 10px; }
+.st-btn-row > * { flex: 1; }
+
+.st-mt-16 { margin-top: 16px; }
+.st-btn-full { width: 100%; }
+.st-btn-max-240 { width: 100%; max-width: 240px; }
+
+/* ── 通用卡片 & 空状态 ─────────────────────────────── */
+.st-card {
+  background: #fff;
+  border-radius: var(--border-radius, 16px);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  padding: 20px;
+}
+
+.st-empty-lg {
+  text-align: center; padding: 56px 20px; display: flex; flex-direction: column;
+  align-items: center; gap: 16px; color: #8e8e93; font-size: 14px; line-height: 1.6;
+}
+.st-empty-icon {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--bg-color, #DAF0FC); color: var(--primary-color, #0099FF);
+  display: flex; align-items: center; justify-content: center;
+}
+.st-center-msg {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 40px 20px; color: #8e8e93; font-size: 14px;
+}
+
+/* ── 表单控件 ──────────────────────────────────────── */
+.st-form-group { margin-bottom: 16px; }
+.st-label { display: block; font-size: 13px; font-weight: 700; color: var(--primary-color, #0099FF); margin-bottom: 8px; }
+.st-input {
+  width: 100%; box-sizing: border-box; padding: 13px 16px; background: var(--gray-color, #f2f2f7);
+  border: 2px solid transparent; border-radius: var(--border-radius, 16px);
+  font-size: 15px; color: var(--text-color, #333); outline: none; transition: all 0.2s; font-family: inherit;
+}
+.st-input:focus { background: #fff; border-color: var(--primary-color, #0099FF); box-shadow: 0 0 0 4px var(--bg-color, #DAF0FC); }
+.st-textarea { resize: none; min-height: 100px; }
+
+/* ── AppUI select（TODO: todo11统一select时迁移到主CSS）─ */
+.appui-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 2px solid var(--line-color, #e2e2e2);
+  font-size: 15px;
+  font-family: inherit;
+  background: var(--gray-color, #f2f2f7);
+  color: var(--text-color, #333);
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 7L11 1' stroke='%23999' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.appui-select:focus {
+  border-color: var(--primary-color, #0099FF);
+  box-shadow: 0 0 0 4px var(--bg-color, #DAF0FC);
+  background-color: #fff;
+}
+
+/* ── 首页顶部（accent色区）──────────────────────────── */
+#st-tab-home {
+  background-color: var(--dgray-color);
+  padding: 0; 
+  display: flex; 
+  flex-direction: column; 
+  flex: 1;
+  overflow: hidden;
+}
+
+.st-home-top {
+  flex-shrink: 0;
+  padding: 20px 20px 30px; text-align: center; color: #fff;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  background-image: radial-gradient(circle at 15% 50%, rgba(255,255,255,0.15) 0%, transparent 20%),
+                    radial-gradient(circle at 85% 80%, rgba(255,255,255,0.1) 0%, transparent 20%);
+}
+
+.st-home-sub { font-size: 16px; font-weight: 500; margin: 0 0 5px; color: rgba(255,255,255,0.9); }
+.st-home-title { font-size: 28px; font-weight: bold; margin: 0 0 30px; letter-spacing: -0.5px; }
+
+/* ── 入口按钮行 ────────────────────────────────── */
+.st-mood-row { display: flex; justify-content: center; gap: 30px; }
+.st-mood-item { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; }
+.st-mood-label { font-size: 13px; color: rgba(255,255,255,0.9); font-weight: bold; }
+
+.st-mood-btn {
+  width: 52px; 
+  height: 52px; 
+  border-radius: 50%; 
+  border: 3px solid rgba(255,255,255,0.95); 
+  display: flex; 
+  align-items: center; 
+  justify-content: center;
+  transition: transform 0.2s; 
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1); 
+  pointer-events: none;
+}
+
+.st-mood-item:active .st-mood-btn { transform: scale(0.95); box-shadow: 0 0 0 4px rgba(255,255,255,0.4); }
+
+.st-mood-focus { 
+background-color: #FCDFD9; 
+color: #92BADE;
+ }
+ 
+.st-mood-recite { 
+background-color: #CADFF2; 
+color: #92BADE;
+}
+
+.st-mood-test { 
+background-color: #92BADE; 
+color: #FCDFD9;
+}
+
+/* ── 首页底部白卡区 ─────────────────────────────────── */
+.st-category-tabs { 
+  flex-shrink: 0;
+  display: flex; gap: 12px; overflow-x: auto; padding-bottom: 10px; margin-bottom: 15px; 
+}
+
+.st-home-bottom {
+  background: #ffffff; border-top-left-radius: 30px; border-top-right-radius: 30px;
+  flex: 1; padding: 24px 20px 0; display: flex; flex-direction: column;
+  box-shadow: 0 -4px 20px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+
+/* 首页卡片网格（两列）*/
+.st-card-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+/* ── 首页任务列表 ────────────────────────────────────── */
+#st-home-books {
+  flex: 1;
+  overflow-y: auto;
+  padding-bottom: 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.st-task-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #aaa;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin: 4px 0 2px;
+}
+.st-task-group-title:first-child { margin-top: 0; }
+
+.st-task-empty {
+  text-align: center;
+  color: #aaa;
+  font-size: 14px;
+  padding: 28px 0;
+  line-height: 1.6;
+}
+
+.st-task-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.15s, box-shadow 0.15s;
+  min-height: 68px;
+}
+.st-task-card:active { transform: scale(0.97); }
+
+.st-task-theme-3 { 
+background: #92BADE; 
+color: #fff; 
+}
+.st-task-theme-2 { 
+background: #CADFF2;  
+color:#fff; 
+}
+.st-task-theme-1 { 
+background: var(--gray-color); 
+color: #92BADE; 
+}
+
+.st-task-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 20px;
+  letter-spacing: 0.04em;
+}
+.st-badge-focus {
+  background: rgba(255,255,255,0.25);
+  color: inherit;
+}
+.st-badge-test {
+  background: rgba(0,0,0,0.07);
+  color: inherit;
+}
+
+.st-task-name {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.st-task-meta {
+  font-size: 12px;
+  opacity: 0.75;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.st-task-arrow {
+  flex-shrink: 0;
+  opacity: 0.5;
+  display: flex;
+  align-items: center;
+}
+
+/* 封面背景图时文字强制白色 */
+.st-task-card[style*="background-image"] .st-task-name,
+.st-task-card[style*="background-image"] .st-task-meta,
+.st-task-card[style*="background-image"] .st-task-badge,
+.st-task-card[style*="background-image"] .st-task-arrow {
+  color: #fff !important;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.45);
+  opacity: 1;
+}
+.st-task-card[style*="background-image"]::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.18);
+  border-radius: inherit;
+}
+.st-task-card[style*="background-image"] > * { position: relative; z-index: 1; }

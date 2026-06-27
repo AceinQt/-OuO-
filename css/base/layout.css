@@ -7,6 +7,14 @@
     min-height: 50px;
 }
 
+.settings-sidebar .header {    
+    padding-top: max(15px , var(--safe-top));
+}
+
+.reader-toc-header {    
+    padding-top: max(16px , var(--safe-top));
+}
+
 #home-screen {    
     padding-top: calc(45px + var(--safe-top));
 }

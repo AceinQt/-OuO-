@@ -217,6 +217,43 @@
     color: #e53935;
 }
 
+/* ===========================================
+   侧边栏基础结构
+   =========================================== */
+
+.settings-sidebar {
+    position: absolute;
+    top: 0;
+    right: -100%;
+    width: 80%;
+    height: 100%;
+    background: #fff;
+    box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+    transition: right 0.4s ease-in-out;
+    z-index: 101;
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-sidebar.open {
+    right: 0;
+}
+
+.settings-sidebar .header {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+    font-weight: bold;
+    text-align: center;
+    color: var(--primary-color);
+}
+
+.settings-sidebar .content {
+    padding: 20px;
+    overflow-y: auto;
+    flex-grow: 1;
+}
+
+
 .action-sheet-overlay {
     position: absolute;
     top: 0;

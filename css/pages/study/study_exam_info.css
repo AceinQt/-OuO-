@@ -1,0 +1,431 @@
+/* study_exam_info.css
+   考卷详情页（study-exam-info-screen）+ 新建弹窗补丁
+   追加到 study_book_info.css 或单独引入
+   ======================================================== */
+
+/* ── Header（白字浮在 hero 上）─────────────────────────── */
+#study-exam-info-screen .app-header {
+  border: none;
+  background: var(--dgray-color);
+  position: relative;
+  z-index: 20;
+}
+#study-exam-info-screen .app-header .back-btn svg,
+#study-exam-info-screen .app-header .title {
+  color: var(--white-color, #fff);
+}
+
+#study-exam-info-screen .app-header .action-btn svg {
+  stroke: var(--white-color, #fff);
+  fill:none;
+}
+
+/* ── Hero 色块 ──────────────────────────────────────────── */
+/* st-bi-hero 尺寸已由 book_info.css 定义，复用即可  */
+/* 这里只定义 exam 专用的内部 bg div 和主题色         */
+.st-ei-hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  transition: background 0.4s ease;
+}
+
+/* 固定中性灰，不随状态变色；保留 class 名以防 JS 残留引用 */
+.st-ei-theme-pending,
+.st-ei-theme-progress,
+.st-ei-theme-done { 
+background: var(--dgray-color); 
+}
+
+/* exam_info 里 override profile-row 的悬浮高度 */
+
+/* ── 隐藏旧的悬浮占位（废弃绝对定位背景） ──────────────────── */
+#study-exam-info-screen .st-bi-hero {
+  display: none;
+}
+
+/* ── 整个主体改为顺序文档流 ───────────────────────────────── */
+#study-exam-info-screen .st-bi-body {
+  position: static;
+  margin-top: 0;
+  padding-top: 0;
+  background: var(--dgray-color); 
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 撑满屏幕剩余空间 */
+}
+
+/* ── 第二层：灰色块（接在 app-header 下方）────────────────── */
+#study-exam-info-screen .st-bi-profile-row {
+  position: static; 
+  background: transparent; /* 自动透出 st-bi-body 的深灰色 */
+  padding: 12px 20px 24px;
+  margin: 0;
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 两行排列：第一行标题，第二行按钮 */
+#study-exam-info-screen .st-bi-title-block {
+  height: auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px; /* 标题与按钮上下的间距 */
+}
+
+/* 考试按钮（在容器第二行，靠右） */
+#study-exam-info-screen .st-bi-read-btn {
+  position: static; /* 移除原来的绝对定位 top: 10px */
+  align-self: flex-end; /* 靠右对齐 */
+}
+
+/* ── 左侧只读标题 ────────────────────────────────────────── */
+.st-ei-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--white-color, #fff);
+  line-height: 1.35;
+  margin-top: 0; /* 移除多余顶部留白 */
+  text-align: left; /* 明确靠左对齐 */
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ── 标题可编辑提示（铅笔角标）────────────────────────────── */
+.st-ei-title--editable {
+  cursor: text;
+  position: relative;
+  padding: 4px 16px;
+}
+
+
+/* ── 标题行内编辑 input ─────────────────────────────────── */
+.st-ei-title-input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--white-color, #fff);
+  background: rgba(255, 255, 255, 0.15);
+  border: none;
+  border-radius: 4px;
+  padding: 4px 16px;
+  outline: none;
+  font-family: var(--font-family, inherit);
+  line-height: 1.35;
+  caret-color: #fff;
+}
+
+/* ── 第三层：Tab内容（自动在按钮下方变为白色块）────────────── */
+#study-exam-info-screen .char-info-tab-bar {
+  flex-shrink: 0;
+  /* 【关键改动】铺设浅色背景，添加 20px 的顶部圆角 */
+  background: var(--white-color);
+  border-radius: 20px 20px 0 0; 
+  padding: 20px 16px 0; /* 加大顶部内边距，让圆角视觉更舒展 */
+}
+
+#study-exam-info-screen .char-info-tab-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  /* 【关键改动】同色系背景，保证整个屏幕下半部分都是浅色 */
+  background: var(--white-color);
+}
+
+#study-exam-info-screen .char-info-tab-panel {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px 40px;
+  box-sizing: border-box;
+  display: none;
+}
+#study-exam-info-screen .char-info-tab-panel.active {
+  display: block;
+}
+
+/* ── info-group（复用，局部 override）───────────────────── */
+#study-exam-info-screen .info-group {
+  margin-bottom: 18px;
+}
+#study-exam-info-screen .info-group > label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  margin-bottom: 8px;
+}
+
+/* select / input 复用 st-bi-input */
+#study-exam-info-screen .st-bi-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  background: var(--white-color, #fff);
+  font-family: var(--font-family, inherit);
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+#study-exam-info-screen .st-bi-input:focus {
+  border-color: var(--accent-color, #007AFF);
+  background: var(--white-color, #fff);
+}
+
+/* ── 题库多选列表（新建弹窗 & 详情页共用）───────────────── */
+.st-ei-bank-list {
+  border: 1.5px solid var(--border-color, #e8e8e8);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+/* 复选行（新建弹窗 st-create-exam-body 内 & 详情页 st-ei-bank-list 内） */
+.st-exam-bank-check-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  cursor: pointer;
+  transition: background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-exam-bank-check-row:last-child { border-bottom: none; }
+.st-exam-bank-check-row:active     { background: var(--bg-secondary, #f5f5f5); }
+.st-exam-bank-check-row.disabled   { opacity: 0.45; pointer-events: none; }
+
+.st-exam-bank-check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent-color, #007AFF);
+  cursor: pointer;
+}
+
+.st-exam-bank-check-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.st-exam-bank-name {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary, #1c1c1e);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.st-exam-bank-total {
+  font-size: 12px;
+  color: #aaa;
+}
+.st-exam-bank-total.empty { color: #f5a623; }
+
+/* ── 抽题数量行（新建弹窗专用）─────────────────────────── */
+.st-exam-draw-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  flex-shrink: 0;
+}
+
+.st-exam-draw-label {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-primary, #1c1c1e);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.st-exam-draw-max {
+  font-size: 12px;
+  color: #aaa;
+  font-weight: 400;
+}
+
+.st-exam-draw-input {
+  width: 72px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border-color, #e8e8e8);
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--accent-color, #007AFF);
+  background: var(--bg-secondary, #f6f8fa);
+  font-family: var(--font-family, inherit);
+  outline: none;
+  -webkit-appearance: none;
+}
+.st-exam-draw-input:focus {
+  border-color: var(--accent-color, #007AFF);
+  background: #fff;
+}
+
+/* ── 抽题数量行（详情页 info panel 专用）───────────────── */
+.st-ei-draw-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.st-ei-draw-input {
+  width: 80px;
+  padding: 9px 12px;
+  border: 1.5px solid var(--border-color, #e8e8e8);
+  border-radius: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--accent-color, #007AFF);
+  background: var(--bg-secondary, #f6f8fa);
+  font-family: var(--font-family, inherit);
+  outline: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+}
+.st-ei-draw-input:focus {
+  border-color: var(--accent-color, #007AFF);
+  background: #fff;
+}
+
+.st-ei-draw-hint {
+  font-size: 13px;
+  color: #aaa;
+}
+
+/* ── 世界书触发按钮 ─────────────────────────────────────── */
+.st-ei-wb-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--white-color, #fff);
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  cursor: pointer;
+  font-family: var(--font-family, inherit);
+  text-align: left;
+  transition: background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.st-ei-wb-btn:active { background: #efefef; }
+.st-ei-wb-btn svg    { flex-shrink: 0; color: #bbb; }
+
+/* ── 考试记录卡片 ────────────────────────────────────────── */
+.st-ei-record-card {
+  background: var(--white-color, #fff);
+  border-radius: 14px;
+  border: 1px solid var(--gray-color);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.st-ei-record-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.st-ei-record-header:active {
+  background: var(--bg-secondary, #f5f5f5);
+}
+
+.st-ei-record-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.st-ei-record-num {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #1c1c1e);
+}
+.st-ei-record-date {
+  font-size: 12px;
+  color: #aaa;
+}
+
+.st-ei-record-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.st-ei-record-score {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent-color, #0099FF);
+}
+.st-ei-record-chevron {
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+
+/* 展开后的详情区 */
+.st-ei-record-detail {
+  padding: 0 16px 16px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.st-ei-record-score-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0 10px;
+}
+
+/* 小号分数圆圈 */
+.st-exam-score-ring-sm {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 4px solid var(--primary-color, #0099FF);
+  background: var(--bg-color, #DAF0FC);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.st-exam-score-ring-sm .st-exam-score-num  { font-size: 20px; }
+.st-exam-score-ring-sm .st-exam-score-unit { font-size: 11px; margin-top: 1px; }
+
+/* 继续答题按钮 */
+.st-ei-continue-btn {
+  display: block;
+  width: 100%;
+}
+
+/* ── 考卷列表卡片：右侧"考了N次"文字 ──────────────────── */
+.st-exam-times {
+  font-size: 12px;
+  color: #aaa;
+  white-space: nowrap;
+}
+

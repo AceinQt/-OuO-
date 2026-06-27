@@ -1,6 +1,7 @@
 /* --- 全局与主题样式 --- */
 :root {
     --bg-color: #DAF0FC;
+    --blue-color: #82AFD9;
     --primary-color: #0099FF;
     --secondary-color: #389CF4;
     --accent-color: #90caf9;
@@ -8,6 +9,7 @@
     --btn-color: #2F3034;
     --gray-color: #f2f2f7;
     --lgray-color: #F8FAFC;
+    --dgray-color: #AAB4BE;
     --white-color: #fff;
     --top-pinned-bg: #EBF5FF;
     --online-status-color: #4CAF50;
@@ -23,6 +25,7 @@
     --font-miao: 'ZCOOL KuaiLe', cursive;
     --handwriting-font: 'Ma Shan Zheng', var(--system-font);
     --system-font: 'KaomojiFixed', Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'NotoSans', sans-serif;
+    --font-title: 'Georgia', 'Times New Roman', serif;
     --font-pixel: 'DotGothic16', sans-serif;
         
         

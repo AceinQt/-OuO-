@@ -1,0 +1,1600 @@
+/* study_test.css — 测试页
+   ================================================== */
+
+/* ── 上下分栏布局 ────────────────────────────────── */
+#study-test-screen .app-header {
+  border: none;
+  background: var(--dgray-color);
+  color: var(--white-color);
+}
+
+#study-test-screen .app-header .title{
+  color: var(--white-color);
+}
+
+#study-test-screen .app-header .action-btn svg {
+  color: var(--white-color);
+}
+
+#study-test-screen .app-header .back-btn svg {
+  color: var(--white-color);
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+}
+
+.st-test-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* 上：题库区（固定高度）*/
+.st-bank-panel {
+  flex: 0 0 auto;
+  padding: 4px 16px 10px;
+  border: none;
+  background: var(--dgray-color);
+}
+
+.st-bank-panel-title {
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--white-color);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.st-task-header-bar {
+  flex: 0 0 auto;
+  padding: 14px 16px 8px;
+  font-size: 14px;
+  font-weight: bold;
+  color: var(--dgray-color);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--white-color, #fff);
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+}
+
+/* 横向滚动行 */
+.st-bank-row {
+  display: flex;
+  flex-direction: row;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  -webkit-overflow-scrolling: touch;
+}
+.st-bank-row::-webkit-scrollbar { display: none; }
+
+/* 题库方块 */
+.st-bank-tile {
+  flex: 0 0 auto;
+  width: 90px;
+  height: 120px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+.st-bank-tile:active { transform: scale(0.92); }
+
+.st-bank-add {
+  border: 2px dashed var(--white-color);
+  background: transparent;
+  color: var(--white-color);
+}
+.st-bank-add:active {}
+
+.st-bank-book {
+  background: var(--gray-color);
+  color: var(--text-color);
+  padding: 8px 6px 6px;
+}
+
+.st-bank-tile-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.8;
+}
+
+.st-bank-tile-name {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.3;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  word-break: break-all;
+  max-width: 100%;
+}
+
+
+
+/* ── 题库方块颜色 ── */
+.st-bank-color-1 { background: #92BADE; color: #fff; }
+.st-bank-color-2 { background: #CADFF2; color: #fff; }
+.st-bank-color-3 { background: #FCDFD9; color: #92BADE; }
+.st-bank-color-4 { background: var(--gray-color); color: #92BADE; }
+
+/* ── 题库方块新布局：上一行(icon+数量) / 下一行(名称) ── */
+.st-bank-book {
+  /* 覆盖原来的 center 对齐 */
+  align-items: stretch;
+  justify-content: center;
+  padding: 10px 10px 8px;
+  gap: 0;
+}
+
+.st-bank-tile-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+/* 覆盖 .st-bank-tile-icon 的 flex center */
+.st-bank-book .st-bank-tile-icon {
+  align-items: flex-start;
+}
+
+/* 数量右上角 */
+.st-bank-book .st-bank-tile-count {
+  font-size: 16px;
+  font-weight: bold;
+  opacity: 0.85;
+}
+
+/* 名称左对齐 */
+.st-bank-book .st-bank-tile-name {
+  text-align: center;
+  align-self: flex-end;
+  width: 100%;
+}
+
+/* 下：测试任务区（撑满剩余空间）*/
+.st-test-task-panel {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  -webkit-overflow-scrolling: touch;
+  background: var(--white-color);
+}
+
+/* 测试卡片 */
+.st-exam-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  margin: 0 16px 10px;
+  background: var(--gray-color);
+  border-radius: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s, box-shadow 0.12s;
+  user-select: none;
+}
+.st-exam-card:active {
+  transform: scale(0.98);
+}
+
+.st-exam-card-left   { flex: 1; min-width: 0; }
+.st-exam-card-right  { display: flex; align-items: center; gap: 6px; flex-shrink: 0; padding-left: 12px; }
+
+.st-exam-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1c1c1e;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-exam-card-meta {
+  font-size: 12px;
+  color: #aaa;
+  margin-top: 3px;
+}
+
+/* 状态标签 */
+.st-exam-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.st-exam-pending  { background: #f2f2f7; color: #8e8e93; }
+.st-exam-progress { background: var(--bg-color); color: var(--blue-color); }
+.st-exam-done     { background: #e8f5e9; color: #87B392;}
+/* ── 考卷卡片颜色主题（同 home 色系）── */
+.st-exam-theme-1 { background: var(--gray-color); }
+.st-exam-theme-1 .st-exam-card-title { color: #92BADE; }
+.st-exam-theme-1 .st-exam-card-meta,
+.st-exam-theme-1 .st-exam-times { color: rgba(146,186,222,0.8); }
+
+.st-exam-theme-2 { background: var(--gray-color); }
+.st-exam-theme-2 .st-exam-card-title { color: #92BADE; }
+.st-exam-theme-2 .st-exam-card-meta,
+.st-exam-theme-2 .st-exam-times { color: rgba(146,186,222,0.8); }
+
+.st-exam-theme-3 { background: var(--gray-color); }
+.st-exam-theme-3 .st-exam-card-title { color: #92BADE; }
+.st-exam-theme-3 .st-exam-card-meta,
+.st-exam-theme-3 .st-exam-times { color: rgba(146,186,222,0.8); }
+
+/* ── 题目卡片 ────────────────────────────────────── */
+.st-q-card { display: flex; flex-direction: column; gap: 16px; }
+.st-q-badge {
+  display: inline-flex; padding: 4px 12px; background: var(--bg-color, #DAF0FC);
+  color: var(--primary-color, #0099FF); font-size: 12px; font-weight: 700; border-radius: 99px; align-self: flex-start;
+}
+.st-q-text { font-size: 17px; font-weight: 700; line-height: 1.6; margin: 0; }
+
+/* ── 选项 ────────────────────────────────────────── */
+.st-options { display: flex; flex-direction: column; gap: 10px; }
+.st-option {
+  width: 100%; text-align: left; padding: 13px 16px; border: 1.5px solid var(--line-color, #e2e2e2);
+  border-radius: 12px; background: #f8fafc; cursor: pointer; font-size: 14px;
+  font-weight: 500; transition: all 0.15s; color: var(--text-color, #333); font-family: inherit;
+}
+.st-option:not(:disabled):hover { border-color: var(--primary-color, #0099FF); background: var(--bg-color, #DAF0FC); }
+.st-option.correct { background: #f0fdf4; border-color: #e8f5e9; color: #87B392; font-weight: 700; }
+.st-option.wrong   { background: #fff5f5; border-color: #fca5a5; color: #DD7E7C }
+.st-option.dimmed  { background: #f8fafc; border-color: #e5e7eb; color: #9ca3af; }
+
+.st-qa-area { display: flex; flex-direction: column; gap: 12px; }
+
+/* ── 答题反馈 ─────────────────────────────────────── */
+.st-feedback { border-radius: var(--border-radius, 16px); padding: 20px; border: 1px solid var(--blue-color); }
+.st-feedback.correct { background: #f0fdf4; border-color: #e8f5e9; }
+.st-feedback.wrong   { background: #fff5f5; border-color: #fecaca; }
+.st-feedback h3 { margin: 0 0 8px; font-size: 15px; }
+.st-feedback.correct h3 { color: #87B392; }
+.st-feedback.wrong h3   { color: #DD7E7C; }
+.st-feedback p { margin: 0; font-size: 14px; color: #374151; line-height: 1.6; }
+
+.st-answer-box {
+  background: #fff; border-radius: var(--border-radius, 16px);
+  border: 1px solid var(--line-color, #e2e2e2); padding: 16px 20px;
+}
+.st-answer-box h3 { font-weight: 700; color: #374151; margin: 0 0 8px; font-size: 14px; }
+.st-answer-box p  { margin: 0; font-size: 13px; color: #4b5563; line-height: 1.7; white-space: pre-wrap; }
+
+/* ── 完成态 ──────────────────────────────────────── */
+.st-complete { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; text-align: center; }
+.st-complete-emoji { font-size: 64px; margin-bottom: 24px; }
+
+
+
+/* ── 题库详情页 ───────────────────────────────────────── */
+
+.st-bk-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-color, #f0f0f0);
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+.st-bk-item:active { background: var(--bg-active, #f5f5f5); }
+.st-bk-item-text {
+  flex: 1;
+  font-size: 15px;
+  color: var(--text-primary, #333);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.st-bk-item-arrow { flex-shrink: 0; opacity: 0.4; }
+
+#st-bk-delete-btn svg {
+  fill: none;
+}
+
+/* ── 题目类型徽章 ─────────────────────────────────────── */
+.st-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: 0.3px;
+}
+.st-badge-choice {
+  background: #e8f4ff;
+  color: #1a7fd4;
+}
+.st-badge-qa {
+  background: #f0f0ff;
+  color: #6c5ce7;
+}
+
+/* ── 编辑页 ───────────────────────────────────────────── */
+#study-bank-add-screen 
+
+.st-type-tabs {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--bg-color);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+.st-type-tab {
+  flex: 1;
+  padding: 9px 0;
+  font-size: 14px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.st-type-tab.active {
+  background: var(--accent-color);
+  color: #fff;
+}
+.st-type-tab + .st-type-tab {
+  border-left: 1px solid var(--bg-color);
+}
+
+.st-edit-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-color);
+  margin-bottom: 6px;
+  margin-top: 16px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.st-edit-opt-tag {
+  font-weight: 400;
+  color: var(--text-tertiary, #bbb);
+  font-size: 12px;
+  text-transform: none;
+  margin-left: 4px;
+}
+.st-edit-textarea { min-height: 60px; resize: vertical; }
+
+.st-edit-opt-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.st-edit-opt-letter {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-secondary, #f2f2f2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary, #888);
+  flex-shrink: 0;
+}
+.st-edit-opt-input { flex: 1; }
+
+.st-edit-ans-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.st-edit-ans-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--bg-color);
+  background: transparent;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.st-edit-ans-btn.active {
+  background: var(--accent-color, #007AFF);
+  border-color: var(--accent-color, #007AFF);
+  color: #fff;
+}
+
+/* ── 新增页 ───────────────────────────────────────────── */
+.st-add-section { margin-bottom: 8px; }
+.st-add-mode-select-wrap { margin-bottom: 20px; }
+
+.st-chapter-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--bg-color);
+  border-radius: 12px;
+  padding: 4px 0;
+}
+.st-chapter-all-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-color);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--bg-color);
+  text-align: left;
+  cursor: pointer;
+}
+.st-chapter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  cursor: pointer;
+  border-bottom: 1px solid var(--bg-color);
+}
+.st-chapter-row:last-child { border-bottom: none; }
+.st-chapter-cb { width: 16px; height: 16px; flex-shrink: 0; color: var(--accent-color); }
+
+.st-range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.st-range-row label { font-size: 13px; color: var(--text-secondary, #888); }
+
+.st-count-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.st-count-hint { font-size: 13px; color: var(--text-secondary, #aaa); }
+
+/* ── 导入格式卡 ──────────────────────────────────────── */
+.st-import-format-card {
+  background: var(--bg-secondary, #f6f8fa);
+  border: 1px solid var(--bg-color);
+  border-radius: 14px;
+  padding: 16px;
+  margin-bottom: 4px;
+}
+.st-import-format-title {
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: var(--text-primary, #333);
+}
+.st-import-format-desc {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+.st-import-format-desc code {
+  display: inline-block;
+  margin-top: 4px;
+  background: var(--bg-primary, #fff);
+  border: 1px solid var(--bg-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--primary-color);
+}
+.st-import-format-example {
+  font-size: 12px;
+  color: var(--text-tertiary, #aaa);
+  line-height: 1.8;
+  margin-bottom: 12px;
+}
+.st-import-format-example strong { color: var(--text-secondary, #777); }
+.st-import-template-btn {
+  font-size: 13px;
+  color: var(--accent-color, #007AFF);
+  background: transparent;
+  border: 1px solid var(--accent-color, #007AFF);
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+
+.st-import-file-area { margin-top: 4px; }
+
+/* ── 待确认预览卡 ─────────────────────────────────────── */
+.st-pending-card {
+  background: var(--bg-secondary, #f6f8fa);
+  border: 1px solid var(--bg-color);
+  border-radius: 14px;
+  padding: 16px;
+  margin-top: 20px;
+}
+.st-pending-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.st-pending-count { font-size: 15px; color: var(--text-primary, #333); }
+.st-pending-count strong { color: var(--accent-color); font-size: 18px; }
+.st-pending-more { font-size: 12px; color: var(--text-tertiary, #aaa); }
+.st-pending-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--bg-color);
+}
+.st-pending-item:last-child { border-bottom: none; }
+.st-pending-q {
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  flex: 1;
+}
+
+/* ── header text-btn（保存按钮）────────────────────────── */
+.text-btn {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent-color, #007AFF);
+  padding: 8px 4px;
+  cursor: pointer;
+  min-width: 44px;
+  text-align: right;
+}
+
+/* ── select 样式 ─────────────────────────────────────── */
+.st-select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 7L11 1' stroke='%23999' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+  cursor: pointer;
+}
+
+
+/* ── 新建考卷 modal ───────────────────────────────────── */
+
+
+/* ── 新建弹窗：考卷名称输入行 ──────────────────────────── */
+.st-create-exam-header .icon-btn {
+  border: none;
+  background: transparent;
+}
+
+.st-exam-name-row {
+  padding: 0 16px 12px;
+}
+.st-exam-name-row .st-bi-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  background: var(--white-color, #fff);
+  font-family: var(--font-family, inherit);
+  outline: none;
+}
+.st-exam-name-row .st-bi-input:focus {
+  border-color: var(--accent-color, #007AFF);
+  background: var(--white-color, #fff);
+}
+
+
+/* 题库行 */
+.st-exam-bank-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 8px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  gap: 12px;
+}
+.st-exam-bank-row:last-child { border-bottom: none; }
+.st-exam-bank-empty { opacity: 0.5; }
+
+.st-exam-bank-info  { flex: 1; min-width: 0; }
+.st-exam-bank-name  { font-size: 15px; font-weight: 500; color: #1c1c1e; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.st-exam-bank-total { font-size: 12px; color: #aaa; margin-top: 2px; display: block; }
+
+#st-exam-draw-count  {
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text-primary, #333);
+  background: var(--white-color, #fff);
+}
+
+/* 计数器 */
+.st-exam-bank-count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.st-count-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid var(--primary-color, #0099FF);
+  background: transparent;
+  color: var(--primary-color, #0099FF);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s, color 0.12s;
+  font-family: inherit;
+}
+.st-count-btn:active { background: var(--primary-color, #0099FF); color: #fff; }
+.st-count-val {
+  font-size: 16px;
+  font-weight: 600;
+  min-width: 20px;
+  text-align: center;
+  color: #1c1c1e;
+}
+
+
+/* ── 答题页（study-exam-screen）───────────────────────── */
+/* study-exam-screen 答题区布局 */
+#study-exam-screen .content {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#study-exam-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 16px;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+}
+
+#study-exam-screen .app-header {
+  background-color: var(--gray-color);
+  border:none;
+}
+
+/* 题目区 */
+.st-exam-q-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 0 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.st-exam-bank-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary-color);
+  background: var(--bg-color,);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-bottom: 10px;
+}
+
+/* 底部导航 */
+.st-exam-nav {
+  display: flex;
+  gap: 10px;
+  padding: 12px 0 6px;
+  flex-shrink: 0;
+}
+.st-exam-nav-btn {
+  flex: 1;
+  height: 46px;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* 告警文字 */
+.st-exam-warn {
+  color: #ff9500;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+/* ── 答题区全新卡片布局 (匹配截图) ───────────────────────── */
+#study-exam-body {
+  background-color: var(--gray-color); /* 清爽的浅灰背景 */
+  padding: 0; 
+  display: flex;
+  flex-direction: column;
+}
+
+.st-exam-card-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.st-exam-card-inner {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03); /* 非常微弱的阴影 */
+}
+
+/* 卡片 Header (题型与进度) */
+.st-exam-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.st-q-badge-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.st-q-badge-line {
+  width: 4px;
+  height: 16px;
+  background-color: var(--blue-color); /* 截图中的那一抹竖线 */
+  border-radius: 2px;
+}
+
+#st-q-badge {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+}
+
+.st-exam-progress-text {
+  display: flex;
+  align-items: baseline;
+}
+#st-exam-current-num {
+  font-size: 26px;
+  font-weight: 800;
+  color: #111;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+#st-exam-total-num {
+  font-size: 16px;
+  font-weight: 600;
+  color: #aaa;
+  margin-left: 2px;
+}
+
+/* 题目正文 */
+.st-q-text {
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: #222;
+  margin: 0 0 24px 0;
+}
+
+/* ── 选项区域重构 ────────────────────────────────────────── */
+.st-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.st-option {
+  width: 100%;
+  text-align: left;
+  padding: 14px 18px;
+  border: none;
+  border-radius: 12px;
+  background: #f8f9fb; /* 浅灰底，无边框 */
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 500;
+  color: #555;
+  transition: all 0.2s ease;
+}
+
+.st-option:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+.st-option.selected {
+  background: #eff6fb; 
+  color: #82a8cf; /* 截图中柔和的蓝色 */
+  font-weight: 600;
+}
+
+/* 提交后的选项反馈 */
+.st-option.correct { background: #f0fdf4; color: #87B392; font-weight: 600; }
+.st-option.wrong   { background: #fff5f5; color: #DD7E7C; }
+.st-option.dimmed  { opacity: 0.5; }
+
+/* ── 统一 Action 按钮 (AI批改 / 自己批改 等) ──────────────── */
+.st-action-btn-group {
+  display: flex;
+  gap: 10px;
+  margin-top: 24px;
+  flex-wrap: wrap;
+}
+
+.st-action-btn {
+  flex: 1;
+  min-width: fit-content;
+  padding: 12px 16px;
+  border-radius: 99px; /* 胶囊型 */
+  border: 1px solid #e2e6ea;
+  background: #fff;
+  color: #55606e;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.st-action-btn:active { transform: scale(0.96); }
+.st-action-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* AI 批改 / 自己批改 激活态 */
+.st-action-btn.active, .st-action-btn:not(:disabled):hover {
+  background: #eff6fb;
+  border-color: #82a8cf;
+  color: #82a8cf;
+}
+
+/* 绿色正确 / 红色错误 自评专用 */
+.st-action-btn-correct { border-color: #cce3d5; color: #729c80; }
+.st-action-btn-correct:not(:disabled):hover { background: #f0fdf4; }
+.st-action-btn-wrong { border-color: #f7d5d5; color: #c46866; }
+.st-action-btn-wrong:not(:disabled):hover { background: #fff5f5; }
+
+
+/* ── 底部固定导航区 (上一题/下一题胶囊) ─────────────────── */
+.st-exam-nav-bottom {
+  display: flex;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  background: var(--gray-color); /* 与页面背景一致 */
+}
+
+.st-btn-pill {
+  flex: 1;
+  height: 50px;
+  border-radius: 99px;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+.st-btn-pill:active:not(:disabled) { transform: scale(0.96); }
+.st-btn-pill:disabled { background: var(--dgray-color); cursor: not-allowed; }
+
+.st-btn-pill-primary {
+  background: var(--blue-color); /* 截图对应的浅蓝色 */
+  color: #fff;
+}
+.st-btn-pill-secondary {
+  background: var(--accent-color);
+  color: #fff;
+}
+
+
+
+/* ── 成绩结果页 ────────────────────────────────────────── */
+
+
+.st-exam-score-summary {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 20px;
+}
+
+
+
+
+/* ── 测试设置侧边栏 ────────────────────────────────────── */
+
+#study-test-sidebar {
+  /* 复用 settings-sidebar 的通用样式，只需要定义特有的 */
+  z-index: 80;
+}
+
+
+
+/* ── 分析面板（analysis-panel / create-exam-sheet 共用规则）── */
+
+.st-create-exam-sheet,
+.st-analysis-panel {
+  border-radius: 20px 20px 0 0;
+  max-height: 75vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.st-create-exam-header,
+.st-analysis-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 8px;
+  flex-shrink: 0;
+}
+
+.st-analysis-header {
+  border-bottom: 1px solid var(--border-color, #f0f0f0);
+}
+
+.st-create-exam-title,
+.st-analysis-title {
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.st-create-exam-hint {
+  margin: 0;
+  padding: 0 16px 8px;
+  font-size: 13px;
+  color: var(--text-secondary, #888);
+  flex-shrink: 0;
+}
+
+.st-create-exam-body {
+  overflow-y: auto;
+  flex: 1;
+  padding: 0 16px;
+}
+
+.st-analysis-body {
+  overflow-y: auto;
+  padding: 16px;
+  flex: 1;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+/* ── 世界书多选列表行 ─────────────────────────────────────── */
+
+.wb-select-list {
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 15px 0;
+}
+
+.wb-select-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border-color, #f0f0f0);
+  cursor: pointer;
+}
+
+.wb-select-item:last-child {
+  border-bottom: none;
+}
+
+.wb-select-item label {
+  cursor: pointer;
+  flex: 1;
+}
+
+/* AI 分析行：按钮横排 */
+.st-analyze-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 自己批改 toggle 按钮 */
+.st-btn-self-toggle {
+  padding: 7px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--line-color, #e0e0e0);
+  background: transparent;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.st-btn-self-toggle.active {
+  background: var(--bg-color, #DAF0FC);
+  border-color: var(--primary-color, #0099FF);
+  color: var(--primary-color, #0099FF);
+}
+
+/* 自评按钮展开区 */
+.st-self-grade-btns {
+  display: flex;
+  gap: 10px;
+  animation: st-fade-in 0.15s ease;
+}
+@keyframes st-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 分析文本排版 */
+.st-analysis-text {
+  line-height: 1.7;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.st-analysis-text p {
+  margin: 0 0 12px;
+}
+.st-analysis-text p:last-child {
+  margin-bottom: 0;
+}
+
+.st-self-grade {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.st-self-grade-label {
+  font-size: 12px;
+  color: #aaa;
+  flex-shrink: 0;
+}
+.st-btn-self-correct,
+.st-btn-self-wrong {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 13px;
+  border: 1px solid;
+  cursor: pointer;
+  background: transparent;
+}
+.st-btn-self-correct {
+  color: #52c41a;
+  border-color: #52c41a;
+}
+.st-btn-self-wrong {
+  color: #ff6b6b;
+  border-color: #ff6b6b;
+}
+
+/* AI 分析弹窗 —— 标题区头像 */
+.st-analysis-title-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.st-analysis-char-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--bg-tertiary, #eee);
+}
+
+/* Markdown 渲染区排版 */
+.st-analysis-md h3,
+.st-analysis-md h4,
+.st-analysis-md h5 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 14px 0 4px;
+  color: var(--primary-color);
+}
+
+.st-analysis-md p { margin: 6px 0; line-height: 1.7; }
+
+.st-analysis-md ul,
+.st-analysis-md ol {
+  padding-left: 18px;
+  margin: 6px 0;
+}
+
+.st-analysis-md li { margin: 3px 0; line-height: 1.6; }
+
+.st-analysis-md strong { font-weight: 600; }
+.st-analysis-md em     { font-style: italic; }
+.st-analysis-md del    { text-decoration: line-through; opacity: .7; }
+
+.st-analysis-md code {
+  font-family: monospace;
+  font-size: 13px;
+  background: var(--bg-tertiary, #f4f4f4);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.st-analysis-md pre {
+  background: var(--bg-tertiary, #f4f4f4);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.st-analysis-md pre code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+}
+
+/* ── AI 点评折叠块 ────────────────────────── */
+.st-result-analysis-toggle {
+  margin-top: 10px;
+  border-top: 1px solid var(--border-color, #eee);
+}
+
+.st-result-analysis-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--primary-color, #6c7ae0);
+  font-weight: 500;
+  gap: 6px;
+}
+
+.st-result-analysis-chevron {
+  flex-shrink: 0;
+  transition: transform 0.25s ease;
+}
+
+.st-result-analysis-toggle.open .st-result-analysis-chevron {
+  transform: rotate(180deg);
+}
+
+.st-result-analysis-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.st-result-analysis-toggle.open .st-result-analysis-body {
+  max-height: 1200px; /* 足够大，实际由内容撑开 */
+}
+
+.st-result-analysis-body .st-analysis-md {
+  padding: 4px 0 12px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-secondary, #555);
+}
+
+/* ── 题库批量选择模式 ──────────────────────────────── */
+
+/* 多选模式下底部不要额外 padding，让 bar 贴底 */
+#study-bank-screen.st-bk-select-active .content {
+  padding-bottom: 0;
+}
+
+/* 底部操作 bar */
+#st-bk-select-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  display: none;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  background: var(--white-color, #eee);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border-color, #eee);
+  box-sizing: border-box;
+  z-index: 60;
+  animation: slideUp 0.25s ease-out;
+  border-bottom-left-radius: var(--phone-corner-radius);
+  border-bottom-right-radius: var(--phone-corner-radius);
+}
+#st-bk-select-bar.visible {
+  display: flex;
+}
+
+/* 危险色删除按钮 */
+.st-btn-danger {
+  padding: 8px 20px;
+  border-radius: 10px;
+  background: #ff3b30;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.st-btn-danger:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 每个题目左侧的 checkbox 圆圈 */
+.st-bk-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-color, #ccc);
+  flex-shrink: 0;
+  background: #fff;
+  display: none; /* 默认隐藏，进入多选模式后显示 */
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, border-color 0.15s;
+}
+/* 进入多选模式后才显示 checkbox */
+#study-bank-screen.st-bk-select-active .st-bk-check {
+  display: flex;
+}
+/* 选中态：实心圆 + 白色勾 */
+.st-bk-check.checked {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+}
+.st-bk-check.checked::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg) translateY(-1px);
+  display: block;
+}
+
+/* 选中的 item 行高亮 */
+.st-bk-item.st-bk-selected {
+  background: rgba(var(--primary-rgb, 100,149,237), 0.1);
+}
+
+/* ── 成绩结果页优化 ────────────────────────────────────────── */
+#study-exam-result-screen .app-header {
+  border: none;
+}
+
+
+.st-exam-result {
+  display: flex;
+  flex-direction: column;
+  padding-top: 16px;
+  gap: 20px;
+}
+
+/* --- 1. 顶部总览卡片 (左右结构) --- */
+.st-result-overview-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 0 30px 8px;
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.overview-left {
+  flex-shrink: 0;
+}
+
+/* ==========================================================
+   成绩圈基础样式 (提取共性，打造高级质感)
+   ========================================================== */
+.st-exam-score-ring {
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff; /* 纯白底色，显得干净 */
+  position: relative;
+  /* 取消原来的 border，改用多层 box-shadow 打造带有轨道感的环形 */
+  border: none;
+  /* 预留外边距防止阴影被裁切 */
+  margin: 12px; 
+}
+
+/* 数字文本基础修饰 */
+.st-exam-score-num {
+  font-weight: 800;
+  color: #5b8c68; /* 比外圈稍微深一点的绿色，增加对比度 */
+  line-height: 1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  text-shadow: 1px 2px 4px rgba(91, 140, 104, 0.15); /* 给数字加一点微弱的投影 */
+}
+
+
+/* ==========================================================
+   场景 1：交卷后的即时结果页面 (需要更大，更有冲击力)
+   外层父级是 .st-complete
+   ========================================================== */
+.st-complete .st-exam-score-ring {
+  width: 160px;
+  height: 160px;
+  margin-bottom: 24px;
+  /* 大尺寸环的比例参数 */
+  box-shadow: 
+    inset 0 0 0 10px #f0fdf4,      /* 内侧浅绿轨道 */
+    0 0 0 8px #87B392,             /* 外侧主色实体环 */
+    0 16px 36px rgba(135, 179, 146, 0.25); /* 柔和的外围发光阴影 */
+}
+
+.st-complete .st-exam-score-num {
+  font-size: 60px; /* 数字更大 */
+  margin-bottom:5px;
+}
+
+
+/* ==========================================================
+   场景 2：历史记录详情页 (需要精致小巧，配合文字排版)
+   外层父级是 .st-result-overview-card
+   ========================================================== */
+.st-result-overview-card .st-exam-score-ring {
+  width: 104px;
+  height: 104px;
+  /* 小尺寸环的比例参数 */
+  box-shadow: 
+    inset 0 0 0 6px #f0fdf4,      /* 内侧浅绿轨道 */
+    0 0 0 5px #87B392,            /* 外侧主色实体环 */
+    0 8px 20px rgba(135, 179, 146, 0.2); /* 柔和的外围发光阴影 */
+}
+
+.st-result-overview-card .st-exam-score-num {
+  font-size: 40px; /* 数字缩小 */
+  margin-bottom:3px;
+}
+
+
+/* --- 修正外层卡片的内边距，防止漂亮的外阴影被遮挡 --- */
+.st-result-overview-card {
+  background-color: #ffffff;
+  border-radius: 16px;
+  /* 修改 padding，给上面和下面留出阴影空间 */
+  padding: 0 30px 16px; 
+  border: none;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.overview-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+}
+
+.overview-date {
+  font-size: 13px;
+  color: #888;
+  font-family: 'Georgia', 'Times New Roman', serif;
+  letter-spacing: 0.5px;
+}
+
+.overview-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stat-item {
+  font-size: 14px;
+  color: #555;
+}
+.stat-item strong {
+  font-size: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+.stat-item.correct strong { color: #87B392; }
+.stat-item.warning strong { color: #ff9800; }
+
+
+/* --- 2. 逐题详情卡片 (复刻 Chunk Block) --- */
+.st-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 卡片头部徽章重写 */
+.st-res-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: bold;
+}
+.st-res-badge.correct  { background: #e8f5e9; color: #87B392; }
+.st-res-badge.wrong    { background: #ffebee; color: #DD7E7C; }
+.st-res-badge.ungraded { background: var(--gray-color); color: var(--dgray-color); }
+
+/* 右侧状态文字 */
+.st-res-status {
+  font-size: 13px;
+  font-weight: bold;
+}
+.st-res-status.correct  { color: #87B392; }
+.st-res-status.wrong    { color: #DD7E7C; }
+.st-res-status.ungraded { color: #999; }
+
+/* 题目正文 */
+.st-res-q-text {
+  font-weight: 600;
+  margin-top: 4px;
+  margin-bottom: 12px;
+}
+
+/* --- 选择题选项排版 --- */
+.st-res-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.st-res-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--gray-color);
+  border: 1px solid var(--gray-color);
+  font-size: 14px;
+  color: #555;
+}
+.st-res-opt .opt-letter {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--white-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--dgray-color);
+  flex-shrink: 0;
+}
+/* 答案高亮 */
+.st-res-opt.is-answer {
+  background: #f0fdf4;
+  border-color: #C0DCCE;
+  color: #87B392;
+  font-weight: bold;
+}
+.st-res-opt.is-answer .opt-letter { background: #87B392; color: #fff; border-color: #87B392; }
+
+.st-res-opt.is-chosen-wrong {
+  background: #fff5f5;
+  border-color: #fecaca;
+  color: #DD7E7C;
+}
+.st-res-opt.is-chosen-wrong .opt-letter { background: #DD7E7C; color: #fff; border-color: #DD7E7C; }
+
+/* --- 内嵌折叠区 (复用 summary 的 chunk-meta-wrapper) --- */
+/* 因为 HTML 里已经直接用了 chunk-meta-wrapper，这里补充详情页独有的内部样式 */
+.st-res-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.cmp-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cmp-label {
+  font-size: 12px;
+  color: var(--dgray-color);
+  font-weight: 500;
+}
+.cmp-val {
+  font-size: 14px;
+  color: #333;
+  line-height: 1.6;
+  background: #fff;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--gray-color);
+}
+.cmp-row.is-wrong .cmp-val { border-color: #fecaca; color: #DD7E7C; background: #fffcfc;}
+.cmp-row.is-correct .cmp-val { border-color: #f0fdf4; color: #87B392; background: #fcfdfc;}
+
+.st-res-comment p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #444;
+}
+
+/* AI 点评内容修正间距 */
+.st-res-analysis-body {
+  border-top: 1px dashed var(--gray-color); /* 将原本的 #d0dee9 改为浅灰 */
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+/* --- 覆盖复用 Summary 时的浅蓝色，改为灰色主题 --- */
+.st-res-card .chunk-meta-wrapper {
+  background-color: var(--gray-color); /* 浅灰底色 */
+}
+
+.st-res-card .chunk-meta-toggle {
+  color: var(--text-color); /* 灰色文字 */
+}
+
+.st-res-card .chunk-meta-toggle:hover {
+  background-color: var(--gray-color); /* 悬浮态深灰 */
+}
+
+.st-res-card .chunk-block-meta {
+  border-top: 1px dashed var(--dgray-color); /* 分割线改为灰色 */
+}
+
+/* ── 提前交卷按钮 ────────────────────────────────────────── */
+.st-handin-text-btn {
+  background: var(--blue-color);
+  border: none;
+  color: var(--white-color);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.st-handin-text-btn:active {
+  background: rgba(0, 153, 255, 0.1);
+  transform: scale(0.96);
+}
