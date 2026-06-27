@@ -288,7 +288,7 @@ async function callEmbeddingApi(text, chat) {
         body     = { model: `models/${model}`, content: { parts: [{ text }] } };
     } else {
         fetchUrl = `${url}/v1/embeddings`;
-        body     = { model, input: text };
+        body = { model, input: Array.isArray(text) ? text : [text] };
     }
     
     console.log('[Embed] fetchUrl:', fetchUrl, '| text length:', text.length);
@@ -309,13 +309,14 @@ async function callEmbeddingApi(text, chat) {
         clearTimeout(timeoutId);
 
         if (!res.ok) {
-            let errStr = `HTTP ${res.status}`;
-            try {
-                const errJson = await res.json();
-                errStr = errJson.error?.message || errStr;
-            } catch(e){}
-            throw new Error(errStr);
-        }
+    let errStr = `HTTP ${res.status}`;
+    try {
+        const errJson = await res.json();
+        console.log('[Embed] 错误响应完整内容:', JSON.stringify(errJson)); // 加这行
+        errStr = errJson.error?.message || errJson.detail || errJson.message || errStr;
+    } catch(e){}
+    throw new Error(errStr);
+}
 
         const result = await res.json();
 

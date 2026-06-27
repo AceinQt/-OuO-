@@ -37,7 +37,7 @@
                 await processTimePerception(chat, currentChatId, currentChatType);
                 const textPrompt = `[${myName}发来了一张图片：]`;
                 const message = {
-                    id: `msg_${Date.now()}`,
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                     role: 'user',
                     content: base64Data,
                     parts: [{ type: 'text', text: textPrompt }, { type: 'image', data: base64Data }],
@@ -61,7 +61,7 @@
                 await processTimePerception(chat, currentChatId, currentChatType);
                 const content = `[${myName}的语音：${text}]`;
                 const message = {
-                    id: `msg_${Date.now()}`,
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                     role: 'user',
                     content: content,
                     parts: [{ type: 'text', text: content }],
@@ -86,7 +86,7 @@
                 await processTimePerception(chat, currentChatId, currentChatType);
                 const content = `[${myName}发来的照片\/视频：${text}]`;
                 const message = {
-                    id: `msg_${Date.now()}`,
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                     role: 'user',
                     content: content,
                     parts: [{ type: 'text', text: content }],
@@ -111,7 +111,7 @@
                 if (currentChatType === 'private') {
                     const content = `[${chat.myName}给你转账：${amount}元；备注：${remark}]`;
                     const message = {
-                        id: `msg_${Date.now()}`,
+                        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                         role: 'user',
                         content: content,
                         parts: [{ type: 'text', text: content }],
@@ -128,7 +128,7 @@
                         if (recipient) {
                             const content = `[${chat.me.realName} 向 ${recipient.realName} 转账：${amount}元；备注：${remark}]`;
                             const message = {
-                                id: `msg_${Date.now()}_${recipientId}`,
+                                id: `msg_${Date.now()}_${recipientId}_${Math.random().toString(36).substr(2, 6)}`, 
                                 role: 'user',
                                 content: content,
                                 parts: [{ type: 'text', text: content }],
@@ -156,7 +156,7 @@
                 if (currentChatType === 'private') {
                     const content = `[${chat.myName}送来的礼物：${description}]`;
                     const message = {
-                        id: `msg_${Date.now()}`,
+                        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                         role: 'user',
                         content: content,
                         parts: [{ type: 'text', text: content }],
@@ -173,7 +173,7 @@
                         if (recipient) {
                             const content = `[${chat.me.realName} 向 ${recipient.realName} 送来了礼物：${description}]`;
                             const message = {
-                                id: `msg_${Date.now()}_${recipientId}`,
+                                id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                                 role: 'user',
                                 content: content,
                                 parts: [{ type: 'text', text: content }],
@@ -217,7 +217,7 @@
 
     // 1. UI 展示消息 (保持不变，用 system-display 是为了触发你的CSS样式)
     const visualMessage = {
-        id: `msg_visual_${now}`,
+        id: `msg_visual_${now}_${Math.random().toString(36).substr(2, 6)}`, 
         role: 'system',
         content: `[system-display:${text}]`, // 这里保留 system-display 是为了前端渲染样式，反正是给用户看的，不给AI看
         parts: [],
@@ -230,7 +230,7 @@
     const contextContent = `[剧情旁白：${text}]`; 
     
     const contextMessage = {
-        id: `msg_context_${now}`,
+        id: `msg_context_${now}_${Math.random().toString(36).substr(2, 6)}`, 
         role: 'user', // 既然是用户写的旁白，用 user 角色最合适
         content: contextContent,
         parts: [{ type: 'text', text: contextContent }],

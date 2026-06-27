@@ -82,8 +82,7 @@ function setupChatRoom() {
         }               
         chatExpansionPanel.classList.toggle('visible');
     });
-
-    sendMessageBtn.addEventListener('click', sendMessage);
+    
     sendMessageBtn.addEventListener('touchend', (e) => {
         e.preventDefault();
         sendMessage();
@@ -127,7 +126,7 @@ function setupChatRoom() {
                 }
 
                 const instructionMsg = {
-                    id: `msg_ins_continue_${Date.now()}`, 
+                    id: `msg_ins_continue_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,  
                     role: 'user', 
                     content: continueInstruction,
                     parts:[{ type: 'text', text: continueInstruction }],
@@ -1116,7 +1115,7 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
         if (alreadyInjected) return;
 
         const visualMessage = {
-            id: `msg_visual_timesense_${Date.now()}`,
+            id: `msg_visual_timesense_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
             role: 'system',
             content: `[time-divider]`,
             parts: [{ type: 'text', text: '[time-divider]' }],
@@ -1126,7 +1125,7 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
 const contextContent = `[系统情景通知：距离上一次互动已经过去${formatTimeGap(timeGap)}。当前时刻是${getFormattedTimestamp(now)}。请注意这段时间流逝带来的情境和心理变化，结合上下文自然地继续互动。]`;
         
         const contextMessage = {
-            id: `msg_context_timesense_${Date.now()}`, 
+            id: `msg_context_timesense_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`, 
             role: 'user', 
             content: contextContent,
             parts: [{ type: 'text', text: contextContent }],
@@ -1190,7 +1189,7 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
                 }
 
                 const message = {
-                    id: `msg_${Date.now()}`,
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                     role: 'user',
                     content: messageContent,
                     parts: [{ type: 'text', text: messageContent }],

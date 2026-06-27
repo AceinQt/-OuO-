@@ -19,18 +19,33 @@ function openProactiveMessagingSettings() {
     const freqSlider = document.getElementById('pa-frequency-slider');
     const freqVal = document.getElementById('pa-frequency-val');
 
-    // 固定模式(Timer)设定
+    // 固定模式设定
     const timerSettings = document.getElementById('pa-timer-settings');
     const timerIntervalInput = document.getElementById('pa-timer-interval-input');
     const timerKeepaliveInput = document.getElementById('pa-timer-keepalive-input');
 
-    // 1. 初始化读取数据库
+    // ── 新增：API 选择器 ──────────────────────────────────────
+    const apiSettings = document.getElementById('pa-api-settings');
+    const apiPresetSelect = document.getElementById('pa-api-preset-select');
+
+    if (apiPresetSelect) {
+        apiPresetSelect.innerHTML = '<option value="">和聊天一致</option>';
+        const chatPresets = (db.apiPresets || []).filter(p => !p.type || p.type === 'chat');
+        chatPresets.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.name;
+            opt.textContent = p.name;
+            apiPresetSelect.appendChild(opt);
+        });
+        apiPresetSelect.value = chat.proactiveApiPresetName || '';
+    }
+    // ─────────────────────────────────────────────────────────
+
+    // 初始化读取数据库
     modeSelect.value = chat.proactiveMode || 'random';
-    
     dailySlider.value = chat.proactiveDailyLimit || 10;
     dailyVal.textContent = dailySlider.value;
     freqSlider.value = chat.proactiveFrequency !== undefined ? chat.proactiveFrequency : 1;
-    
     timerIntervalInput.value = chat.proactiveTimerInterval || 5;
     timerKeepaliveInput.value = chat.proactiveKeepAlive || 30;
 
@@ -42,20 +57,26 @@ function openProactiveMessagingSettings() {
     };
     updateFreqText();
 
-    // 2. 监听模式切换，展开对应配置，并显示 Hint
+    // 监听模式切换
     const updateHintsAndDisplay = () => {
-        fixedSettings.style.display = modeSelect.value === 'fixed' ? 'block' : 'none';
-        timerSettings.style.display = modeSelect.value === 'timer' ? 'block' : 'none';
+        const mode = modeSelect.value;
+        fixedSettings.style.display = mode === 'fixed' ? 'block' : 'none';
+        timerSettings.style.display = mode === 'timer' ? 'block' : 'none';
         
-        switch(modeSelect.value) {
+        // ── 新增：API 选择器仅在 fixed / timer 时显示 ──
+        if (apiSettings) {
+            apiSettings.style.display = (mode === 'fixed' || mode === 'timer') ? 'block' : 'none';
+        }
+        
+        switch(mode) {
             case 'random':
                 hintsBox.innerHTML = '<b>* 随机模式：</b>根据其他功能使用情况概率掉落消息，不额外调用api。';
                 break;
             case 'fixed':
-                hintsBox.innerHTML = '<b>* 主动模式：</b>允许闲暇时主动调用api发送消息。可调整发送消息频率及允许调用次数来影响角色主动发消息频率。达到设定的每日上限后当天不再主动调用。<br>';
+                hintsBox.innerHTML = '<b>* 主动模式：</b>允许闲暇时主动调用api发送消息。可调整发送消息频率及每日上限。';
                 break;
             case 'timer':
-                hintsBox.innerHTML = '<b>* 固定模式：</b>定时推进剧情专用。当无任何操作的时长达到你设定的分钟数后，系统会模拟点击“获取AI回复”，强制触发新消息。';
+                hintsBox.innerHTML = '<b>* 固定模式：</b>定时推进剧情专用。当无操作达到设定分钟数后，系统会模拟获取回复。';
                 break;
             case 'dnd':
                 hintsBox.innerHTML = '<b>* 免打扰模式：</b>角色绝对不会在后台主动发起任何消息。';
@@ -65,19 +86,15 @@ function openProactiveMessagingSettings() {
     updateHintsAndDisplay(); 
     modeSelect.onchange = updateHintsAndDisplay;
 
-    // 3. 滑块实时显示数值
     dailySlider.oninput = () => dailyVal.textContent = dailySlider.value;
     freqSlider.oninput = updateFreqText;
 
-    // 4. 显示弹窗
     modal.classList.add('visible');
 
-    // 5. 绑定取消按钮
     document.getElementById('pa-cancel-btn').onclick = () => {
         modal.classList.remove('visible');
     };
 
-    // 6. 绑定表单提交
     form.onsubmit = async (e) => {
         e.preventDefault();
         modal.classList.remove('visible');
@@ -87,7 +104,8 @@ function openProactiveMessagingSettings() {
             parseInt(dailySlider.value, 10), 
             parseInt(freqSlider.value, 10),
             parseInt(timerIntervalInput.value, 10),
-            parseInt(timerKeepaliveInput.value, 10)
+            parseInt(timerKeepaliveInput.value, 10),
+            apiPresetSelect ? (apiPresetSelect.value || null) : null
         );
     };
 }
@@ -95,7 +113,8 @@ function openProactiveMessagingSettings() {
 /**
  * 应用模式并存库，保存全新的 Timer 字段
  */
-async function applyAwaySettings(chat, mode, dailyLimit, frequency, timerInterval, timerKeepalive) {
+// 增加第7个参数 apiPresetName
+async function applyAwaySettings(chat, mode, dailyLimit, frequency, timerInterval, timerKeepalive, apiPresetName = null) {
     const oldMode = chat.proactiveMode;
     chat.proactiveMode = mode;
     
@@ -105,17 +124,20 @@ async function applyAwaySettings(chat, mode, dailyLimit, frequency, timerInterva
     } else if (mode === 'timer') {
         chat.proactiveTimerInterval = timerInterval;
         chat.proactiveKeepAlive = timerKeepalive;
-        
-        // 【修复 1】：切换到固定模式时，强制记录开启时间。从这一刻开始算作“0分钟”，杜绝一开启就轰炸
         if (oldMode !== 'timer') {
             chat.timerModeEnabledAt = Date.now();
             chat.lastTimerTrigger = Date.now();
         }
     }
 
+    // ── 新增：保存主动消息 API 预设 ──
+    if (mode === 'fixed' || mode === 'timer') {
+        chat.proactiveApiPresetName = apiPresetName;
+    }
+    // ─────────────────────────────────
+
     await saveSingleChat(chat.id, currentChatType);
     
-    // 立即更新加号面板按钮
     const awayBtns = document.querySelectorAll('.expansion-item[data-action*="proactive"], .expansion-item[onclick*="openProactiveMessagingSettings"]');
     awayBtns.forEach(btn => {
         if (mode === 'fixed' || mode === 'timer') btn.classList.add('active');
@@ -702,7 +724,7 @@ async function triggerTimerAiReply(chat, type) {
         }
 
         const instructionMsg = {
-            id: `msg_ins_continue_timer_${Date.now()}`,
+            id: `msg_ins_continue_timer_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
             role: 'user',
             content: continueInstruction,
             parts:[{ type: 'text', text: continueInstruction }],
@@ -723,7 +745,7 @@ async function triggerTimerAiReply(chat, type) {
     }
 
     if (typeof getAiReply === 'function') {
-        await getAiReply(chat.id, type, true); 
+        await getAiReply(chat.id, type, true, chat.proactiveApiPresetName || null); 
     }
 }
 
@@ -784,7 +806,19 @@ async function triggerIdleProactiveGeneration() {
 
 async function generateBackgroundProactiveMessages(chat, maxCalls, type, queueType = 'time_window_idle') {
     try {
-        const { url, key, model } = db.apiSettings;
+        // ── 新增：读取主动消息专用API配置 ──────────────────────
+        let effectiveApi = db.apiSettings || {};
+        if (chat.proactiveApiPresetName) {
+            const preset = (db.apiPresets || []).find(p =>
+                p.name === chat.proactiveApiPresetName && (!p.type || p.type === 'chat')
+            );
+            if (preset && preset.data) effectiveApi = { ...db.apiSettings, ...preset.data };
+        }
+        const { url, key, model, provider } = effectiveApi;
+        const temperature = effectiveApi.temperature !== undefined ? effectiveApi.temperature : 0.85;
+        const streamEnabled = !!effectiveApi.streamEnabled;
+        // ────────────────────────────────────────────────────────
+
         let systemPrompt = '';
         if (type === 'private' && typeof generateProactivePrivatePrompt === 'function') {
             systemPrompt = generateProactivePrivatePrompt(chat); 
@@ -901,7 +935,7 @@ ${exampleFormat}
 
         systemPrompt += awayInstruction;
 
-        const memoryLength = chat.maxMemory || 15;
+const memoryLength = chat.maxMemory || 15;
         const recentHistory = chat.history.slice(-memoryLength).map(m => {
             if (m.isHidden || m.isAiIgnore || m.role === 'system') return null;
             return m.content;
@@ -909,19 +943,65 @@ ${exampleFormat}
 
         const userMessage = `【最近聊天记录】\n${recentHistory || '（暂无记录）'}\n\n请按格式输出接下来的主动消息：`;
 
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body: JSON.stringify({
-                model: model,
-                messages:[{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],
-                temperature: 0.85 
-            })
-        });
+        let textBlock = "";
 
-        if (!response.ok) return;
-        const result = await response.json();
-        const textBlock = result.choices[0].message.content.trim();
+        // 🌟【双轨制安全网】：哪怕用户没选 API，硬生生用 Gemini，这里也做好了兼容！
+        if (provider === 'gemini') {
+            // Gemini API 发送逻辑
+            const endpoint = `${url}/v1beta/models/${model}:generateContent?key=${typeof getRandomValue === 'function' ? getRandomValue(key) : key}`;
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [ { role: 'user', parts: [{ text: systemPrompt + '\n\n' + userMessage }] } ],
+                    generationConfig: { temperature: temperature }
+                })
+            });
+
+            if (!response.ok) return;
+            const result = await response.json();
+            textBlock = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+        } else {
+            // OpenAI 兼容 API 发送逻辑 (采用 Claude 提供的 SSE 流式解析防超时)
+            const response = await fetch(`${url}/v1/chat/completions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+                body: JSON.stringify({
+                    model: model,
+                    messages:[{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],
+                    temperature: temperature,
+                    stream: streamEnabled
+                })
+            });
+
+            if (!response.ok) return;
+
+            if (streamEnabled) {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // 保留不完整行
+                    for (const line of lines) {
+                        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
+                        try {
+                            const chunk = JSON.parse(line.slice(6));
+                            const delta = chunk.choices?.[0]?.delta?.content;
+                            if (delta) textBlock += delta;
+                        } catch {}
+                    }
+                }
+                textBlock = textBlock.trim();
+            } else {
+                const result = await response.json();
+                textBlock = result.choices[0].message.content.trim();
+            }
+        }
 
         let proactiveOptions = {};
         let groupCounters = {}; 
@@ -1009,7 +1089,7 @@ ${exampleFormat}
                 
                 if (!existingPeek) {
                     existingPeek = {
-                        id: `promsg_peek_${Date.now()}`,
+                        id: `promsg_peek_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                         type: 'time_window_peek',
                         generatedAt: Date.now(),
                         expireAt: Date.now() + 72 * 60 * 60 * 1000, 
@@ -1041,7 +1121,7 @@ ${exampleFormat}
                 console.log(`[Peek顺风车] 成功收集${Object.keys(proactiveOptions).length}组，当前备用池容量: ${Object.keys(existingPeek.content).length}/10`);
             } else {
                 const newProactiveData = {
-                    id: `promsg_idle_${Date.now()}`,
+                    id: `promsg_idle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                     type: queueType,
                     generatedAt: Date.now(),
                     expireAt: Date.now() + 12 * 60 * 60 * 1000, 

@@ -160,8 +160,34 @@ function formatRetrievedContext(scoredChunks, chat, minScore = DEFAULT_MIN_SCORE
     const highThres = minScore + range * TIER_HIGH_RATIO;
 
     return scoredChunks.map(({ chunk, score }) => {
-        const d       = new Date(chunk.startTime || chunk.timestamp || 0);
-        const dateStr = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+        const chunkDate = new Date(chunk.startTime || chunk.timestamp || 0);
+const today     = new Date();
+today.setHours(0, 0, 0, 0);
+chunkDate.setHours(0, 0, 0, 0);
+const diffDays  = Math.round((today - chunkDate) / (1000 * 60 * 60 * 24));
+
+let dateStr;
+if (diffDays === 0) {
+    dateStr = '今天';
+} else if (diffDays === 1) {
+    dateStr = '昨天';
+} else if (diffDays === 2) {
+    dateStr = '前天';
+} else if (diffDays <= 13) {
+    // 近两周：相对天数，AI 能精准感知
+    dateStr = `${diffDays}天前`;
+} else if (diffDays <= 60) {
+    // 两周到两个月：相对 + 绝对月份，兼顾感知和语义
+    const month = chunkDate.getMonth() + 1;
+    const weekStr = Math.round(diffDays / 7);
+    dateStr = `约${weekStr}周前（${month}月）`;
+} else {
+    // 两个月以上：完整绝对日期，AI 能感知年份、季节、月份
+    const y = chunkDate.getFullYear();
+    const m = chunkDate.getMonth() + 1;
+    const d = chunkDate.getDate();
+    dateStr = `${y}年${m}月${d}日`;
+}
         const emoTag  = chunk.emotion ? ` · ${chunk.emotion}` : '';
 
         let content;

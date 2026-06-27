@@ -513,9 +513,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (document.visibilityState === 'hidden' && shouldSaveOnHide) {
             try {
                 // 保存前检查数据新鲜度(可选,额外保险)
-                if (typeof dexieDB !== 'undefined') {
-                    try {
-                        const storedMeta = await dexieDB.globalSettings.get('app_metadata');
+                if (typeof window.dexieDB !== 'undefined') {
+    try {
+        const storedMeta = await window.dexieDB.globalSettings.get('app_metadata');
                         if (storedMeta?.lastUpdateTime > (window.dbLoadTimestamp || 0)) {
                             console.warn('⚠️ 检测到远程数据更新,跳过保存避免覆盖');
                             return;
@@ -547,9 +547,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 checkAndDeliverProactiveMessages();
             }
             
-            if (typeof dexieDB !== 'undefined') {
-                try {
-                    const storedMeta = await dexieDB.globalSettings.get('app_metadata');
+            if (typeof window.dexieDB !== 'undefined') {
+    try {
+        const storedMeta = await window.dexieDB.globalSettings.get('app_metadata');
                     if (storedMeta?.lastUpdateTime > (window.dbLoadTimestamp || 0)) {
                         console.log('🔄 检测到新数据,重新加载...');
                         await loadData();

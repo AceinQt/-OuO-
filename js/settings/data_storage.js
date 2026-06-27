@@ -115,10 +115,21 @@ const dataStorage = {
             categorizedSizes.settings += stringify(db.fontUrl);
             categorizedSizes.settings += stringify(db.homeStatusBarColor);
 
-            // ★ 8. 学习模块（独立表）
-            categorizedSizes.study += stringify(db.studyBooks);
-            categorizedSizes.study += stringify(db.studyQuestions);
-            categorizedSizes.study += stringify(db.studyRecords);
+// ★ 8. 学习模块
+categorizedSizes.study += stringify(db.studyBooks);
+categorizedSizes.study += stringify(db.studyQuestions);
+categorizedSizes.study += stringify(db.studyRecords);
+// ★ V8：正文和共读消息在独立表，需从 Dexie 读取
+if (typeof dexieDB !== 'undefined') {
+    try {
+        const [allContents, allCoreadMsgs] = await Promise.all([
+            dexieDB.studyBookContents.toArray(),
+            dexieDB.studyCoreadMessages.toArray(),
+        ]);
+        allContents.forEach(r => categorizedSizes.study += stringify(r));
+        allCoreadMsgs.forEach(r => categorizedSizes.study += stringify(r));
+    } catch(e) {}
+}
 
             const totalSize = Object.values(categorizedSizes).reduce((sum, size) => sum + size, 0);
             return { totalSize, categorizedSizes };
@@ -289,6 +300,95 @@ function renderStorageDetails(container, info) {
     });
 }
 
+// ========================================================
+// === 数据瘦身与异常修复模块 ===
+// ========================================================
 function setupStorageAnalysisScreen() {
-    // 占位符
+    const cleanupBtn = document.getElementById('btn-cleanup-duplicates');
+    if (!cleanupBtn) return;
+
+    cleanupBtn.addEventListener('click', async () => {
+        // 防抖：防止重复点击
+        if (cleanupBtn.disabled) return;
+        
+        cleanupBtn.disabled = true;
+        const originalText = cleanupBtn.innerText;
+        cleanupBtn.innerText = "扫描中...";
+        cleanupBtn.style.opacity = "0.7";
+
+        // 引入你 utils.js 中的加载提示动画
+        const hideLoading = typeof showLoadingToast === 'function' ? showLoadingToast("正在全盘扫描数据库...") : () => {};
+
+        try {
+            // 1. 读取所有消息
+            const allMsgs = await dexieDB.messages.toArray();
+            
+            // 2. 按聊天室分组 (这种在内存中分组排序的方式最稳妥，兼容所有安卓设备)
+            const chatGroups = {};
+            for (const msg of allMsgs) {
+                if (!chatGroups[msg.chatId]) chatGroups[msg.chatId] = [];
+                chatGroups[msg.chatId].push(msg);
+            }
+
+            const toDelete = [];
+
+            // 3. 逐个聊天室排查幽灵消息
+            for (const chatId in chatGroups) {
+                const msgs = chatGroups[chatId];
+                // 确保消息严格按照时间先后排序
+                msgs.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+
+                let prevMsg = null;
+                for (const msg of msgs) {
+                    // 判断条件：同角色、同内容、发送时间相差不到 1000 毫秒
+                    if (prevMsg &&
+                        prevMsg.role === msg.role &&
+                        prevMsg.content === msg.content &&
+                        (msg.timestamp - prevMsg.timestamp) < 1000
+                    ) {
+                        toDelete.push(msg.id);
+                    } else {
+                        prevMsg = msg; // 记录为正常消息
+                    }
+                }
+            }
+
+            hideLoading();
+
+            // 4. 结果汇报与清理
+            if (toDelete.length > 0) {
+                const confirmed = await AppUI.confirm(
+                    `扫描完成！发现了 ${toDelete.length} 条由于系统异常产生的重复消息。\n\n是否立刻清理以释放存储空间？`,
+                    "发现垃圾数据", 
+                    "一键清理", 
+                    "取消"
+                );
+                
+                if (confirmed) {
+                    const hideDeleting = typeof showLoadingToast === 'function' ? showLoadingToast("正在执行清理...") : () => {};
+                    await dexieDB.messages.bulkDelete(toDelete); // 从数据库抹除
+                    hideDeleting();
+                    
+                    await AppUI.alert(`✅ 清理成功！共删除了 ${toDelete.length} 条重复消息。\n您的设备空间已得到释放。`, "瘦身完成");
+                    
+                    // 清理完立刻刷新图表和容量统计
+                    if (typeof refreshStorageScreen === 'function') {
+                        refreshStorageScreen();
+                    }
+                }
+            } else {
+                await AppUI.alert("🎉 您的数据库非常健康，没有发现重复的垃圾消息。", "扫描完成");
+            }
+
+        } catch (err) {
+            console.error("扫描失败:", err);
+            hideLoading();
+            await AppUI.alert("扫描过程中出现异常：" + err.message, "操作失败");
+        } finally {
+            // 恢复按钮状态
+            cleanupBtn.disabled = false;
+            cleanupBtn.innerText = originalText;
+            cleanupBtn.style.opacity = "1";
+        }
+    });
 }

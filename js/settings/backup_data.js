@@ -67,27 +67,20 @@ async function handleFullBackup(e) {
     window.isBackupLoading = true;
     const btn = document.getElementById('btn-backup-full');
     const originalText = btn ? btn.innerHTML : '备份全部数据';
-    
-    if (btn) {
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 打包中...';
-        btn.style.opacity = '0.7';
-    }
+    if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 打包中...'; btn.style.opacity = '0.7'; }
 
     try {
         showToast('正在准备导出全部数据...');
         await new Promise(r => setTimeout(r, 50));
-        const fullBackupData = await createFullBackupData();
-        await downloadData(fullBackupData, '全量备份');
+        // ★ 改为流式导出，不再一次性创建大对象
+        await downloadDataStream(createFullBackupStream(), '全量备份');
         showToast('备份导出成功');
     } catch (err) {
         console.error(err);
         showToast(`导出失败: ${err.message}`);
     } finally {
         window.isBackupLoading = false;
-        if (btn) {
-            btn.innerHTML = originalText;
-            btn.style.opacity = '1';
-        }
+        if (btn) { btn.innerHTML = originalText; btn.style.opacity = '1'; }
     }
 }
 
@@ -198,10 +191,25 @@ async function createFullBackupData() {
     const backupData = JSON.parse(JSON.stringify(db));
     backupData._exportVersion = '4.0';
     backupData._exportTimestamp = Date.now();
+
+    // ★ V8：书籍正文和共读消息不在 db 内存中，需单独从 Dexie 读取
+    try {
+        const [studyBookContents, studyCoreadMessages] = await Promise.all([
+            dexieDB.studyBookContents.toArray(),
+            dexieDB.studyCoreadMessages.toArray(),
+        ]);
+        backupData.studyBookContents   = studyBookContents   || [];
+        backupData.studyCoreadMessages = studyCoreadMessages || [];
+    } catch (e) {
+        console.error('❌ [Backup] 读取书籍正文/共读消息失败:', e);
+        backupData.studyBookContents   = [];
+        backupData.studyCoreadMessages = [];
+    }
+
     return backupData;
 }
 
-// --- 6. 下载辅助函数 ---
+// --- 6. 下载辅助函数（保留给小数据用） ---
 async function downloadData(dataObj, filenameSuffix) {
     const jsonString = JSON.stringify(dataObj);
     const dataBlob = new Blob([jsonString]);
@@ -214,12 +222,135 @@ async function downloadData(dataObj, filenameSuffix) {
     const now = new Date();
     const date = now.toISOString().slice(0, 10);
     const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
-    
     a.href = url;
     a.download = `QChat_${filenameSuffix}_${date}_${time}.ee`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+// ★ 新增：流式下载（用于全量备份，大数据专用）
+async function downloadDataStream(jsonChunkGenerator, filenameSuffix) {
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    // 后台把 generator 的 JSON 片段逐块写入管道
+    const writePromise = (async () => {
+        try {
+            for await (const chunk of jsonChunkGenerator) {
+                await writer.write(encoder.encode(chunk));
+            }
+        } catch (e) {
+            await writer.abort(e);
+            throw e;
+        } finally {
+            await writer.close().catch(() => {});
+        }
+    })();
+
+    // 同时把管道接上 gzip，收集成 Blob
+    const gzipStream = readable.pipeThrough(new CompressionStream('gzip'));
+    const [compressedBlob] = await Promise.all([
+    new Response(gzipStream, { headers: { 'Content-Type': 'application/octet-stream' } }).blob(),
+    writePromise,
+]);
+
+    const url = URL.createObjectURL(compressedBlob);
+    const a = document.createElement('a');
+    const now = new Date();
+    const date = now.toISOString().slice(0, 10);
+    const time = now.toTimeString().slice(0, 8).replace(/:/g, '');
+    a.href = url;
+    a.download = `QChat_${filenameSuffix}_${date}_${time}.ee`;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+}
+
+// ★ 新增：全量备份 JSON 流生成器（替换 createFullBackupData）
+// 核心：characters/groups 逐个序列化，任意时刻内存只持有一个角色的数据
+async function* createFullBackupStream() {
+    // ── 1. 所有小数据（设置、世界书、论坛等）一次性序列化 ──
+    const smallData = {
+        _exportVersion: '4.0',
+        _exportTimestamp: Date.now(),
+        worldBooks:             db.worldBooks             || [],
+        rpgProfiles:            db.rpgProfiles            || [],
+        forumPosts:             db.forumPosts             || [],
+        forumBindings:          db.forumBindings          || {},
+        forumUserIdentity:      db.forumUserIdentity      || {},
+        watchingPostIds:        db.watchingPostIds         || [],
+        favoritePostIds:        db.favoritePostIds         || [],
+        myStickers:             db.myStickers              || [],
+        userPersonas:           db.userPersonas            || [],
+        wallpaper:              db.wallpaper,
+        customIcons:            db.customIcons,
+        bubbleCssPresets:       db.bubbleCssPresets,
+        globalCss:              db.globalCss,
+        globalCssPresets:       db.globalCssPresets,
+        homeSignature:          db.homeSignature,
+        insWidgetSettings:      db.insWidgetSettings,
+        homeWidgetSettings:     db.homeWidgetSettings,
+        apiSettings:            db.apiSettings,
+        apiPresets:             db.apiPresets,
+        pomodoroSettings:       db.pomodoroSettings,
+        pomodoroTasks:          db.pomodoroTasks           || [],
+        homeScreenMode:         db.homeScreenMode,
+        fontUrl:                db.fontUrl,
+        homeStatusBarColor:     db.homeStatusBarColor,
+        homeNavigationBarColor: db.homeNavigationBarColor,
+        enableTopSafeArea:      db.enableTopSafeArea,
+        enableBottomSafeArea:   db.enableBottomSafeArea,
+        enableScreenAdaptation: db.enableScreenAdaptation,
+        enableSwipeBack:        db.enableSwipeBack,
+        studySettings:          db.studySettings,
+        studyBanks:             db.studyBanks              || [],
+        studyExams:             db.studyExams              || [],
+        studyExamRecords:       db.studyExamRecords        || [],
+        studyBooks:             db.studyBooks              || [],
+        studyQuestions:         db.studyQuestions          || [],
+        studyRecords:           db.studyRecords            || [],
+        peekData:               db.peekData                || {},
+    };
+    // 去掉末尾的 }，后面继续拼 characters/groups
+    yield JSON.stringify(smallData).slice(0, -1);
+
+    // ── 2. characters：逐个序列化，每次只有一个角色在内存里 ──
+    const chars = db.characters || [];
+    yield ',"characters":[';
+    for (let i = 0; i < chars.length; i++) {
+        yield JSON.stringify(chars[i]);
+        if (i < chars.length - 1) yield ',';
+        // 每处理5个角色让出控制权，给 GC 和 UI 喘息
+        if (i % 5 === 4) await new Promise(r => setTimeout(r, 0));
+    }
+    yield ']';
+
+    // ── 3. groups：同上 ──
+    const groups = db.groups || [];
+    yield ',"groups":[';
+    for (let i = 0; i < groups.length; i++) {
+        yield JSON.stringify(groups[i]);
+        if (i < groups.length - 1) yield ',';
+        if (i % 5 === 4) await new Promise(r => setTimeout(r, 0));
+    }
+    yield ']';
+
+    // ── 4. studyBookContents / studyCoreadMessages（从 Dexie 读，可能较大）──
+    try {
+        const [studyBookContents, studyCoreadMessages] = await Promise.all([
+            dexieDB.studyBookContents.toArray(),
+            dexieDB.studyCoreadMessages.toArray(),
+        ]);
+        yield ',"studyBookContents":' + JSON.stringify(studyBookContents);
+        yield ',"studyCoreadMessages":' + JSON.stringify(studyCoreadMessages);
+    } catch (e) {
+        console.error('❌ [Backup] 读取书籍正文/共读消息失败:', e);
+        yield ',"studyBookContents":[],"studyCoreadMessages":[]';
+    }
+
+    yield '}'; // JSON 对象结束
 }
 
 // --- 7. 数据合并/恢复核心逻辑 ---
@@ -253,17 +384,23 @@ async function importBackupData(data, isCloudPartialRestore = false) {
             });
         }
         else if (!isPartial) {
-            if (typeof dexieDB !== 'undefined') {
-                await Promise.all([
-                    dexieDB.characters.clear(), dexieDB.groups.clear(), dexieDB.worldBooks.clear(),
-                    dexieDB.myStickers.clear(), dexieDB.userPersonas.clear(), dexieDB.globalSettings.clear(),
-                    dexieDB.forumPosts.clear(), dexieDB.peekData.clear(), dexieDB.rpgProfiles.clear(),
-                    dexieDB.forumMetadata.clear(),
-                    dexieDB.messages.clear(),  // 全量恢复时清空消息表
-                    dexieDB.memories.clear(),  // ★ V6：清空记忆表
-                    dexieDB.memoryChunks.clear() // ★ V6：清空向量切块表
-                ]);
-            }
+if (typeof dexieDB !== 'undefined') {
+    await Promise.all([
+        dexieDB.characters.clear(), dexieDB.groups.clear(), dexieDB.worldBooks.clear(),
+        dexieDB.myStickers.clear(), dexieDB.userPersonas.clear(), dexieDB.globalSettings.clear(),
+        dexieDB.forumPosts.clear(), dexieDB.peekData.clear(), dexieDB.rpgProfiles.clear(),
+        dexieDB.forumMetadata.clear(),
+        dexieDB.messages.clear(),           // 全量恢复时清空消息表
+        dexieDB.memories.clear(),           // ★ V6：清空记忆表
+        dexieDB.memoryChunks.clear(),       // ★ V6：清空向量切块表
+        dexieDB.studyBooks.clear(),         // ★ V8：清空学习书籍元数据
+        dexieDB.studyBookContents.clear(),  // ★ V8：清空书籍正文
+        dexieDB.studyCoreadMessages.clear(),// ★ V8：清空共读消息
+        dexieDB.studyPageCache.clear(),     // ★ V8：清空分页缓存
+        dexieDB.studyQuestions.clear(),     // ★ V8：清空题目
+        dexieDB.studyRecords.clear(),       // ★ V8：清空答题记录
+    ]);
+}
             message = "全量数据已恢复";
             Object.keys(db).forEach(key => { 
                 if (data[key] !== undefined) {
@@ -362,6 +499,16 @@ async function importBackupData(data, isCloudPartialRestore = false) {
             if (data.characters) await dexieDB.memoryChunks.where('chatId').anyOf(data.characters.map(c=>c.id)).delete();
             if (data.groups)     await dexieDB.memoryChunks.where('chatId').anyOf(data.groups.map(g=>g.id)).delete();
             await dexieDB.memoryChunks.bulkPut(importChunks);
+        }
+
+// ★ V8：将备份中的书籍正文写入 studyBookContents 独立表
+        if (data.studyBookContents && data.studyBookContents.length > 0) {
+            await dexieDB.studyBookContents.bulkPut(data.studyBookContents);
+        }
+
+        // ★ V8：将备份中的共读消息写入 studyCoreadMessages 独立表
+        if (data.studyCoreadMessages && data.studyCoreadMessages.length > 0) {
+            await dexieDB.studyCoreadMessages.bulkPut(data.studyCoreadMessages);
         }
 
         // 兜底补全
@@ -645,21 +792,28 @@ async function performOptimizedCloudBackup() {
         studySettings: db.studySettings,
     };
 
-    // 2. 聊天数据 (聊天、群组、Peek)
-    const chatData = {
-        _exportVersion: '4.0',
-        _exportTimestamp: timestamp,
-        _partialType: 'chats_only', 
-        
-        characters: db.characters || [],
-        groups: db.groups || [],
-        peekData: db.peekData || {},
+// ★ V8：书籍正文和共读消息已独立存表，需从 DB 读取
+const [studyBookContents, studyCoreadMessages] = await Promise.all([
+    dexieDB.studyBookContents.toArray(),
+    dexieDB.studyCoreadMessages.toArray(),
+]);
 
-        // ★ 学习模块大表（数据量可能很大，随聊天数据一起备份）
-        studyBooks:     db.studyBooks     || [],
-        studyQuestions: db.studyQuestions || [],
-        studyRecords:   db.studyRecords   || [],
-    };
+const chatData = {
+    _exportVersion: '4.0',
+    _exportTimestamp: timestamp,
+    _partialType: 'chats_only',
+
+    characters: db.characters || [],
+    groups: db.groups || [],
+    peekData: db.peekData || {},
+
+    // ★ 学习模块大表（数据量可能很大，随聊天数据一起备份）
+    studyBooks:          db.studyBooks          || [],
+    studyQuestions:      db.studyQuestions      || [],
+    studyRecords:        db.studyRecords        || [],
+    studyBookContents:   studyBookContents      || [], // ★ V8：书籍正文（量大，按需读取）
+    studyCoreadMessages: studyCoreadMessages    || [], // ★ V8：共读消息
+};
 
     // ★★★ 修复:增加备份验证 ★★★
     console.log('[Backup] 系统数据字段数:', Object.keys(systemData).length);

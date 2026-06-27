@@ -149,7 +149,11 @@ function calculateTypingDelay(text, isFirstMessage) {
 // 处理 AI 回复内容解析与渲染
 // ==========================================
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType) {
-    if (!fullResponse) return;
+    if (!fullResponse) {
+    showToast('AI返回了空内容，可能被截断或拦截了');
+    console.error("AI返回了空内容，可能被截断或拦截了"); 
+    return;
+}   
     console.log("🟢 开始处理 AI 回复:", fullResponse.substring(0, 50) + "..."); 
     // ★ 记录本次通话会话ID，用于挂断后中止生成
     const capturedCallSessionId = (targetChatType === 'private' && chat?.currentCallSessionId)
@@ -158,6 +162,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     try {        
         let cleanResponse = fullResponse;
         cleanResponse = cleanResponse.replace(/^```\w*\s*$/gm, '');
+        cleanResponse = cleanResponse.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+
 
         const contentSplitRegex = /###\s*🎭\s*(?:正文|思考).*/i;
         if (contentSplitRegex.test(cleanResponse)) {
@@ -353,7 +359,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
                 if (targetChatType === 'private') {
                     const character = chat;
-                    // --- 来电邀请检测 ---
+// --- 来电邀请检测 ---
                     const incomingCallRegex = /\[.*?发起了(语音|视频)通话邀请\]/;
                     const incomingCallMatch = item.content.match(incomingCallRegex);
                     if (incomingCallMatch && !chat.callMode) {
@@ -379,7 +385,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         if (typeof showIncomingCall === 'function') {
                             showIncomingCall(callType, chat);
                         }
-                        continue;
+                        break;
                     }
                     // --- 来电检测结束 ---
 
@@ -550,7 +556,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         }
 
-        if (targetChatType === 'private' && chat.callMode && chat.callConnected === false && typeof onCallConnected === 'function') {
+        if (targetChatType === 'private' && chat.callMode && chat.callConnected === false && !chat.isIncomingCall && typeof onCallConnected === 'function') {
             onCallConnected();
         }
 
@@ -572,8 +578,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 // 触发 AI 请求 (Fetch 逻辑)
 // ==========================================
 // 修改函数签名，增加 isBackground = false
-async function getAiReply(chatId, chatType, isBackground = false) {
-    // 【核心新增】：如果后台触发时，用户恰好在这个聊天室里盯着看，直接转为"前台处理"（会有输入中提示并锁死按钮）
+// 修改函数签名，增加第四个参数 proactiveApiPresetName
+async function getAiReply(chatId, chatType, isBackground = false, proactiveApiPresetName = null) {
+    // 【核心新增】：如果后台触发时，用户恰好在这个聊天室里盯着看，直接转为"前台处理"
     const isCurrentChat = (typeof currentChatId !== 'undefined' && currentChatId === chatId && currentChatType === chatType);
     if (isCurrentChat) {
         isBackground = false; 
@@ -581,24 +588,29 @@ async function getAiReply(chatId, chatType, isBackground = false) {
 
     if (isGenerating && !isBackground) return;
 
-    // 👇 【核心修复 1】：必须先获取 chat 对象，再往下执行读取操作，否则会报错中断
+    // 👇 【核心修复 1】：必须先获取 chat 对象，再往下执行读取操作
     const chat = (chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
     if (!chat) return;
 
-    // 获取有效 API 配置：优先用该聊天自定义的预设，否则用全局 db.apiSettings
+    // ==========================================
+    // 🌟 API 配置优先级核心逻辑重构
+    // 优先级：主动消息专用预设 > 聊天室自定义预设 > 全局默认
+    // ==========================================
     let effectiveApiSettings = db.apiSettings || {};
-    if (chat.chatApiPreset) {
-        const _chatPreset = (db.apiPresets || []).find(x =>
-            x.name === chat.chatApiPreset && (!x.type || x.type === 'chat')
+    const _overrideName = proactiveApiPresetName || chat.chatApiPreset || null;
+    
+    if (_overrideName) {
+        const _preset = (db.apiPresets || []).find(x =>
+            x.name === _overrideName && (!x.type || x.type === 'chat')
         );
-        if (_chatPreset && _chatPreset.data) {
-            // 合并：预设覆盖全局，但全局的其他字段（如 activePreset）仍保留
-            effectiveApiSettings = { ...db.apiSettings, ..._chatPreset.data };
+        if (_preset && _preset.data) {
+            // 合并：预设覆盖全局
+            effectiveApiSettings = { ...db.apiSettings, ..._preset.data };
         }
     }
     
     const { url, key, model, provider } = effectiveApiSettings;
-    const streamEnabled = effectiveApiSettings.streamEnabled ?? true; // 默认true
+    const streamEnabled = effectiveApiSettings.streamEnabled ?? true; 
     
     if (!url || !key || !model) {
         if (!isBackground) {
@@ -750,7 +762,7 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
                     parts = [{ text: processingContent }];
                 }
                 return { role, parts };
-            });
+}).filter(c => c.parts && c.parts.length > 0 && c.parts.some(p => p.text?.trim() || p.inline_data));
             
             if (activeReinforcement){
                 let targetIndex = -1;

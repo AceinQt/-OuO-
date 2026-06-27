@@ -6,17 +6,19 @@
 // state.home.taskTab: 'all' | 'focus' | 'test'
 
 function studyRenderHome() {
-  const { state, h } = window._study;
-  const persona = getStudyBoundPersona();
-
-  // 初始化 tab 状态
+  const { state } = window._study;
   if (!state.home.taskTab) state.home.taskTab = 'all';
 
-  // 顶部问候名字
-  const nameEl = document.getElementById('st-home-name');
-  if (nameEl) nameEl.textContent = persona?.nickname || persona?.name || 'User';
+  const settings = getStudySettings();
 
-  // 渲染任务列表区域
+  // 主页昵称
+  const nameEl = document.getElementById('st-home-name');
+  if (nameEl) nameEl.textContent = settings.homeName || 'User';
+
+  // 主页问候语
+  const greetEl = document.querySelector('.st-home-title');
+  if (greetEl) greetEl.textContent = settings.homeGreeting || '今天要做什么呢？';
+
   _renderTaskSection();
 }
 
@@ -56,18 +58,23 @@ function _renderTaskSection() {
   if (!listEl) return;
 
   let html = '';
+  let globalIdx = 0; // 全局卡片序号，用于统一颜色序列
 
   // 专注任务块
   if (showFocus) {
     if (focusTasks.length === 0) {
       if (tab === 'focus') {
-        html += `<div class="st-task-empty">暂无专注任务，去番茄钟新建一个吧~</div>`;
+        html += `<div class="st-task-empty">暂无专注任务，去「专注」新建一个吧~</div>`;
       } else {
-        // 全部tab下，专注任务为空则不显示标题
+        // 全部tab下，专注任务为空则不显示
       }
     } else {
-      if (tab === 'all') html += `<div class="st-task-group-title">专注任务</div>`;
-      html += focusTasks.map((t, i) => _renderFocusCard(t, i)).join('');
+      if (tab === 'all') {
+        // 全部tab不显示分组标题
+      } else if (tab === 'focus') {
+        // 单独tab也不需要
+      }
+      html += focusTasks.map(t => _renderFocusCard(t, globalIdx++)).join('');
     }
   }
 
@@ -75,11 +82,10 @@ function _renderTaskSection() {
   if (showTest) {
     if (testTasks.length === 0) {
       if (tab === 'test') {
-        html += `<div class="st-task-empty">暂无测试任务，先去书架导入书籍和题目吧~</div>`;
+        html += `<div class="st-task-empty">暂无测试任务，去「测试」新建一个吧~</div>`;
       }
     } else {
-      if (tab === 'all') html += `<div class="st-task-group-title">测试任务</div>`;
-      html += testTasks.map((t, i) => _renderTestCard(t, i)).join('');
+      html += testTasks.map(t => _renderTestCard(t, globalIdx++)).join('');
     }
   }
 
@@ -97,20 +103,10 @@ function _renderTaskSection() {
     });
   });
 
-  // 绑定测试卡片点击
+// 绑定测试卡片点击（_renderTaskSection 里）
   listEl.querySelectorAll('.st-task-card[data-type="test"]').forEach(card => {
-    card.addEventListener('click', () => {
-      const bookId = card.dataset.bookId;
-      const s = window._study.state.test;
-      Object.assign(s, {
-        questions: getQuestionsByBook(bookId).sort(() => Math.random() - 0.5),
-        idx: 0, selectedAnswer: null, userAnswer: '',
-        feedback: null, isGrading: false, showAnswer: false,
-      });
-      if (typeof navigateTo === 'function') navigateTo('study-test-screen');
-      studyRenderTest();
-    });
-  });
+  card.addEventListener('click', () => _openExam(card.dataset.examId));
+});
 }
 
 // ── 数据获取 ─────────────────────────────────────
@@ -120,9 +116,14 @@ function _getFocusTasks() {
 }
 
 function _getTestTasks() {
-  const books = getAllStudyBooks();
-  // 只显示有题目的书本
-  return books.filter(b => getQuestionsByBook(b.id).length > 0);
+  return getAllStudyExams();
+}
+
+// ── 卡片颜色序列 (1,2,3,2,1,2,3,2,...) ───────────────
+function _taskThemeClass(index) {
+  // 周期4：0→1, 1→2, 2→3, 3→2
+  const seq = [1, 2, 3, 2];
+  return 'st-task-theme-' + seq[index % 4];
 }
 
 // ── 卡片模板 ─────────────────────────────────────
@@ -130,7 +131,7 @@ function _getTestTasks() {
 function _renderFocusCard(task, index) {
   const { h } = window._study;
   const modeText  = task.mode === 'countdown' ? `倒计时 ${task.duration} 分钟` : '正计时模式';
-  const themeClass = 'st-task-theme-' + ((index % 3) + 1);
+  const themeClass = _taskThemeClass(index);
 
   // 自定义背景图
   const bgStyle = task.settings?.taskCardBackground
@@ -148,18 +149,18 @@ function _renderFocusCard(task, index) {
     </div>`;
 }
 
-function _renderTestCard(book, index) {
+function _renderTestCard(exam, index) {
   const { h } = window._study;
-  const qc = getQuestionsByBook(book.id).length;
-  const themeClass = 'st-task-theme-' + (((index + 1) % 3) + 1);
+  const themeClass = _taskThemeClass(index);
 
   return `
-    <div class="st-task-card ${themeClass}" data-type="test" data-book-id="${h(book.id)}">
+    <div class="st-task-card ${themeClass}" data-type="test" data-exam-id="${h(exam.id)}">
       <div class="st-task-badge st-badge-test">测试</div>
-      <div class="st-task-name">${h(book.title)}</div>
-      <div class="st-task-meta">${qc} 道题</div>
+      <div class="st-task-name">${h(exam.title || '未命名考卷')}</div>
+      <div class="st-task-meta">${exam.drawCount || 0} 道题</div>
       <div class="st-task-arrow">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </div>`;
 }
+

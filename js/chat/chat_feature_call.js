@@ -98,7 +98,7 @@ async function startCall(type) {
         : `[system: 场景切换：${chat.realName}和${chat.myName}切换到视频通话模式。]`;
 
     const instructionMsg = {
-        id: `msg_call_start_ins_${now}`,
+        id: `msg_call_start_ins_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: instructionContent,
         parts: [{ type: 'text', text: instructionContent }],
@@ -110,7 +110,7 @@ async function startCall(type) {
 
     const displayContent = `[system-display: ${typeName}开始]`;
     const displayMsg = {
-        id: `msg_call_start_vis_${now}`,
+        id: `msg_call_start_vis_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -165,7 +165,7 @@ async function endCall() {
 
     const endInstruction = `[system: ${typeName}已结束，切换回手机聊天模式。恢复使用“${chat.realName}的消息...” 格式]`;
     const instructionMsg = {
-        id: `msg_call_end_ins_${now}`,
+        id: `msg_call_end_ins_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: endInstruction,
         parts: [{ type: 'text', text: endInstruction }],
@@ -177,7 +177,7 @@ async function endCall() {
 
     const displayContent = `[system-display: ${typeName}结束 · ${durationStr}]`;
     const displayMsg = {
-        id: `msg_call_end_vis_${now}`,
+        id: `msg_call_end_vis_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -190,6 +190,7 @@ async function endCall() {
     chat.callMode             = null;
     chat.callConnected        = null;
     chat.currentCallSessionId = null;
+    chat.isIncomingCall       = false;
 
     await saveMessagesToDB([instructionMsg, displayMsg], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
@@ -237,7 +238,7 @@ async function aiHangupCall() {
     // 通知 AI 切换回文字模式
     const endInstruction = `[system: ${chat.realName}主动挂断了${typeName}，切换回手机聊天模式。恢复使用“${chat.realName}的消息...” 格式]`;
     const instructionMsg = {
-        id: `msg_call_end_ins_${now}`,
+        id: `msg_call_end_ins_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: endInstruction,
         parts: [{ type: 'text', text: endInstruction }],
@@ -250,7 +251,7 @@ async function aiHangupCall() {
     // 屏幕上显示的提示文本（带时长）
     const displayContent = `[system-display: ${typeName}结束 · ${durationStr}]`;
     const displayMsg = {
-        id: `msg_call_end_vis_${now}`,
+        id: `msg_call_end_vis_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -263,6 +264,7 @@ async function aiHangupCall() {
     chat.callMode             = null;
     chat.callConnected        = null;
     chat.currentCallSessionId = null;
+    chat.isIncomingCall       = false;
 
     await saveMessagesToDB([instructionMsg, displayMsg], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
@@ -283,6 +285,7 @@ async function aiHangupCall() {
 // ------------------------------------------
 function showIncomingCall(type, chat) {
     if (chat.callMode) return;
+    chat.isIncomingCall = true; // 👉 新增：标记这是 AI 发起的来电，等待用户接听
     _showCallOverlay(type, chat, true);
 }
 
@@ -297,6 +300,8 @@ async function acceptIncomingCall() {
     // 复用邀请时生成的 sessionId，而不是重新生成
     const sessionId = chat.currentCallSessionId || `call_${Date.now()}`;
     chat.currentCallSessionId = sessionId;
+    
+    chat.isIncomingCall = false;
 
     const now = Date.now();
 
@@ -305,7 +310,7 @@ async function acceptIncomingCall() {
         : `[system: ${chat.myName}接听了视频通话。场景切换：${chat.realName}和${chat.myName}切换到视频通话模式。]`;
 
     const instructionMsg = {
-        id: `msg_call_accept_ins_${now}`,
+        id: `msg_call_accept_ins_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: instructionContent,
         parts: [{ type: 'text', text: instructionContent }],
@@ -338,13 +343,14 @@ async function declineIncomingCall() {
     chat.callMode             = null;
     chat.currentCallSessionId = null;
     chat.callConnected        = null;
+    chat.isIncomingCall       = false;
 
     _hideCallOverlay();
 
     const now = Date.now();
     const displayContent = `[system-display: 已拒接${typeName}]`;
     const displayMsg = {
-        id: `msg_call_decline_vis_${now}`,
+        id: `msg_call_decline_vis_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -357,7 +363,7 @@ async function declineIncomingCall() {
 
     const instructionContent = `[system: ${chat.myName}拒绝了${typeName}邀请，请根据角色性格自然地继续对话。]`;
     const instructionMsg = {
-        id: `msg_call_decline_ins_${now}`,
+        id: `msg_call_decline_ins_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: instructionContent,
         parts: [{ type: 'text', text: instructionContent }],
@@ -382,6 +388,8 @@ async function declineIncomingCall() {
 function appendCallDialogue(text) {
     const chat = db.characters.find(c => c.id === currentChatId);
     if (chat && !chat.callConnected) {
+        // 👉 新增：如果是 AI 发起的来电且用户还没点接听，直接拦截后续文字，且绝不自动接通
+        if (chat.isIncomingCall) return; 
         onCallConnected();
     }
 
@@ -391,7 +399,6 @@ function appendCallDialogue(text) {
     const loading = inner.querySelector('.call-dialogue-loading');
     if (loading) {
         loading.remove();
-        // ✅ 新增：文字出现时恢复气泡外壳
         document.getElementById('call-dialogue-area')?.classList.remove('loading-state');
     }
 
@@ -425,23 +432,24 @@ function clearCallDialogue() {
 // ------------------------------------------
 function appendCallNarration(text) {
     const chat = db.characters.find(c => c.id === currentChatId);
-    if (chat && !chat.callConnected) onCallConnected();
+    if (chat && !chat.callConnected) {
+        // 👉 新增：如果是 AI 发起的来电且用户还没点接听，拦截后续文字，不自动接通
+        if (chat.isIncomingCall) return;
+        onCallConnected();
+    }
 
     const area = document.getElementById('call-narration-area');
     if (!area) return;
 
-    // ★ 确保前后 spacer 存在并更新高度，使新行能 scroll 到视觉中间
     _ensureNarrationSpacers(area);
 
     const line = document.createElement('p');
     line.className = 'call-narration-line';
     line.textContent = text;
 
-    // 插在 bottom spacer 之前
     const botSpacer = area.querySelector('.narration-spacer-bottom');
     area.insertBefore(line, botSpacer);
 
-    // 激活最新一行并滚动使其居中
     _setNarrationActive(area, line);
 }
 
@@ -693,13 +701,14 @@ async function _onIncomingCallTimeout() {
     chat.callMode             = null;
     chat.currentCallSessionId = null;
     chat.callConnected        = null;
+    chat.isIncomingCall       = false;
 
     _hideCallOverlay();
 
     const now = Date.now();
     const displayContent = `[system-display: ${typeName}未接听]`;
     const displayMsg = {
-        id: `msg_call_noanswer_${now}`,
+        id: `msg_call_noanswer_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -738,7 +747,7 @@ async function endCallAiFailure() {
     const now = Date.now();
     const displayContent = `[system-display: ${typeName}未接听]`;
     const displayMsg = {
-        id: `msg_call_aifail_${now}`,
+        id: `msg_call_aifail_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -846,7 +855,7 @@ async function recoverInterruptedCall(chat) {
 
     const endInstruction = `[system: ${typeName}已意外中断，切换回手机聊天模式。请恢复使用“${chat.realName}的消息…”格式。]`;
     const instructionMsg = {
-        id: `msg_call_interrupt_ins_${now}`,
+        id: `msg_call_interrupt_ins_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: endInstruction,
         parts: [{ type: 'text', text: endInstruction }],
@@ -866,7 +875,7 @@ async function recoverInterruptedCall(chat) {
         : '';
     const displayContent = `[system-display: ${typeName}中断${interruptDurStr}]`;
     const displayMsg = {
-        id: `msg_call_interrupt_vis_${now}`,
+        id: `msg_call_interrupt_vis_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'system',
         content: displayContent,
         parts: [],
@@ -936,7 +945,7 @@ async function _switchCallMode() {
     const sessionId      = chat.currentCallSessionId;
     const instructionContent = `[system: 已切换为${newTypeName}。请按${newTypeName}模式继续回复。]`;
     const instructionMsg = {
-        id: `msg_call_switch_${now}`,
+        id: `msg_call_switch_${now}_${Math.random().toString(36).substr(2, 6)}`,
         role: 'user',
         content: instructionContent,
         parts: [{ type: 'text', text: instructionContent }],

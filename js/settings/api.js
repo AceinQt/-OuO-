@@ -605,8 +605,14 @@ async function fetchModels(tabType) {
         }
         const json = await res.json();
         let models = [];
-        if (provider !== 'gemini' && json.data)        models = json.data.map(e => e.id);
-        else if (provider === 'gemini' && json.models)  models = json.models.map(e => e.name.replace('models/', ''));
+if (provider !== 'gemini' && json.data) {
+    const keepFullId = url.includes('nvidia');
+    models = json.data.map(e =>
+        keepFullId ? e.id : e.id.replace(/^[^/]+\//, '')
+    );
+} else if (provider === 'gemini' && json.models) {
+    models = json.models.map(e => e.name.replace('models/', ''));
+}
         modelSel.innerHTML = '';
         if (models.length > 0) {
             models.forEach(m => {

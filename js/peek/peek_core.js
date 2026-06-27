@@ -534,7 +534,7 @@ function renderPeekScreen() {
             else if (id === 'browser') generateAndRenderPeekBrowser();
             else if (id === 'steps') generateAndRenderPeekSteps();
             else if (id === 'drafts') openPeekDraftsScreen();
-            else if (id === 'memos') generateAndRenderPeekMemos();
+            else if (id === 'memos') openPeekMemosScreen();
             else if (id === 'transfer') generateAndRenderPeekTransfer();
             else if (id === 'messages') generateAndRenderPeekMessages();
             else if (id === 'cart') generateAndRenderPeekCart();

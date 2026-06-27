@@ -7,6 +7,18 @@
 let currentMemoPage = 0;
 const MEMOS_PER_PAGE = 20;
 
+// ==========================================
+// 进入备忘录的入口（供 peek_core.js 调用）
+// 只渲染现有内容，不自动生成——空则显示 placeholder
+// ==========================================
+function openPeekMemosScreen() {
+    if (!peekContentCache['memos']) {
+        peekContentCache['memos'] = { memos: [] };
+    }
+    renderMemosList(peekContentCache['memos'].memos, false, true);
+    switchScreen('peek-memos-screen');
+}
+
 function renderMemosList(memos, isAppend = false, resetPage = false) {
     if (resetPage) {
         currentMemoPage = 0;
@@ -138,13 +150,6 @@ async function generateAndRenderPeekMemos(options = {}) {
     const { forceRefresh = false } = options;
 
     if (generatingPeekApps.has(appType)) { showToast('备忘录内容正在生成中，请稍候...'); return; }
-
-    if (!forceRefresh && peekContentCache[appType]) {
-        // 非刷新进入时，重置页码并渲染第一页
-        renderMemosList(peekContentCache[appType].memos, false, true);
-        switchScreen('peek-memos-screen');
-        return;
-    }
 
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');

@@ -241,13 +241,9 @@ if (currentSummarySubTab === 'long') {
             item.title   = titleEl.textContent.trim();
             item.content = contentEl.innerText.trim();
             const chat = getCurrentChatObject();
-            if (chat) {
-                const idx = (chat.longTermSummaries || []).findIndex(s => s.id === item.id);
-                if (idx !== -1) {
-                    chat.longTermSummaries[idx] = item;
-                    await saveSingleChat(currentChatId);
-                }
-            }
+if (chat) {
+    await saveMemoryItem(item, currentChatId, 'long');   // ✅ 存到 memories 表
+}
             titleEl.setAttribute('contenteditable', 'false');
             contentEl.setAttribute('contenteditable', 'false');
             titleEl.style.border   = 'none';

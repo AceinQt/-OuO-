@@ -230,13 +230,14 @@ return {
 async function performGeneration(chat, start, end, type, occurredAtOverride = null) {
     const startIndex = start - 1;
     const endIndex   = end;
+    const now        = new Date(); // ← 提到这里
 
     // ─── 消息过滤函数（summary / journal 公用）────────────────
     const _filterMsg = m => {
         if (m.isAiIgnore) return false;
         if (m.role === 'system') return false;
         if (m.id && m.id.includes('msg_context_timesense')) return false;
-        if (m.content && m.content.includes('[system-display:')) returnfalse;
+        if (m.content && m.content.includes('[system-display:')) return false;
         return true;
     };
 
@@ -355,7 +356,7 @@ const rawChunks = _buildSummaryChunks(rawFiltered, chat.chunkGranularity || 10);
     let chunkOutputInstruction = '';
     if (type === 'summary' && messageChunks?.length > 0) {
 const chunkFmt = messageChunks.map((_, i) =>
-            `#CHUNK_BLOCK_${i}#\n内容: <对此片段的详细总结，保留关键人物/事件经过/情感变化/重要约定与伏笔，供长期总结使用>\n摘要: <50字以内核心摘要，用于向量检索>\n情绪: <主要情绪词，如melancholy/warm/tense/playful/anxious/calm>\n强度: <0.0到1.0的小数。极严标准：0.1-0.3平静/毫无波澜，0.4-0.6微小起伏/正常交流，0.7-0.8明显波动，0.9-1.0极端爆发或深刻浪漫。日常绝大多数应在0.5以下，切勿滥用高分>\n日常: <是/否，"是"=日常闲聊或例行打招呼，"否"=有明显情节推进/冲突/重要表白或约定/新事件>`
+            `#CHUNK_BLOCK_${i}#\n内容: <对此片段的详细总结，保留关键人物/事件经过/情感变化/重要约定与伏笔，供长期总结使用>\n摘要: <50字以内核心摘要，用于向量检索，不需要完整包含片段内的所有情节，舍去片段内日常(如“两人互道晚安”等每天必定会发生的行为)，只摘录片段最特别的情节，保留具体人名、地名、物品名称和精确数字(如小明突发奇想给宠物猫小咪称体重，体重6kg)，便于后续向量精准定位。>\n情绪: <主要情绪词，如melancholy/warm/tense/playful/anxious/calm>\n强度: <0.0到1.0的小数。极严标准：0.1-0.3平静/毫无波澜，0.4-0.6微小起伏/正常交流，0.7-0.8明显波动，0.9-1.0极端爆发或深刻浪漫。日常绝大多数应在0.5以下，切勿滥用高分>\n日常: <是/否，"是"=日常闲聊或例行打招呼，"否"=有明显情节推进/冲突/重要表白或约定/新事件>`
         ).join('\n\n');
         chunkOutputInstruction = `\n\n【片段详细总结（必须全部输出，共${messageChunks.length}个片段，一个都不能省略）】\n完成【内容】概括后，立即逐片段按以下格式输出，不添加额外说明：\n\n${chunkFmt}`;
     }
@@ -454,8 +455,12 @@ ${exampleFormat}`;
     } else {
         if (currentChatType === 'group') throw new Error("群聊不支持生成日记");
 
-        systemPrompt = `你正在扮演角色"${chat.realName}"。
-    
+        const journalDate = occurredAtOverride
+    ? occurredAtOverride
+    : `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+
+systemPrompt = `你正在扮演角色"${chat.realName}"。
+
 【世界观/背景设定】
 ${wbBefore}
 
@@ -470,7 +475,7 @@ ${summaryContext}
 【重要事项】
 ${wbAfter}
 
-请你根据以上经历写一篇**私密日记**。
+今天是 ${journalDate} ，请你根据以上经历写一篇**私密日记**。
 
 为了拒绝流水账，请在**正式动笔前**，先进行【Step 1 深度思考】，构建日记骨架，然后再进行【Step 2 正文撰写】。
 
@@ -671,8 +676,7 @@ const rawContent = await _fetchCompletion(url, key, {
         }
     }
 
-    // === 组装新条目 ===
-    const now          = new Date();
+    // === 组装新条目 ===    
     const formattedNow = occurredAtOverride
         || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 

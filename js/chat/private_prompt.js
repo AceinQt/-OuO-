@@ -57,9 +57,6 @@
     
     const userNick = character.myNickname || character.myName;
 if (character.callMode === 'voice') {
-    const worldBooksBefore = (character.worldBookIds || [])
-        .map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before'))
-        .filter(Boolean).map(wb => wb.content).join('\n');
 
     const allFavsCombined = allFavs; // allFavs 在此之前已经计算好了，直接用
 
@@ -70,10 +67,18 @@ if (character.callMode === 'voice') {
     prompt += `**你的角色设定**：${character.persona || '一个友好的伙伴。'}\n\n`;
     if (worldBooksBefore) prompt += `**世界观背景**：\n${worldBooksBefore}\n\n`;
     if (character.myPersona) prompt += `**对方信息（${character.myName}）**：${character.myPersona}\n\n`;
+    if (worldBooksAfter) {
+    prompt += `**重要事项**\n${worldBooksAfter}\n\n`;
+}
     if (allFavsCombined) prompt += `**重要记忆**：\n${allFavsCombined}\n\n`;
     if (retrievedContext) {
         prompt += `【动态记忆检索】\n以下是与当前通话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`;
     }
+    
+    const watchingContext = getWatchingPostsContext(character);
+if (watchingContext) {
+    prompt += `${watchingContext}\n\n`;
+}
 
     prompt += `## 通话规则\n`;
     prompt += `1. 这是语音通话，只能说话，禁止发送图片、表情包、转账等。\n`;
@@ -122,7 +127,11 @@ if (character.callMode === 'voice') {
                         prompt += `**对方背景**：${character.myPersona}\n`;
                     }
                     prompt += `\n`;
-                    
+ 
+                    if (worldBooksAfter) {
+                        prompt += `**重要事项**${worldBooksAfter}\n\n`;
+                    }                    
+
                     // 记忆
                     if (allFavs) {
                         prompt += `**重要记忆**：现在是 ${currentTime}，这是需要铭记的历史互动：\n${allFavs}\n\n`;
@@ -138,9 +147,7 @@ if (character.callMode === 'voice') {
                         prompt += `${watchingContext}\n\n`;
                     }
                     
-                    if (worldBooksAfter) {
-                        prompt += `**重要事项**${worldBooksAfter}\n\n`;
-                    }
+
                     
                     prompt += `---\n`;
                     prompt += `## 核心指令\n`;

@@ -31,7 +31,7 @@
                 if (wasEnabled && !isNowEnabled) {
                     const endInstruction = `[system: 面对面情节结束。切换回手机聊天模式。恢复使用“${chat.realName}的消息…”格式。]`;
                     const instructionMsg = {
-                        id: `msg_ins_off_${now}`,
+                        id: `msg_ins_off_${now}_${Math.random().toString(36).substr(2, 6)}`,
                         role: 'user', 
                         content: endInstruction,
                         parts:[{ type: 'text', text: endInstruction }],
@@ -41,7 +41,7 @@
                     chat.history.push(instructionMsg);
 
                     const displayMsg = {
-                        id: `msg_vis_off_${now}`,
+                        id: `msg_vis_off_${now}_${Math.random().toString(36).substr(2, 6)}`,
                         role: 'system',
                         content: `[system-display: 已退出线下模式]`,
                         parts:[],
@@ -58,7 +58,7 @@
                 else if (!wasEnabled && isNowEnabled) {
                     const startInstruction = `[system: 场景切换：从现在开始，${chat.realName}与用户进行【面对面】互动。请根据人设直接描写动作和语言。]`;
                     const instructionMsg = {
-                        id: `msg_ins_on_${now}`,
+                        id: `msg_ins_on_${now}_${Math.random().toString(36).substr(2, 6)}`,
                         role: 'user', 
                         content: startInstruction,
                         parts:[{ type: 'text', text: startInstruction }],
@@ -68,7 +68,7 @@
                     chat.history.push(instructionMsg);
 
                     const displayMsg = {
-                        id: `msg_vis_on_${now}`,
+                        id: `msg_vis_on_${now}_${Math.random().toString(36).substr(2, 6)}`,
                         role: 'system',
                         content: `[system-display: 已开启线下模式]`,
                         parts:[],

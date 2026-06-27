@@ -1,221 +1,475 @@
-// study_coread.js — 学习模块：共读功能 (仿通话版)
+// study_coread.js — 学习模块：共读功能（悬浮球版）
 // 依赖：study_core.js / study_db.js / study_ai.js / study_bookshelf.js
+// ★ V8：共读消息存入 studyCoreadMessages 独立表，不再依赖 book.coreadMessages 字段
 // =====================================================
 
-// ── 共读设置（嵌套在 db.studySettings.coread）────────
+// ── 共读设置（按书存取：db.studySettings.coread[bookId]）────────────
+
+const _COREAD_DEFAULTS = {
+  charId: '', personaId: '', worldbookIds: [],
+  historyCount: 20, prevPages: 1, nextPages: 0
+};
 
 function _getCoreadSettings() {
-  return getStudySettings().coread || { charId: '', personaId: '', worldbookIds: [] };
+  const bookId = window._study.state.reader.bookId;
+  const all = getStudySettings().coread || {};
+  // 兼容旧全局格式：若 all 直接含 charId 字段说明是旧数据，忽略
+  if (bookId && all[bookId]) return { ..._COREAD_DEFAULTS, ...all[bookId] };
+  return { ..._COREAD_DEFAULTS };
 }
 
 async function _updateCoreadSettings(patch) {
-  const current = _getCoreadSettings();
-  await updateStudySettings({ coread: { ...current, ...patch } });
+  const bookId = window._study.state.reader.bookId;
+  if (!bookId) return;
+  const all     = getStudySettings().coread || {};
+  const current = (all[bookId] && typeof all[bookId] === 'object') ? all[bookId] : {};
+  await updateStudySettings({ coread: { ...all, [bookId]: { ...current, ...patch } } });
 }
 
-// ── 运行时状态 ────────────────────────────────────────
+// ── 运行时状态 ───────────────────────────────────────────
+// ★ _coread 是模块级变量，切书时必须通过 _resetCoread() 显式清空
 
 const _coread = {
-  active:       false,
-  char:         null,
-  persona:      null,
-  messages:     [],     // 实时关联到本书的数据
-  generating:   false,
+  active:     false,
+  expanded:   false,
+  char:       null,
+  persona:    null,
+  bookId:     null,   // ★ 新增：记录当前绑定的书，用于切书检测
+  messages:   [],
+  generating: false,
 };
 
-// ── 辅助方法：获取当前书并存档 ───────────────────────
+// ── 重置共读状态（切书 / 退出时调用）────────────────────
+
+function _resetCoread() {
+  _coread.active     = false;
+  _coread.expanded   = false;
+  _coread.char       = null;
+  _coread.persona    = null;
+  _coread.bookId     = null;
+  _coread.messages   = [];
+  _coread.generating = false;
+  _coreadLastGenerating = false; 
+}
+
+// ── 辅助：获取当前书 ──────────────────────────────────────
 
 function _getCurrentBook() {
   const bookId = window._study.state.reader.bookId;
   return getAllStudyBooks().find(b => b.id === bookId);
 }
 
-async function _saveCoreadMessages() {
-  const book = _getCurrentBook();
-  if (book) {
-    book.coreadMessages = _coread.messages;
-    if (typeof saveStudyBookToDB === 'function') {
-      await saveStudyBookToDB(book);
-    }
+// ── 持久化：追加 / 更新 DB 中的共读消息 ─────────────────
+// 不再整本 book.coreadMessages 全量写，而是单条精准操作
+
+async function _appendCoreadMsg(msg) {
+  const bookId = window._study.state.reader.bookId;
+  if (!bookId) return;
+  if (typeof appendCoreadMessageToDB === 'function') {
+    await appendCoreadMessageToDB(bookId, msg);
   }
 }
 
-// ── 渲染 UI：区分AI顶部和用户底部 ────────────────────
+async function _updateLastCoreadMsg(content) {
+  const bookId = window._study.state.reader.bookId;
+  if (!bookId) return;
+  if (typeof updateLastCoreadMessageInDB === 'function') {
+    await updateLastCoreadMessageInDB(bookId, content);
+  }
+}
+
+// ── 渲染：更新悬浮球旁气泡 ───────────────────────────────
+
+// generating 状态上一帧的值，用于检测状态切换，避免流式中频繁触发 rAF
+let _coreadLastGenerating = false;
 
 function _renderCoreadMessages() {
   const charMsgs = _coread.messages.filter(m => m.role === 'char');
-  const userMsgs = _coread.messages.filter(m => m.role === 'user');
-
-  // 1. 顶部：AI仅展示最后一句
   const lastChar = charMsgs[charMsgs.length - 1];
-  const textEl   = document.getElementById('coread-char-text');
-  if (textEl) {
-    textEl.textContent = lastChar ? (lastChar.content || '…') : '你好，发送消息和我交流吧～';
+
+  const bubbleEl = document.getElementById('reader-bubble-text');
+  if (bubbleEl) {
+    if (_coread.generating) {
+      bubbleEl.innerHTML = `
+        <span class="coread-typing-dot"></span>
+        <span class="coread-typing-dot"></span>
+        <span class="coread-typing-dot"></span>`;
+      // 只在刚进入 generating 状态时定位一次（省略号气泡专用：左/右二选一）
+      if (!_coreadLastGenerating) {
+        requestAnimationFrame(() => _syncTypingBubblePosition());
+      }
+    } else {
+      bubbleEl.textContent = lastChar?.content || (_coread.char ? '发送消息开始交流吧' : '和你一起读书的人');
+  // 双 rAF：确保内容写入后浏览器完成 layout，再取 offsetWidth 定位
+  if (_coreadLastGenerating) {
+    requestAnimationFrame(() => requestAnimationFrame(() => _syncBubblePosition()));
+  }
+    }
   }
 
-  // 2. 底部：用户的气泡历史
-  const userContainer = document.getElementById('coread-user-messages');
-  if (userContainer) {
-    const userAvatar = _coread.persona?.avatar || db.userAvatar || db.settings?.userAvatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
-    const { h } = window._study;
-    
-    userContainer.innerHTML = userMsgs.map(m => `
-      <div class="coread-user-row">
-        <div class="coread-user-bubble">${h(m.content).replace(/\n/g, '<br>')}</div>
-        <img class="coread-user-bubble-avatar" src="${h(userAvatar)}" alt="">
-      </div>
-    `).join('');
-    
-    // 滚动到底部
-    requestAnimationFrame(() => {
-      userContainer.scrollTop = userContainer.scrollHeight;
-    });
+  _coreadLastGenerating = _coread.generating;
+
+  const sendBtn = document.getElementById('coread-send-btn');
+  if (sendBtn) {
+    sendBtn.disabled = _coread.generating;
   }
 }
 
-// ── 进入 / 退出(收起)共读 ───────────────────────────────────
+// ── 更新悬浮球头像（有角色显示头像，无角色显示"无"占位）──────
 
-function studyEnterCoread() {
-  const cfg = _getCoreadSettings();
-  if (!cfg.charId) {
-    if (typeof showToast === 'function') showToast('请先点击右上角⚙设置绑定共读角色');
-    return;
+function _updateFloatBallAvatar() {
+  const avatarEl      = document.getElementById('reader-float-avatar');
+  const placeholderEl = document.getElementById('reader-float-placeholder');
+  if (_coread.char?.avatar) {
+    if (avatarEl)      { avatarEl.src = _coread.char.avatar; avatarEl.style.display = ''; }
+    if (placeholderEl) placeholderEl.style.display = 'none';
+  } else {
+    if (avatarEl)      { avatarEl.src = ''; avatarEl.style.display = 'none'; }
+    if (placeholderEl) placeholderEl.style.display = '';
   }
+}
 
-  const char    = (db.characters || []).find(c => c.id === cfg.charId);
+// ── 进入共读（显示悬浮球） ───────────────────────────────
+
+async function studyEnterCoread() {
+  const cfg     = _getCoreadSettings();
+  const char    = cfg.charId ? (db.characters || []).find(c => c.id === cfg.charId) : null;
   const persona = cfg.personaId
     ? (db.userPersonas || []).find(p => (p.id || p.nickname) === cfg.personaId)
     : null;
 
-  if (!char) {
-    if (typeof showToast === 'function') showToast('绑定角色不存在，请重新设置');
-    return;
+  const bookId = window._study.state.reader.bookId;
+
+  _coread.active     = true;
+  _coread.expanded   = false;
+  _coread.char       = char || null;
+  _coread.persona    = persona;
+  _coread.bookId     = bookId;
+  _coread.generating = false;
+
+  // 有角色时从 DB 读取历史消息
+  if (char && typeof getCoreadMessagesFromDB === 'function') {
+    _coread.messages = await getCoreadMessagesFromDB(bookId);
+  } else {
+    _coread.messages = [];
   }
 
-  _coread.active       = true;
-  _coread.char         = char;
-  _coread.persona      = persona;
-  _coread.generating   = false;
+  // 更新悬浮球头像（有角色/无角色自动切换）
+  _updateFloatBallAvatar();
 
-  // 从书籍加载历史
-  const book = _getCurrentBook();
-  _coread.messages = book?.coreadMessages ? [...book.coreadMessages] : [];
+  // 显示悬浮球
+  const ball = document.getElementById('reader-float-ball');
+  if (ball) ball.style.display = 'flex';
 
-  // 隐藏底层的 header 和翻页栏
-  document.getElementById('reader-app-header')?.classList.add('coread-hidden');
-  document.querySelector('.st-reader-nav')?.classList.add('coread-hidden');
-  
-  // 显示 Overlay
-  const overlay = document.getElementById('reader-coread-overlay');
-  if (overlay) overlay.style.display = 'flex';
-
-  // 填充角色信息
-  const charName = char.realName || char.remarkName || char.name || '';
-  const avatarEl = document.getElementById('coread-char-avatar');
-  const nameEl   = document.getElementById('coread-char-name');
-  if (avatarEl) avatarEl.src = char.avatar || '';
-  if (nameEl)   nameEl.textContent = charName;
+  // 关闭 header 和底部菜单（回到沉浸模式）
+  document.getElementById('reader-app-header')?.classList.remove('reader-header-visible');
+  document.getElementById('reader-bottom-menu')?.classList.remove('visible');
 
   _renderCoreadMessages();
+}
+
+// ── 退出共读 ─────────────────────────────────────────────
+
+function studyExitCoread() {
+  _resetCoread(); // ★ 完整重置，不留残留
+
+  document.getElementById('reader-float-ball')?.style.setProperty('display', 'none');
+  document.getElementById('reader-bubble-wrap')?.style.setProperty('display', 'none');
+  document.getElementById('reader-coread-input-bar')?.style.setProperty('display', 'none');
+  document.getElementById('reader-float-ball')?.classList.remove('expanded');
+}
+
+// ── 气泡位置同步（跟随悬浮球，自动判断左右上下）────────────
+function _syncBubblePosition() {
+  const ball = document.getElementById('reader-float-ball');
+  const wrap = document.getElementById('reader-bubble-wrap');
+  if (!ball || !wrap) return;
+
+  const rect = ball.getBoundingClientRect();
+  const W    = window.innerWidth;
+  const H    = window.innerHeight;
+  const gap  = 10;
+  const INPUT_BAR_H = 80;
+
+  const bw = Math.max(wrap.offsetWidth  || 0, 40);
+  const bh = Math.max(wrap.offsetHeight || 0, 40);
+
+  const spaceRight = W - rect.right  - gap;
+  const spaceLeft  = rect.left       - gap;
+  const spaceBelow = H - rect.bottom - gap - INPUT_BAR_H;
+
+  let left, top;
+
+  if (spaceRight >= bw) {
+    left = rect.right + gap;
+    top  = rect.top + rect.height / 2 - bh / 2;
+  } else if (spaceLeft >= bw) {
+    left = rect.left - bw - gap;
+    top  = rect.top + rect.height / 2 - bh / 2;
+  } else if (spaceBelow >= bh) {
+    left = rect.left + rect.width / 2 - bw / 2;
+    top  = rect.bottom + gap;
+  } else {
+    // 上方兜底
+    left = rect.left + rect.width / 2 - bw / 2;
+    top  = rect.top - bh - gap;
+  }
+
+  left = Math.max(8, Math.min(W - bw - 8, left));
+  top  = Math.max(8, Math.min(H - INPUT_BAR_H - bh - 4, top));
+
+  wrap.style.left   = left + 'px';
+  wrap.style.top    = top  + 'px';
+  wrap.style.right  = 'auto';
+  wrap.style.bottom = 'auto';
+}
+
+// ── 自动监听气泡尺寸变化 ─────────────────────────────────
+let _bubbleObserver = null;
+
+function _initBubbleResizeObserver() {
+  const wrap = document.getElementById('reader-bubble-wrap');
+  if (!wrap || _bubbleObserver) return;
   
-  // 如果空空如也，让AI主动说句话(不阻碍主线程)
-  if (_coread.messages.length === 0) {
-      _coreadEvalPage();
+  _bubbleObserver = new ResizeObserver(() => {
+    // 只有气泡可见且是展开状态时才自动纠偏
+    if (wrap.style.display !== 'none' && _coread.expanded) {
+      if (_coread.generating) {
+        _syncTypingBubblePosition();
+      } else {
+        _syncBubblePosition();
+      }
+    }
+  });
+  
+  _bubbleObserver.observe(wrap); // 监听容器的宽高变化
+}
+
+// ── 省略号气泡专用定位（生成中）────────────────────────────
+// 省略号内容极小且固定，只判断左/右，垂直居中对齐头像
+// 不用 offsetWidth 是因为三个点的气泡渲染尺寸不稳定
+
+// ── 省略号气泡专用定位（只判断左右）────────────────────────
+// 省略号尺寸小且稳定，rAF 后取值已够准
+
+function _syncTypingBubblePosition() {
+  const ball = document.getElementById('reader-float-ball');
+  const wrap = document.getElementById('reader-bubble-wrap');
+  if (!ball || !wrap) return;
+
+  const rect = ball.getBoundingClientRect();
+  const W    = window.innerWidth;
+  const H    = window.innerHeight;
+  const gap  = 10;
+  const INPUT_BAR_H = 80;
+
+  const bw = wrap.offsetWidth  || 64;
+  const bh = wrap.offsetHeight || 44;
+
+  const left = (W - rect.right - gap >= bw)
+    ? rect.right + gap
+    : rect.left - bw - gap;
+
+  let top = rect.top + rect.height / 2 - bh / 2;
+
+  wrap.style.left   = Math.max(8, Math.min(W - bw - 8, left)) + 'px';
+  wrap.style.top    = Math.max(8, Math.min(H - INPUT_BAR_H - bh - 4, top)) + 'px';
+  wrap.style.right  = 'auto';
+  wrap.style.bottom = 'auto';
+}
+
+// ── 切换悬浮球展开/收起 ──────────────────────────────────
+
+// 供 _closeAllReaderPanels 调用：收起共读对话框+输入栏
+function _collapseCoread() {
+  if (!_coread.active || !_coread.expanded) return;
+  _coread.expanded = false;
+  document.getElementById('reader-float-ball')?.classList.remove('expanded');
+  document.getElementById('reader-bubble-wrap')?.style.setProperty('display', 'none');
+  document.getElementById('reader-coread-input-bar')?.style.setProperty('display', 'none');
+}
+
+function _toggleFloatBall() {
+  if (!_coread.active) return;
+  _coread.expanded = !_coread.expanded;
+
+  const ball       = document.getElementById('reader-float-ball');
+  const bubbleWrap = document.getElementById('reader-bubble-wrap');
+  const inputBar   = document.getElementById('reader-coread-input-bar');
+
+  if (_coread.expanded) {
+    ball?.classList.add('expanded');
+    if (bubbleWrap) bubbleWrap.style.display = 'flex';
+    if (inputBar)   inputBar.style.display   = 'flex';
+    // 等气泡渲染完一帧再定位（display:none→flex 后 offsetWidth 需一帧才有值）
+    requestAnimationFrame(() => _syncBubblePosition());
+    // 关闭其他面板，避免干扰
+    if (typeof _closeAllReaderPanels === 'function') {
+      _closeAllReaderPanels('coread');
+    } else {
+      document.getElementById('reader-app-header')?.classList.remove('reader-header-visible');
+      document.getElementById('reader-bottom-menu')?.classList.remove('visible');
+    }
+  } else {
+    ball?.classList.remove('expanded');
+    if (bubbleWrap) bubbleWrap.style.display = 'none';
+    if (inputBar)   inputBar.style.display   = 'none';
   }
 }
 
-function studyExitCoread() {
-  _coread.active = false;
-  // 恢复阅读正文的组件显示
-  document.getElementById('reader-app-header')?.classList.remove('coread-hidden');
-  document.querySelector('.st-reader-nav')?.classList.remove('coread-hidden');
-  const overlay = document.getElementById('reader-coread-overlay');
-  if (overlay) overlay.style.display = 'none';
-}
-
-// ── 发送消息 & AI交互 ─────────────────────────────────────
+// ── 发送消息 ─────────────────────────────────────────────
 
 async function studySendCoreadMessage() {
   const input = document.getElementById('coread-input');
   const text  = input?.value.trim();
   if (!text || _coread.generating) return;
 
-  // 1. 本地展示
-  _coread.messages.push({ role: 'user', content: text });
+  const userName = _coread.persona?.realName || _coread.persona?.nickname || _coread.char?.myName || db.settings?.userNickname || '读者';
+const userMsg = { role: 'user', content: text, timestamp: Date.now(), userName };
+  _coread.messages.push(userMsg);
   if (input) input.value = '';
   _renderCoreadMessages();
-  await _saveCoreadMessages();
 
-  // 2. 调用AI回复
+  // ★ V8：单条追加到 DB，不再整本写
+  await _appendCoreadMsg(userMsg);
   await _coreadCharReply(text);
 }
 
-// 供"AI回复"按钮调用的手动方法
-async function _manualAiReply() {
-    if (_coread.generating) return;
-    const lastMsg = _coread.messages[_coread.messages.length - 1];
-    
-    // 如果上一句是用户，继续对话；如果不是，点评当前页
-    if (lastMsg && lastMsg.role === 'user') {
-        await _coreadCharReply(""); 
-    } else {
-        await _coreadEvalPage();
-    }
+// ── 辅助：组装前后页内容 ──────────────────────────────────
+
+function _buildPageContext() {
+  const cfg       = _getCoreadSettings();
+  const prevPages = cfg.prevPages ?? 1;
+  const nextPages = cfg.nextPages ?? 0;
+  const s         = window._study.state.reader;
+  const pages     = s.pages || [];
+  const cur       = s.page  || 0;
+
+  const parts = [];
+
+  // 前 N 页
+  for (let i = Math.max(0, cur - prevPages); i < cur; i++) {
+    if (pages[i]) parts.push(`【第${i + 1}页】\n${pages[i].substring(0, 600)}`);
+  }
+
+  // 当前页
+  if (pages[cur]) parts.push(`【当前页（第${cur + 1}页）】\n${pages[cur].substring(0, 800)}`);
+
+  // 后 N 页
+  const maxPage = pages.length - 1;
+  for (let i = cur + 1; i <= Math.min(maxPage, cur + nextPages); i++) {
+    if (pages[i]) parts.push(`【第${i + 1}页】\n${pages[i].substring(0, 600)}`);
+  }
+
+  return parts.join('\n\n');
 }
 
-// ── AI Prompt 组装模块 (保留原装) ───────────────────────
-function _buildCoreadSystemPrompt(mode = 'eval') {
+// ── 辅助：构建已读章节笔记上下文 ─────────────────────────
+// 规则：当前页所在章节索引为 curChapterIdx，
+//       注入所有 endChapterIdx < curChapterIdx 的笔记（按章节顺序）
+
+function _buildSummaryContext() {
+  const s    = window._study.state.reader;
+  const toc  = s.toc  || [];
+  const page = s.page ?? 0;
+  const book = _getCurrentBook();
+  if (!toc.length || !book?.memorySummaries?.length) return '';
+
+  // 从后往前找：最后一个 page <= 当前页 的 toc 条目即为当前章节
+  let curChapterIdx = -1;
+  for (let i = toc.length - 1; i >= 0; i--) {
+    if (toc[i].page <= page) { curChapterIdx = i; break; }
+  }
+  // curChapterIdx <= 0：第 0 章之前没有"更早"章节，无需注入
+  if (curChapterIdx <= 0) return '';
+
+  // 筛选严格在当前章节之前的笔记，按章节顺序排列
+  const notes = (book.memorySummaries || [])
+    .filter(n => (n.endChapterIdx ?? -1) < curChapterIdx)
+    .sort((a, b) => (a.startChapterIdx ?? 0) - (b.startChapterIdx ?? 0));
+
+  if (!notes.length) return '';
+
+  const lines = notes.map(n =>
+    `【${n.chapterRange || n.title}】\n${n.content}`
+  ).join('\n\n');
+
+  return `【已读章节笔记】\n以下是我们此前读过的章节笔记，供你参考：\n\n${lines}\n\n`;
+}
+
+// ── AI Prompt 组装 ────────────────────────────────────────
+
+function _buildCoreadSystemPrompt() {
   const char    = _coread.char;
   const persona = _coread.persona;
   const cfg     = _getCoreadSettings();
+  const book    = _getCurrentBook();
 
-  const charName = char.realName || char.remarkName || char.name || '角色';
-  const userName = persona?.nickname || char.myName || db.settings?.userNickname || '用户';
-  const charPersona = char.persona || char.description || '';
+const charName  = char.realName || char.remarkName || char.name || '共读者';
+  // 真名优先，昵称备选，再 fallback 到 char.myName
+  const userName  = persona?.realName || persona?.nickname || char.myName || db.settings?.userNickname || '读者';
+  // 读者描述：优先取实时 persona，没有再取 char.myPersona
+  const userDesc  = persona?.persona || char.myPersona || '一个正在读书的人。';
+  const charPersona = char.persona || char.description || '一个热心的陪读人。';
   const charStatus  = char.status  || '';
+  const bookTitle   = book?.title       || '某本书';
+  const bookDesc    = book?.description || '';
 
-  // 提取书与记忆...
-  const allWbIds = [...new Set([...(char.worldBookIds || []), ...(cfg.worldbookIds || [])])];
+  const allWbIds = cfg.worldbookIds || [];
   const allWbs   = db.worldBooks || [];
   const wbBefore = allWbs.filter(w => allWbIds.includes(w.id) && w.position === 'before').map(w => w.content).filter(Boolean).join('\n');
   const wbAfter  = allWbs.filter(w => allWbIds.includes(w.id) && w.position === 'after').map(w => w.content).filter(Boolean).join('\n');
-  const wbOther  = allWbs.filter(w => allWbIds.includes(w.id) && !['before', 'after', 'writing'].includes(w.position)).map(w => w.content).filter(Boolean).join('\n');
 
   let prompt = '';
-  if (wbBefore) prompt += `${wbBefore}\n\n`;
-  prompt += `你扮演的角色是：${charName}。\n`;
-  if (charStatus)  prompt += `当前状态：${charStatus}\n`;
-  prompt += `\n【人物设定】\n${charPersona}\n\n`;
-  if (wbAfter) prompt += `【世界设定】\n${wbAfter}\n\n`;
-  if (wbOther) prompt += `${wbOther}\n\n`;
 
-  const personaDesc = persona ? `用户人设（${userName}）：${persona.description || persona.nickname || ''}` : '';
-  if (personaDesc) prompt += `${personaDesc}\n\n`;
-  if (char.myPersona) prompt += `关于 ${userName} 的背景：${char.myPersona}\n\n`;
+  // ── 共读情境（置顶）──
+  prompt += `你（${charName}）正在和我（ ${userName}） 一起读一本书。\n\n`;
+  
+    // ── 世界观 ──
+  if (wbBefore) prompt += `【世界观】\n${wbBefore}\n\n`;
+  
+  prompt += `【我们正在阅读的书的信息】\n`;
+  prompt += `书名：${bookTitle}\n`;
+  if (bookDesc) prompt += `这本书的简介：${bookDesc}\n`;
+  prompt += '\n';
 
-  prompt += `你正在和 ${userName} 一起共读一本书。\n`;
+  // ── 已读章节笔记（有则注入） ──
+  const summaryCtx = _buildSummaryContext();
+  if (summaryCtx) prompt += summaryCtx;
 
-  if (mode === 'eval') {
-    prompt += `请用完全符合你性格的方式，简短地点评用户当前正在阅读的这一页内容，可以表达感受、提问，或引导用户思考。回复不超过80字，直接说话，不要加任何格式标签。`;
-  } else {
-    prompt += `请以完全符合你性格的方式，简短地回复用户的发言（不超过120字），直接说话，不要加任何格式标签。`;
-  }
+  // ── 共读者信息 ──
+    prompt += `【人设信息】\n`;
+  prompt += `你的姓名是：${charName}。\n`;
+  prompt += `\n你的人设是：\n${charPersona}\n\n`;
+
+  // ── 读者信息 ──
+  prompt += `我的姓名是：${userName}。\n`;
+ if (userDesc) prompt += `我的人设是：\n${userDesc}\n\n`;
+
+  // ── 其他世界书 ──
+  if (wbAfter) prompt += `【其他重要事项说明】\n${wbAfter}\n\n`;
+
   return prompt;
 }
 
-// ── API调用：点评 & 回复 ─────────────────────────
+// ── API 调用（AI 点评当前页）─────────────────────────────
 
 async function _coreadEvalPage() {
   if (_coread.generating) return;
   _coread.generating = true;
+  _renderCoreadMessages(); // 立即显示省略号+禁用按钮
 
-  const s        = window._study.state.reader;
-  const pageText = (s.pages?.[s.page] || '').substring(0, 800);
-  const systemPrompt = _buildCoreadSystemPrompt('eval');
-  const userPrompt   = `【当前页内容节选】\n${pageText}`;
+  const pageContext  = _buildPageContext();
+  const systemPrompt = _buildCoreadSystemPrompt();
+  const userPrompt   = pageContext;
 
-  _coread.messages.push({ role: 'char', content: '' });
+  const charName = _coread.char?.realName || _coread.char?.remarkName || _coread.char?.name || '共读者';
+const charMsg = { role: 'char', content: '', timestamp: Date.now(), charName };
+  _coread.messages.push(charMsg);
   const msgIdx = _coread.messages.length - 1;
+
+  // ★ 先追加一条空消息占位（流式结束后再更新 content）
+  await _appendCoreadMsg(charMsg);
 
   try {
     let streamed = '';
@@ -231,33 +485,46 @@ async function _coreadEvalPage() {
       _coread.messages[msgIdx].content = reply;
       _renderCoreadMessages();
     }
+    // ★ 流式结束后把最终内容写回 DB
+    await _updateLastCoreadMsg(_coread.messages[msgIdx].content);
   } catch (e) {
     _coread.messages[msgIdx].content = '（AI 连接失败）';
     _renderCoreadMessages();
+    await _updateLastCoreadMsg('（AI 连接失败）');
   } finally {
     _coread.generating = false;
-    await _saveCoreadMessages();
+    _renderCoreadMessages(); // 恢复按钮
   }
 }
 
-async function _coreadCharReply(userText) {
+async function _coreadCharReply(userText, fallbackMsg = null) {
   if (_coread.generating) return false;
   _coread.generating = true;
-
-  const s        = window._study.state.reader;
-  const pageText = (s.pages?.[s.page] || '').substring(0, 600);
-  const charName = _coread.char.realName || _coread.char.remarkName || _coread.char.name || '角色';
-  const userName = _coread.persona?.nickname || _coread.char.myName || '用户';
-
-  const history = _coread.messages.slice(-10).filter(m => m.content)
-    .map(m => `${m.role === 'user' ? userName : charName}：${m.content}`).join('\n');
-
-  const systemPrompt = _buildCoreadSystemPrompt('reply');
-  const userPrompt   = `【当前页内容节选】\n${pageText}\n\n【对话历史】\n${history}\n\n${userName}：${userText}`;
-
-  _coread.messages.push({ role: 'char', content: '' });
-  const msgIdx = _coread.messages.length - 1;
   _renderCoreadMessages();
+
+  const cfg          = _getCoreadSettings();
+  const historyCount = cfg.historyCount ?? 20;
+  const charName = _coread.char.realName || _coread.char.remarkName || _coread.char.name || '共读者';
+  const userName = _coread.persona?.realName || _coread.persona?.nickname || _coread.char.myName || '读者';
+
+  const historyMsgs = _coread.messages.slice(-historyCount - 1, -1).filter(m => m.content);
+  const history = historyMsgs
+    .map(m => {
+      const name = m.role === 'user'
+        ? (m.userName || userName)
+        : (m.charName || charName);
+      return `${name}：${m.content}`;
+    }).join('\n');
+  const pageContext  = _buildPageContext();
+  const systemPrompt = _buildCoreadSystemPrompt('reply');
+  const instruction  = `请以完全符合你性格的方式，简短地回复我的发言。`;
+  const userPrompt   = `${pageContext}\n\n【对话历史】\n${history}\n\n【我的最新发言】\n${userName}：${userText}\n\n${instruction}`;
+
+  const charMsg = { role: 'char', content: '', timestamp: Date.now(), charName };
+  _coread.messages.push(charMsg);
+  const msgIdx = _coread.messages.length - 1;
+
+  await _appendCoreadMsg(charMsg);
 
   let success = false;
   try {
@@ -275,28 +542,69 @@ async function _coreadCharReply(userText) {
       _renderCoreadMessages();
     }
     success = true;
+    await _updateLastCoreadMsg(_coread.messages[msgIdx].content);
   } catch (e) {
-    _coread.messages[msgIdx].content = '（AI 回复失败，请稍后重试）';
-    _renderCoreadMessages();
+    const bookId = window._study.state.reader.bookId;
+    if (fallbackMsg) {
+      // 重新生成失败：把占位消息内容还原为备份，保留这条记录
+      _coread.messages[msgIdx] = { ...fallbackMsg };
+      await _updateLastCoreadMsg(fallbackMsg.content);
+      if (typeof showToast === 'function') showToast('重新生成失败，已保留原回复');
+    } else {
+      // 普通发送失败：回滚 userMsg + charMsg，填回输入框
+      _coread.messages.splice(msgIdx - 1, 2);
+      if (typeof deleteLastNCoreadMessagesFromDB === 'function')
+        await deleteLastNCoreadMessagesFromDB(bookId, 2);
+      const inputEl = document.getElementById('coread-input');
+      if (inputEl) inputEl.value = userText;
+      if (typeof showToast === 'function') showToast('AI 回复失败，已恢复输入内容');
+    }
   } finally {
     _coread.generating = false;
-    await _saveCoreadMessages();
+    _renderCoreadMessages();
   }
   return success;
 }
 
-// ── 初始化：挂载DOM事件 ────────────────────────────────
+// ── 重新生成最后一条 AI 回复 ─────────────────────────────
+
+async function _coreadRegenerateLastReply() {
+  if (_coread.generating) return;
+
+  const msgs = _coread.messages;
+  // 最后一条必须是 char
+  if (!msgs.length || msgs[msgs.length - 1].role !== 'char') {
+    if (typeof showToast === 'function') showToast('没有可重新生成的回复');
+    return;
+  }
+
+  const lastCharIdx = msgs.length - 1;
+  const backupMsg   = { ...msgs[lastCharIdx] };
+
+  // 找前面最近一条 user 消息
+  let userText = '';
+  for (let i = lastCharIdx - 1; i >= 0; i--) {
+    if (msgs[i].role === 'user') { userText = msgs[i].content; break; }
+  }
+
+  // 从内存 + DB 删掉最后一条 char
+  msgs.splice(lastCharIdx, 1);
+  const bookId = window._study.state.reader.bookId;
+  if (typeof deleteLastCoreadMessageFromDB === 'function')
+    await deleteLastCoreadMessageFromDB(bookId);
+
+  // 关闭历史 sheet
+  document.getElementById('coread-history-sheet')?.classList.remove('visible');
+
+  // 重新调用，失败时传 backup 保留原内容
+  await _coreadCharReply(userText, backupMsg);
+}
+
+// ── 初始化：挂载 DOM 事件 ─────────────────────────────────
 
 function studyInitCoread() {
-  document.getElementById('reader-coread-btn')?.addEventListener('click', studyEnterCoread);
-  document.getElementById('coread-close-btn')?.addEventListener('click', studyExitCoread);
-  document.getElementById('coread-middle-tap')?.addEventListener('click', studyExitCoread);
-
-  // 发送及操作按键
+  // 发送按钮 & 回车
   document.getElementById('coread-send-btn')?.addEventListener('click', studySendCoreadMessage);
-  document.getElementById('coread-ai-reply-btn')?.addEventListener('click', _manualAiReply);
-
-  // 回车键响应
   document.getElementById('coread-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -305,14 +613,97 @@ function studyInitCoread() {
   });
 
   studyInitCoreadSidebar();
+  _initBubbleResizeObserver();
 }
 
-// ── 侧边栏及其他附属组件 ────────────────────────────────
+// ── 历史记录底部 sheet ────────────────────────────────────
+
+async function _openCoreadHistorySheet() {
+  // ★ 如果共读未激活（读者直接点底部菜单"对话历史"），先从 DB 加载当前书的消息
+  if (!_coread.active) {
+  const bookId = window._study.state.reader.bookId;
+  if (bookId && typeof getCoreadMessagesFromDB === 'function') {
+    _coread.messages = await getCoreadMessagesFromDB(bookId);
+  }
+  // 补上：把 char/persona 也初始化
+  const cfg = _getCoreadSettings();
+  _coread.char    = (db.characters || []).find(c => c.id === cfg.charId) || null;
+  _coread.persona = cfg.personaId
+    ? (db.userPersonas || []).find(p => (p.id || p.nickname) === cfg.personaId)
+    : null;
+}
+
+  let sheet = document.getElementById('coread-history-sheet');
+  if (!sheet) {
+    sheet = document.createElement('div');
+    sheet.id = 'coread-history-sheet';
+    sheet.className = 'action-sheet-overlay';
+    sheet.innerHTML = `
+      <div class="action-sheet coread-history-sheet-inner">
+        <div class="coread-history-sheet-header">
+          <span>对话记录</span>
+          <button class="coread-history-sheet-close" id="coread-history-sheet-close">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div id="coread-history-list" class="coread-history-list"></div>
+      </div>`;
+    document.body.appendChild(sheet);
+
+    document.getElementById('coread-history-sheet-close')?.addEventListener('click', () => {
+      sheet.classList.remove('visible');
+    });
+    sheet.addEventListener('click', (e) => {
+      if (e.target === sheet) sheet.classList.remove('visible');
+    });
+  }
+
+  const listEl = document.getElementById('coread-history-list');
+  const { h }  = window._study;
+  const char     = _coread.char;
+  const charName = char ? (char.realName || char.remarkName || char.name || '共读者') : '共读者';
+  const userName = _coread.persona?.realName || _coread.persona?.nickname || char?.myName || db.settings?.userNickname || '读者';
+
+const msgs = _coread.messages.filter(m => m.content);
+
+  // 找最后一条 char 消息的索引（用于加重新生成按钮）
+  let lastCharIdx = -1;
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i].role === 'char') { lastCharIdx = i; break; }
+  }
+
+  if (!msgs.length) {
+    listEl.innerHTML = '<div class="coread-history-empty">暂无对话记录</div>';
+  } else {
+    listEl.innerHTML = msgs.map((m, i) => {
+      const isUser    = m.role === 'user';
+      const name      = isUser ? (m.userName || userName) : (m.charName || charName);
+      const regenBtn  = (!isUser && i === lastCharIdx)
+        ? `<button class="coread-regen-btn" onclick="_coreadRegenerateLastReply()" title="重新生成">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 .49-3.17"></path>
+            </svg>
+           </button>`
+        : '';
+      return `<div class="coread-history-row ${isUser ? 'user' : 'char'}">
+          <span class="coread-history-name">${h(name)}</span>
+          <div class="coread-history-bubble ${isUser ? 'user' : 'char'}">${h(m.content).replace(/\n/g, '<br>')}</div>
+          ${regenBtn}
+        </div>`;
+    }).join('');
+  }
+
+  sheet.classList.add('visible');
+  requestAnimationFrame(() => { listEl.scrollTop = listEl.scrollHeight; });
+}
+
+// ── 侧边栏（共读设置）────────────────────────────────────
 
 let _coreadPendingWbIds = [];
-// 这里为了省略字数，_openCoreadWbModal、_openCoreadHistoryModal 等原有代码照常即可（它不会影响你的新核心体验）。
 
-// 在 Sidebar 中新增“清空记录”按钮
 function studyInitCoreadSidebar() {
   const sidebar     = document.getElementById('reader-coread-sidebar');
   const settingsBtn = document.getElementById('reader-coread-settings-btn');
@@ -320,6 +711,8 @@ function studyInitCoreadSidebar() {
 
   settingsBtn?.addEventListener('click', () => {
     _populateCoreadSidebar();
+    // 关闭其他面板，只保留设置侧边栏
+    if (typeof _closeAllReaderPanels === 'function') _closeAllReaderPanels('settings');
     sidebar?.classList.add('open');
   });
 
@@ -327,60 +720,121 @@ function studyInitCoreadSidebar() {
     _openCoreadWbModal();
   });
 
-  form?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const charId    = document.getElementById('reader-coread-char-select')?.value || '';
-    const personaId = document.getElementById('reader-coread-persona-select')?.value || '';
-    await _updateCoreadSettings({ charId, personaId, worldbookIds: _coreadPendingWbIds });
-    sidebar?.classList.remove('open');
-    if (typeof showToast === 'function') showToast('共读设置已保存');
+form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const charId    = document.getElementById('reader-coread-char-select')?.value || '';
+  const personaId = document.getElementById('reader-coread-persona-select')?.value || '';
+  await _updateCoreadSettings({ charId, personaId, worldbookIds: _coreadPendingWbIds });
+
+  // 补上：同步刷新运行时快照
+  if (_coread.active) {
+    _coread.char    = (db.characters || []).find(c => c.id === charId) || null;
+    _coread.persona = personaId
+      ? (db.userPersonas || []).find(p => (p.id || p.nickname) === personaId)
+      : null;
+    // 同步更新悬浮球头像
+    _updateFloatBallAvatar();
+  }
+
+  sidebar?.classList.remove('open');
+  if (typeof showToast === 'function') showToast('共读设置已保存');
+});
+
+  // ── 上文条数 ──────────────────────────────────────────
+  document.getElementById('reader-coread-history-count-btn')?.addEventListener('click', async () => {
+    const cfg = _getCoreadSettings();
+    const cur = cfg.historyCount ?? 20;
+    const val = await AppUI.prompt(
+      `当前：${cur} 条`,
+      '输入条数（1-100）',
+      '读取上文条数'
+    );
+    if (val === null) return;
+    const num = Math.min(100, Math.max(1, parseInt(val) || cur));
+    await _updateCoreadSettings({ historyCount: num });
+    _updateCoreadHistoryCountLabel();
+    if (typeof showToast === 'function') showToast(`上文条数已设为 ${num} 条`);
   });
 
-  // “查看对话记录”按钮
-  if (sidebar && !document.getElementById('reader-coread-history-btn')) {
-    const histBtn = document.createElement('button');
-    histBtn.id        = 'reader-coread-history-btn';
-    histBtn.type      = 'button';
-    histBtn.className = 'coread-sidebar-history-btn';
-    histBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg> 查看对话记录`;
-    sidebar.appendChild(histBtn);
-    histBtn.addEventListener('click', _openCoreadHistoryModal);
-  }
+  // ── 前置页数 ──────────────────────────────────────────
+  document.getElementById('reader-coread-prev-pages-btn')?.addEventListener('click', async () => {
+    const cfg = _getCoreadSettings();
+    const cur = cfg.prevPages ?? 1;
+    const val = await AppUI.prompt(
+      `当前：${cur} 页`,
+      '输入页数（0-10）',
+      '注入前置页数'
+    );
+    if (val === null) return;
+    const num = Math.min(10, Math.max(0, parseInt(val) || 0));
+    await _updateCoreadSettings({ prevPages: num });
+    _updateCoreadPrevPagesLabel();
+    if (typeof showToast === 'function') showToast(`前置页数已设为 ${num} 页`);
+  });
 
-  // ★ 新增：“清空共读记录”按钮
-  if (sidebar && !document.getElementById('reader-coread-clear-btn')) {
-    const clearBtn = document.createElement('button');
-    clearBtn.id = 'reader-coread-clear-btn';
-    clearBtn.type = 'button';
-    clearBtn.className = 'coread-sidebar-history-btn danger';
-    clearBtn.style.color = '#e53935';
-    clearBtn.style.background = '#ffebee';
-    clearBtn.style.marginTop = '10px';
-    clearBtn.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-        <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-      </svg>
-      清空本书共读记录`;
-    sidebar.appendChild(clearBtn);
+  // ── 后置页数 ──────────────────────────────────────────
+  document.getElementById('reader-coread-next-pages-btn')?.addEventListener('click', async () => {
+    const cfg = _getCoreadSettings();
+    const cur = cfg.nextPages ?? 0;
+    const val = await AppUI.prompt(
+      `当前：${cur} 页`,
+      '输入页数（0-10）',
+      '注入后置页数'
+    );
+    if (val === null) return;
+    const num = Math.min(10, Math.max(0, parseInt(val) || 0));
+    await _updateCoreadSettings({ nextPages: num });
+    _updateCoreadNextPagesLabel();
+    if (typeof showToast === 'function') showToast(`后置页数已设为 ${num} 页`);
+  });
 
-    clearBtn.addEventListener('click', async () => {
-      const ok = typeof AppUI !== 'undefined' 
-        ? await AppUI.confirm('确定要清空本书的共读对话记录吗？', '清空确认', '清空', '取消') 
-        : confirm('确定要清空本书的共读对话记录吗？');
-      if (!ok) return;
+  document.getElementById('reader-coread-history-btn')?.addEventListener('click', () => {
+    sidebar?.classList.remove('open');
+    _openCoreadHistorySheet();
+  });
 
-      _coread.messages = [];
-      await _saveCoreadMessages();
-      _renderCoreadMessages();
+  document.getElementById('reader-coread-clear-btn')?.addEventListener('click', async () => {
+    const ok = typeof AppUI !== 'undefined'
+      ? await AppUI.confirm('确定要清空本书的共读对话记录吗？', '清空确认', '清空', '取消')
+      : confirm('确定要清空本书的共读对话记录吗？');
+    if (!ok) return;
 
-      // 同步更新已打开的对话记录弹框
-      const listEl = document.getElementById('coread-history-list');
-      if (listEl) {
-         listEl.innerHTML = '<div class="coread-history-empty">暂无对话记录</div>';
-      }
-      if (typeof showToast === 'function') showToast('共读记录已清空');
-    });
-  }
+    const bookId = window._study.state.reader.bookId;
+    _coread.messages = [];
+    if (bookId && typeof clearCoreadMessagesInDB === 'function') {
+      await clearCoreadMessagesInDB(bookId);
+    }
+    _renderCoreadMessages();
+
+    const listEl = document.getElementById('coread-history-list');
+    if (listEl) listEl.innerHTML = '<div class="coread-history-empty">暂无对话记录</div>';
+    if (typeof showToast === 'function') showToast('共读记录已清空');
+  });
+// ── 重新分页 ──────────────────────────────────────────
+  document.getElementById('reader-repaginate-btn')?.addEventListener('click', async () => {
+    const ok = typeof AppUI !== 'undefined'
+      ? await AppUI.confirm('将根据当前屏幕重新计算分页，书签将被清除。是否继续？', '重新分页', '继续', '取消')
+      : confirm('将根据当前屏幕重新计算分页，书签将被清除。是否继续？');
+    if (!ok) return;
+
+    sidebar?.classList.remove('open');
+
+    const bookId = window._study.state.reader.bookId;
+    const book   = getAllStudyBooks().find(b => b.id === bookId);
+    if (!book) return;
+
+    // 清除书签
+    book.bookmarks = [];
+    if (typeof saveStudyBookToDB === 'function') await saveStudyBookToDB(book);
+
+    // 清除分页缓存，强制重算
+    if (typeof dexieDB !== 'undefined') await dexieDB.studyPageCache.delete(bookId);
+
+    if (typeof showToast === 'function') showToast('正在重新分页…');
+
+    // 重新打开阅读器（会触发完整的分页流程）
+    if (typeof studyOpenReader === 'function') await studyOpenReader(book);
+  });  
 }
 
 function _populateCoreadSidebar() {
@@ -413,99 +867,39 @@ function _populateCoreadSidebar() {
   }
 
   _updateCoreadWbLabel();
+  _updateCoreadHistoryCountLabel();
+  _updateCoreadPrevPagesLabel();
+  _updateCoreadNextPagesLabel();
 }
+
+// ── label 更新辅助 ────────────────────────────────────────
 
 function _updateCoreadWbLabel() {
   const label = document.getElementById('reader-coread-worldbook-label');
   if (!label) return;
   const count = _coreadPendingWbIds.length;
-  label.textContent = count > 0 ? `已关联 ${count} 个世界书` : '未关联';
+  label.textContent = count > 0 ? `关联 ${count} 本` : '未关联';
 }
 
-function _openCoreadHistoryModal() {
-  document.getElementById('reader-coread-sidebar')?.classList.remove('open');
-  let modal = document.getElementById('coread-history-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'coread-history-modal';
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-      <div class="modal-window coread-history-window">
-        <div class="coread-history-header">
-          <h3>对话记录</h3>
-          <button id="coread-history-close-btn" class="coread-history-close-btn">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-            </svg>
-          </button>
-        </div>
-        <div id="coread-history-list" class="coread-history-list"></div>
-      </div>`;
-    document.body.appendChild(modal);
-
-    document.getElementById('coread-history-close-btn')?.addEventListener('click', () => modal.style.display = 'none');
-    modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
-  }
-
-  const listEl = document.getElementById('coread-history-list');
-  const { h } = window._study;
-  const char     = _coread.char;
-  const charName = char ? (char.realName || char.remarkName || char.name || '角色') : '角色';
-  const userName = _coread.persona?.nickname || char?.myName || db.settings?.userNickname || '用户';
-
-  if (!_coread.messages.length) {
-    listEl.innerHTML = '<div class="coread-history-empty">暂无对话记录</div>';
-  } else {
-    listEl.innerHTML = _coread.messages.filter(m => m.content).map(m => {
-        const isUser = m.role === 'user';
-        const name   = isUser ? userName : charName;
-        return `<div class="coread-history-row ${isUser ? 'user' : 'char'}">
-            <span class="coread-history-name">${h(name)}</span>
-            <div class="coread-history-bubble ${isUser ? 'user' : 'char'}">${h(m.content).replace(/\n/g, '<br>')}</div>
-          </div>`;
-      }).join('');
-  }
-
-  modal.style.display = 'flex';
-  requestAnimationFrame(() => { listEl.scrollTop = listEl.scrollHeight; });
+function _updateCoreadHistoryCountLabel() {
+  const el = document.getElementById('reader-coread-history-count-label');
+  if (el) el.textContent = `${_getCoreadSettings().historyCount ?? 20} 条`;
 }
+
+function _updateCoreadPrevPagesLabel() {
+  const el = document.getElementById('reader-coread-prev-pages-label');
+  if (el) el.textContent = `${_getCoreadSettings().prevPages ?? 1} 页`;
+}
+
+function _updateCoreadNextPagesLabel() {
+  const el = document.getElementById('reader-coread-next-pages-label');
+  if (el) el.textContent = `${_getCoreadSettings().nextPages ?? 0} 页`;
+}
+
 function _openCoreadWbModal() {
-  const allWbs = db.worldBooks || [];
-  if (!allWbs.length) {
-    if (typeof showToast === 'function') showToast('暂无世界书，请先在世界书页面添加条目');
-    return;
-  }
-  let modal = document.getElementById('coread-wb-select-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'coread-wb-select-modal';
-    modal.className = 'modal-overlay';
-    modal.innerHTML = `
-      <div class="modal-window">
-        <h3>关联世界书</h3>
-        <ul id="coread-wb-list" class="list-container" style="max-height:40vh;overflow-y:auto;padding:0;margin:15px 0;"></ul>
-        <button class="btn btn-primary" id="coread-wb-confirm-btn" style="margin-top:20px;">确认绑定</button>
-      </div>`;
-    document.body.appendChild(modal);
-  }
-  const listEl = document.getElementById('coread-wb-list');
-  if (typeof renderCategorizedWorldBookList === 'function') {
-    renderCategorizedWorldBookList(listEl, allWbs, _coreadPendingWbIds, 'coread-wb');
-  } else {
-    listEl.innerHTML = allWbs.map(w => `<li style="padding:8px 4px;display:flex;align-items:center;gap:8px;">
-        <input type="checkbox" id="cwb-${w.id}" value="${w.id}" ${_coreadPendingWbIds.includes(w.id) ? 'checked' : ''}>
-        <label for="cwb-${w.id}">${w.name || '未命名'}</label></li>`).join('');
-  }
-  modal.style.display = 'flex';
-  const oldBtn = document.getElementById('coread-wb-confirm-btn');
-  const newBtn = oldBtn.cloneNode(true);
-  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
-  newBtn.addEventListener('click', () => {
-    const checked = listEl.querySelectorAll('input[type="checkbox"]:checked');
-    _coreadPendingWbIds = Array.from(checked).map(cb => cb.value);
+  _openWbSelectModal(_coreadPendingWbIds, 'coread-wb', selectedIds => {
+    _coreadPendingWbIds = selectedIds;
     _updateCoreadWbLabel();
-    modal.style.display = 'none';
-    if (typeof showToast === 'function') showToast(`已关联 ${_coreadPendingWbIds.length} 个世界书`);
+    showToast?.(`已关联 ${_coreadPendingWbIds.length} 个世界书`);
   });
-  modal.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
 }

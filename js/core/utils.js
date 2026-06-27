@@ -43,6 +43,11 @@ function switchScreen(targetId) {
 
     // 动态处理状态栏颜色
     updateThemeColorForScreen(targetId, targetScreen);
+
+    // 页面进入钩子（各模块按需注册，不污染 switchScreen 本体）
+    if (window._screenEnterHooks?.[targetId]) {
+        window._screenEnterHooks[targetId]();
+    }
 }             
                                                         function processToastQueue() {
                 if (isToastVisible || notificationQueue.length === 0) {

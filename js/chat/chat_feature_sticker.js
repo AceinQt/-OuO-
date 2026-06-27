@@ -632,7 +632,7 @@ function handleStickerLongPress(stickerId) {
                 await processTimePerception(chat, currentChatId, currentChatType);
                 const messageContentForAI = `[${myName}的表情包：${sticker.name}]`;
                 const message = {
-                    id: `msg_${Date.now()}`,
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
                     role: 'user',
                     content: messageContentForAI,
                     parts: [{ type: 'text', text: messageContentForAI }],
