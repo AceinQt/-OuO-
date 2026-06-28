@@ -338,15 +338,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 if (withdrawMatch) {
                     const characterName = withdrawMatch[1];
                     const originalContent = withdrawMatch[2];
-                    let lastAssistantMessageIndex = -1;
-                    for (let i = chat.history.length - 1; i >= 0; i--) {
-                        if (chat.history[i].role === 'assistant' && !chat.history[i].isWithdrawn) {
-                            lastAssistantMessageIndex = i;
-                            break;
-                        }
-                    }
-                    if (lastAssistantMessageIndex !== -1) {
-                        const messageToWithdraw = chat.history[lastAssistantMessageIndex];
+                    // ★ 滑窗改造：撤回追溯改用 findLastMessageMatching（内存优先，Dexie 兜底）
+                    const messageToWithdraw = await findLastMessageMatching(targetChatId,
+                        m => m.role === 'assistant' && !m.isWithdrawn
+                    );
+                    if (messageToWithdraw) {
                         messageToWithdraw.isWithdrawn = true;
                         const cleanContentMatch = messageToWithdraw.content.match(/\[.*?的消息：([\s\S]+?)\]/);
                         messageToWithdraw.originalContent = cleanContentMatch ? cleanContentMatch[1] : messageToWithdraw.content;
@@ -415,7 +411,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     } else if (aiQuoteMatch) {
                         const quotedText = aiQuoteMatch[1];
                         const replyText = aiQuoteMatch[2];
-                        const originalMessage = chat.history.slice().reverse().find(m => {
+                        // ★ 滑窗改造：引用查找改用 findLastMessageMatching
+                        const originalMessage = await findLastMessageMatching(targetChatId, m => {
                             if (m.role === 'user') {
                                 const userMessageMatch = m.content.match(/\[.*?的消息：([\s\S]+?)\]/);
                                 const userMessageText = userMessageMatch ? userMessageMatch[1] : m.content;
@@ -494,7 +491,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         const sender = group.members.find(m => (m.realName === senderName || m.groupNickname === senderName));
                         
                         if (sender) {
-                            const originalMessage = group.history.slice().reverse().find(m => {
+                            // ★ 滑窗改造：群聊引用查找改用 findLastMessageMatching
+                            const originalMessage = await findLastMessageMatching(targetChatId, m => {
                                 let contentText = m.content;
                                 const textMatch = m.content.match(/\[.*?的消息：([\s\S]+?)\]/);
                                 if (textMatch) contentText = textMatch[1];
@@ -994,14 +992,15 @@ async function handleRegenerate() {
         return;
     }
 
-    let lastInputIndex = -1;
-    for (let i = chat.history.length - 1; i >= 0; i--) {
-        if (chat.history[i].role !== 'assistant' && chat.history[i].role !== 'model') {
-            lastInputIndex = i;
-            break;
-        }
+    // ★ 滑窗改造：重生成追溯用 findLastMessageMatching 找最近非 AI 消息
+    const lastInputMsg = await findLastMessageMatching(currentChatId,
+        m => m.role !== 'assistant' && m.role !== 'model'
+    );
+    if (!lastInputMsg) {
+        showToast('AI尚未回复，无法重新生成。');
+        return;
     }
-
+    const lastInputIndex = chat.history.findIndex(m => m.id === lastInputMsg.id);
     if (lastInputIndex === -1 || lastInputIndex === chat.history.length - 1) {
         showToast('AI尚未回复，无法重新生成。');
         return;

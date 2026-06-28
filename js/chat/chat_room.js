@@ -165,11 +165,15 @@ function setupChatRoom() {
         if (messageArea.scrollTop < 50) {
             const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
             if (!chat || !chat.history) return;
-            const totalMessages = chat.history.length;
-            
-            // 只有当还有更旧的消息时才加载
-            if (totalMessages > currentPage * MESSAGES_PER_PAGE) {
-                loadMoreMessages(); // 这是原有的加载旧消息函数
+            // ★ 真实总数用冗余字段 msgCount；缺失时回退 history.length（兼容）
+            const realTotal = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
+
+            // 只有当还有更旧的消息时才加载：
+            //   ① 已渲染的顶部还没到全局第 1 条 → Dexie 里还有更旧的
+            //   ② 内存里还有更旧的未渲染（原来用 history.length 判断的逻辑保留）
+            const renderedSoFar = currentPage * MESSAGES_PER_PAGE;
+            if (realTotal > renderedSoFar || chat.history.length > renderedSoFar) {
+                loadMoreMessages(); // 内部会按需从 Dexie 拉更旧的 prepend 进内存
             }
         }
 
@@ -296,9 +300,14 @@ function setupChatRoom() {
     // ==========================================
     // 初始化聊天室界面
     // ==========================================                       
-            function openChatRoom(chatId, type) {
+            async function openChatRoom(chatId, type) {
                 const chat = (type === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId);
                 if (!chat) return;
+// ★ 按需加载：只把最近 N 条消息读进 chat.history（N = max(1000, maxMemory)）
+// 12w 条不再全量驻留内存，避免 OOM 崩溃。更旧的消息上滚时由 loadMore 拉 Dexie
+                if (typeof loadRecentMessages === 'function') {
+                    await loadRecentMessages(chat);
+                }
 // --- 从这里开始是新增的代码 ---
 if (chat.unreadCount && chat.unreadCount > 0) {
     chat.unreadCount = 0;
@@ -539,7 +548,10 @@ function hideCallCollapseBtn() {
 
 function _calcInitialStart(chat) {
     const history = chat.history;
-    const total = history.length;
+    const total = (typeof chat.msgCount === 'number') ? chat.msgCount : history.length;
+    // ★ 滑窗模式：history[0] 对应全局序号 tailStart
+    const tailStart = Math.max(0, total - history.length);
+    const localTotal = history.length;
 
     // ★ 一次扫描同时建立：
     //   msgIdToSession: msgId → sessionId（用于后向扫描时 O(1) 查找）
@@ -586,7 +598,8 @@ function _calcInitialStart(chat) {
     }
 
     currentPage = 1;
-    return startIdx;
+    // ★ 返回全局序号（局部 idx + tailStart）
+    return startIdx + tailStart;
 }
 
     // ==========================================
@@ -601,11 +614,16 @@ function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     const oldScrollHeight = messageArea.scrollHeight;
     const oldScrollTop = messageArea.scrollTop;
 
-    const totalMessages = chat.history.length;
+    const totalMessages = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
+// ★ 滑窗模式：chat.history 只含最近 N 条，chat.history[0] 对应全局序号 tailStart
+// 切片前要把全局序号换算成局部序号（减 tailStart）
+const tailStart = Math.max(0, totalMessages - chat.history.length);
+const toLocal = (g) => Math.max(0, g - tailStart);
 let start, end;
 
 if (!isLoadMore) {
     // ★ 【跳转覆盖】：search 跳转时设置 _jumpRenderStart/End，优先使用
+    // 注意：跳转到窗口外的旧消息时，调用方（jumpToMessageInChat）须先 ensureRangeLoaded
     if (typeof window._jumpRenderStart === 'number' && window._jumpRenderStart >= 0) {
         start = window._jumpRenderStart;
         end   = (typeof window._jumpRenderEnd === 'number' && window._jumpRenderEnd > start)
@@ -624,7 +642,10 @@ if (!isLoadMore) {
     start = Math.max(0, end - MESSAGES_PER_PAGE);
 }
 
-const messagesToRender = chat.history.slice(start, end);
+// ★ 全局序号 → 局部序号切片；窗口未覆盖时取空数组（兜底，正常路径不会触发）
+const messagesToRender = (start < totalMessages && end > tailStart)
+    ? chat.history.slice(toLocal(start), toLocal(end))
+    : [];
 
     if (!isLoadMore) {
         messageArea.innerHTML = '';
@@ -799,16 +820,35 @@ for (const sid of sessionIds) {
     }
 }
 
-function loadMoreMessages() {
+async function loadMoreMessages() {
     if (isLoadingHistory) return; // 如果正在加载，直接退出
-    isLoadingHistory = true;      // 设为正在加载
-    
-    // 稍微给一点延迟（例如 200ms），让 Loading 图标能显示出来一瞬间，
-    // 否则本地渲染太快，用户可能感觉不到加载动作，体验反而生硬
+    isLoadingHistory = true;
+
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat) { isLoadingHistory = false; return; }
+
+    const realTotal = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
+    const renderedSoFar = currentPage * MESSAGES_PER_PAGE;
+
+    // ★ 已渲染到全局第 1 条，没有更旧的了
+    if (realTotal <= renderedSoFar && chat.history.length <= renderedSoFar) {
+        isLoadingHistory = false;
+        return;
+    }
+
+    // ★ 内存窗口不够覆盖下一页：从 Dexie 拉更旧的 MESSAGES_PER_PAGE 条 prepend
+    //   （滑窗模式：内存只保留最近 N 条，上滚翻更旧的必须查 Dexie）
+    if (chat.history.length <= renderedSoFar + MESSAGES_PER_PAGE) {
+        if (typeof loadOlderMessagesFromDB === 'function') {
+            await loadOlderMessagesFromDB(chat, MESSAGES_PER_PAGE * 2);
+        }
+    }
+
+    // 稍给一点延迟让 Loading 图标显示一瞬间，再翻页渲染
     setTimeout(() => {
         currentPage++;
         renderMessages(true, false);
-    }, 200); 
+    }, 200);
 }
 
 // === 新增函数 1：触发加载后续消息 ===
@@ -845,11 +885,15 @@ function renderNewerMessages() {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
 
-    const totalMessages = chat.history.length;
+    // ★ 滑窗模式：用真实总数 + 局部序号换算
+    const totalMessages = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
+    const tailStart = Math.max(0, totalMessages - chat.history.length);
     const end = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
     const start = Math.max(0, end - MESSAGES_PER_PAGE);
 
-    const messagesToRender = chat.history.slice(start, end);
+    const messagesToRender = (end > tailStart)
+        ? chat.history.slice(Math.max(0, start - tailStart), Math.max(0, end - tailStart))
+        : [];
 
     const fragment = document.createDocumentFragment();
 
@@ -1005,10 +1049,11 @@ if (statusEl) statusEl.textContent = character.status;
                         return;
                     }
                     if (message.content.match(giftReceivedRegex) && message.role === 'assistant') {
-                        const lastPendingGiftIndex = character.history.slice().reverse().findIndex(m => m.role === 'user' && m.content.includes('送来的礼物：') && m.giftStatus !== 'received');
-                        if (lastPendingGiftIndex !== -1) {
-                            const actualIndex = character.history.length - 1 - lastPendingGiftIndex;
-                            const giftMsg = character.history[actualIndex];
+                        // ★ 滑窗改造：用 Dexie 轻量查询替代 history.slice().reverse().findIndex
+                        const giftMsg = await findLastMessageMatching(currentChatId,
+                            m => m.role === 'user' && m.content.includes('送来的礼物：') && m.giftStatus !== 'received'
+                        );
+                        if (giftMsg) {
                             giftMsg.giftStatus = 'received';
                             const giftCardOnScreen = messageArea.querySelector(`.message-wrapper[data-id="${giftMsg.id}"] .gift-card`);
                             if (giftCardOnScreen) {
@@ -1022,10 +1067,11 @@ if (statusEl) statusEl.textContent = character.status;
                     if (message.content.match(transferActionRegex) && message.role === 'assistant') {
                         const action = message.content.match(transferActionRegex)[1];
                         const statusToSet = action === '接收' ? 'received' : 'returned';
-                        const lastPendingTransferIndex = character.history.slice().reverse().findIndex(m => m.role === 'user' && m.content.includes('给你转账：') && m.transferStatus === 'pending');
-                        if (lastPendingTransferIndex !== -1) {
-                            const actualIndex = character.history.length - 1 - lastPendingTransferIndex;
-                            const transferMsg = character.history[actualIndex];
+                        // ★ 滑窗改造：用 Dexie 轻量查询替代 history.slice().reverse().findIndex
+                        const transferMsg = await findLastMessageMatching(currentChatId,
+                            m => m.role === 'user' && m.content.includes('给你转账：') && m.transferStatus === 'pending'
+                        );
+                        if (transferMsg) {
                             transferMsg.transferStatus = statusToSet;
                             const transferCardOnScreen = messageArea.querySelector(`.message-wrapper[data-id="${transferMsg.id}"] .transfer-card`);
                             if (transferCardOnScreen) {
@@ -1066,30 +1112,30 @@ if (statusEl) statusEl.textContent = character.status;
             }
 
 // 新增公共辅助函数：获取最后一条真正的互动消息
-// 新增公共辅助函数：获取最后一条真正的互动消息
-function getLastValidInteractMsg(chat) {
-    if (!chat || !chat.history || chat.history.length === 0) return null;
-    
-    for (let i = chat.history.length - 1; i >= 0; i--) {
-        const msg = chat.history[i];
-        if (msg.role === 'user' || msg.role === 'assistant') {
-            const isTimeSense = msg.id && (msg.id.includes('msg_context_timesense') || msg.id.includes('msg_visual_timesense'));
-            const isModeInstruction = msg.id && msg.id.includes('msg_ins_');
-            const isSystemCommand = typeof msg.content === 'string' && msg.content.trim().startsWith('[system:');
-            const isSystemDisplay = typeof msg.content === 'string' && msg.content.trim().startsWith('[system-display:');
-            const isTimeDivider = typeof msg.content === 'string' && msg.content.trim() === '[time-divider]';
-            const isAiIgnore = msg.isAiIgnore === true;
-            
-            // 明确排除用户的全局状态通知
-            const isUserStatusNotif = msg.isUserStatusNotif === true;  
-            // 【新增兼容】兜底判断旧版本没有打上 isUserStatusNotif 标记的用户状态消息
-            const isOldUserStatus = msg.role === 'user' && typeof msg.content === 'string' && /\[.*?更新状态为：.*?\]/.test(msg.content);
-
-            // 排除了所有隐藏提示、单纯系统UI、以及【用户状态通知】，剩下的才是真正的聊天互动
-            if (!isTimeSense && !isModeInstruction && !isSystemCommand && !isSystemDisplay && !isTimeDivider && !isAiIgnore && !isUserStatusNotif && !isOldUserStatus) {
-                return msg; 
-            }
+// ★ 滑窗改造：优先扫内存尾部（最近 N 条通常够），不够时走 Dexie 兜底
+async function getLastValidInteractMsg(chat) {
+    if (!chat) return null;
+    const _isValid = (msg) => {
+        if (msg.role !== 'user' && msg.role !== 'assistant') return false;
+        const isTimeSense = msg.id && (msg.id.includes('msg_context_timesense') || msg.id.includes('msg_visual_timesense'));
+        const isModeInstruction = msg.id && msg.id.includes('msg_ins_');
+        const isSystemCommand = typeof msg.content === 'string' && msg.content.trim().startsWith('[system:');
+        const isSystemDisplay = typeof msg.content === 'string' && msg.content.trim().startsWith('[system-display:');
+        const isTimeDivider = typeof msg.content === 'string' && msg.content.trim() === '[time-divider]';
+        const isAiIgnore = msg.isAiIgnore === true;
+        const isUserStatusNotif = msg.isUserStatusNotif === true;
+        const isOldUserStatus = msg.role === 'user' && typeof msg.content === 'string' && /\[.*?更新状态为：.*?\]/.test(msg.content);
+        return !isTimeSense && !isModeInstruction && !isSystemCommand && !isSystemDisplay && !isTimeDivider && !isAiIgnore && !isUserStatusNotif && !isOldUserStatus;
+    };
+    // 1. 先扫内存
+    if (chat.history && chat.history.length > 0) {
+        for (let i = chat.history.length - 1; i >= 0; i--) {
+            if (_isValid(chat.history[i])) return chat.history[i];
         }
+    }
+    // 2. 内存不够，走 Dexie（低频，仅 proactive 后台等场景触发）
+    if (typeof findLastMessageMatching === 'function') {
+        return await findLastMessageMatching(chat.id, _isValid, 200);
     }
     return null;
 }
@@ -1108,8 +1154,9 @@ async function processTimePerception(chat, chatId, chatType, isAiReplyTrigger = 
     // 2. 只有超过30分钟才插入 [time-divider] 和 AI提示词
     if (timeGap > thirtyMinutes) {
         // ✅ 新增：检查 lastValidMsg 之后是否已存在时间感知消息，避免重复注入
+        // ★ 滑窗改造：findIndex/slice 改用内存窗口（时间感知只关心最近消息，窗口内足够）
         const lastValidIndex = chat.history.findIndex(m => m.id === lastValidMsg.id);
-        const alreadyInjected = chat.history.slice(lastValidIndex + 1).some(
+        const alreadyInjected = lastValidIndex !== -1 && chat.history.slice(lastValidIndex + 1).some(
             m => m.id && m.id.includes('msg_context_timesense')
         );
         if (alreadyInjected) return;
@@ -1189,7 +1236,8 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
                 }
 
                 const message = {
-                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                    // ★ 随机后缀从 6 位加长到 12 位，主键碰撞概率从 ~1/21亿 降到 ~1/2^62
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 12)}`,
                     role: 'user',
                     content: messageContent,
                     parts: [{ type: 'text', text: messageContent }],
@@ -1211,16 +1259,39 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
    if (currentChatType === 'private' && chat.currentCallSessionId) {
     message.callSessionId = chat.currentCallSessionId;
 }             
-                chat.history.push(message);
-                addMessageBubble(message, currentChatId, currentChatType);
-   if (currentChatType === 'private' && chat.callMode && typeof appendCallUserMessage === 'function') {
-    appendCallUserMessage(text);
-}             
-
-                if (chat.history.length > 0 && chat.history.length % 100 === 0) {
-                    promptForBackupIfNeeded('history_milestone');
+                // ★ 修复偶发丢消息：先存 db（真相源），成功后再进内存和 UI
+                // 原顺序是 push→渲染→存db，遇到多窗口 loadData 竞态时会出现
+                // "内存有 db 没有"的幽灵消息，重启后丢失
+                try {
+                    await saveMessageToDB(message, currentChatId, currentChatType);
+                } catch (e) {
+                    // db 都没存成功，绝不能让 AI 回复一条没人看到的消息
+                    console.error("❌ 用户消息存 db 失败，已阻止本次发送:", e);
+                    // 还原输入框文字，避免用户白打了一长串却丢了
+                    messageInput.value = text;
+                    showToast('消息发送失败，请重试');
+                    return;
                 }
-await saveMessageToDB(message, currentChatId, currentChatType);
+
+                // ★ 竞态兜底：存 db 期间可能 loadData 已经把 chat 换成新对象
+                // 必须重新取最新引用，否则会 push 到已被丢弃的旧 history 上
+                const chatFresh = (currentChatType === 'private')
+                    ? db.characters.find(c => c.id === currentChatId)
+                    : db.groups.find(g => g.id === currentChatId);
+                if (!chatFresh) {
+                    // 极端情况：存 db 成功但聊天被删了，消息已在 db 里，下次加载会回来
+                    console.warn("⚠️ 消息已存 db，但当前聊天已不存在，跳过内存 push");
+                } else {
+                    chatFresh.history.push(message);
+                    addMessageBubble(message, currentChatId, currentChatType);
+                    if (currentChatType === 'private' && chatFresh.callMode && typeof appendCallUserMessage === 'function') {
+                        appendCallUserMessage(text);
+                    }
+                    if (chatFresh.history.length > 0 && ((typeof chatFresh.msgCount === 'number' ? chatFresh.msgCount : chatFresh.history.length) % 100 === 0)) {
+                        promptForBackupIfNeeded('history_milestone');
+                    }
+                }
+
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
 

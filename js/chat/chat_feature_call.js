@@ -556,11 +556,14 @@ function openCallHistory() {
     const list  = document.getElementById('call-history-list');
     if (!panel || !list) return;
 
-    const callMsgs = chat.history.filter(m =>
-        m.callSessionId === sessionId &&
-        !m.isHidden &&
-        !m.isAiIgnore
-    );
+    // ★ 滑窗改造：通话 session 消息改用 Dexie 直查，不依赖内存全量 history
+    const callMsgs = await (typeof getCallSessionMessages === 'function'
+        ? getCallSessionMessages(chat.id, sessionId)
+        : Promise.resolve(chat.history.filter(m =>
+            m.callSessionId === sessionId &&
+            !m.isHidden &&
+            !m.isAiIgnore
+        )));
 
     list.innerHTML = '';
     callMsgs.forEach(m => {
@@ -864,9 +867,14 @@ async function recoverInterruptedCall(chat) {
         callSessionId: sessionId
     };
 
-    const startMarker = chat.history.find(
-    m => m.callSessionId === sessionId &&
-    (m.id?.includes('_start_vis_') || m.id?.includes('_accept_ins_')));
+    // ★ 滑窗改造：通话 session 起始标记改用 Dexie 查找
+    const startMarker = await (typeof findLastMessageMatching === 'function'
+        ? findLastMessageMatching(chat.id, m =>
+            m.callSessionId === sessionId &&
+            (m.id?.includes('_start_vis_') || m.id?.includes('_accept_ins_')))
+        : Promise.resolve(chat.history.find(m =>
+            m.callSessionId === sessionId &&
+            (m.id?.includes('_start_vis_') || m.id?.includes('_accept_ins_')))));
     const interruptDuration = startMarker
         ? Math.floor((now - startMarker.timestamp) / 1000)
         : 0;

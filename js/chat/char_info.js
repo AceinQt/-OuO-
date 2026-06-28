@@ -223,7 +223,8 @@ function renderTokenStats(charId) {
     if (!char) return;
 
     // 1. 聊天总数统计
-    const msgCount = char.history ? char.history.length : 0;
+    // ★ 滑窗改造：消息数读冗余字段 msgCount，不再依赖 history.length
+    const msgCount = (typeof char.msgCount === 'number') ? char.msgCount : (char.history ? char.history.length : 0);
     document.getElementById('stat-msg-count').textContent = msgCount;
 
     // --- 2. 各维度 Token 拆解 ---

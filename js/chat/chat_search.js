@@ -75,55 +75,46 @@ function openSearchModal() {
 }
 
 // 执行搜索逻辑
-function performSearch(dateStr, keyword) {
+async function performSearch(dateStr, keyword) {
     const chat = (currentChatType === 'private') 
         ? db.characters.find(c => c.id === currentChatId) 
         : db.groups.find(g => g.id === currentChatId);
 
-    if (!chat || !chat.history) return;
+    if (!chat) return;
 
 const invisibleRegex = /\[.*?更新状态为[:：].*?\]|\[system:.*?\]|\[.*?(?:接收|退回).*?的转账\]|\[.*?已接收礼物\]|\[系统情景通知：.*?\]/;
-    // 1. 筛选数据 (计算密集型操作，数据极大时可考虑 Web Worker，但几万条内通常 JS 还能扛住)
-    const rawResults = chat.history.filter(msg => {
-        // 过滤掉不可见的系统内部指令
+    // ★ 滑窗改造：搜索不再依赖内存 chat.history，改为 Dexie 全量查当前会话再 filter
+    // 12w 条会卡 1-2 秒，但仅用户主动搜索时触发，可接受
+    const _searchPredicate = (msg) => {
         if (msg.role === 'system' && msg.isHidden) return false;
-        
-        if (invisibleRegex.test(msg.content)) {
-            return false; 
-        }
-        
+        if (invisibleRegex.test(msg.content)) return false;
         if (msg.isWithdrawn) return false;
-
-        let matchDate = true;
-        let matchKeyword = true;
-
-        // 日期匹配
+        let matchDate = true, matchKeyword = true;
         if (dateStr) {
             const msgDate = new Date(msg.timestamp);
-            const yyyy = msgDate.getFullYear();
-            const mm = String(msgDate.getMonth() + 1).padStart(2, '0');
-            const dd = String(msgDate.getDate()).padStart(2, '0');
-            const msgDateStr = `${yyyy}-${mm}-${dd}`;
+            const msgDateStr = `${msgDate.getFullYear()}-${String(msgDate.getMonth()+1).padStart(2,'0')}-${String(msgDate.getDate()).padStart(2,'0')}`;
             if (msgDateStr !== dateStr) matchDate = false;
         }
-
-        // 关键词匹配 (忽略大小写)
         if (keyword) {
             let contentToCheck = msg.content;
-            
-            // 简单的格式清洗，提高匹配准确度
             const textMatch = msg.content.match(/\[.*?的消息：([\s\S]+?)\]/);
             if (textMatch) contentToCheck = textMatch[1];
-            
             if (contentToCheck.startsWith('[system-narration:')) {
                 const narMatch = contentToCheck.match(/\[system-narration:([\s\S]+?)\]/);
                 if(narMatch) contentToCheck = narMatch[1];
             }
-
-            if (!contentToCheck.toLowerCase().includes(keyword.toLowerCase())) {
-                matchKeyword = false;
-            }
+            if (!contentToCheck.toLowerCase().includes(keyword.toLowerCase())) matchKeyword = false;
         }
+        return matchDate && matchKeyword;
+    };
+
+    let rawResults;
+    if (typeof searchMessagesInChat === 'function') {
+        rawResults = await searchMessagesInChat(currentChatId, _searchPredicate);
+    } else {
+        // 兜底：走内存
+        rawResults = (chat.history || []).filter(_searchPredicate);
+    }
 
         return matchDate && matchKeyword;
     });
@@ -246,11 +237,22 @@ async function confirmJumpToMessage(messageId) {
 }
 
 // 核心功能：跳转到指定消息
-function jumpToMessageInChat(messageId) {
+async function jumpToMessageInChat(messageId) {
     const chat = (currentChatType === 'private') 
         ? db.characters.find(c => c.id === currentChatId) 
         : db.groups.find(g => g.id === currentChatId);
     
+    // ★ 滑窗改造：确保目标消息所在范围已加载进内存
+    // 先从 Dexie 找到该消息的全局位置，再 ensureRangeLoaded
+    const realTotal = (typeof chat.msgCount === 'number') ? chat.msgCount 
+        : (typeof getMsgCount === 'function') ? await getMsgCount(chat) 
+        : chat.history.length;
+    
+    // 全量加载当前会话（搜索跳转是低频操作，12w 条会卡 1-2 秒但可接受）
+    if (typeof ensureHistoryFullyLoaded === 'function') {
+        await ensureHistoryFullyLoaded(chat);
+    }
+
     // 1. 找到索引
     const msgIndex = chat.history.findIndex(m => m.id === messageId);
     if (msgIndex === -1) {
@@ -259,10 +261,7 @@ function jumpToMessageInChat(messageId) {
     }
 
     // 2. 计算页码 (逻辑：最新消息在最后，Page 1 显示最后 N 条)
-    // 假设 MESSAGES_PER_PAGE 是 20，总数 100
-    // Index 99 (最新) -> (100-99)/20 = 0.05 -> ceil = 1
-    // Index 0 (最旧) -> (100-0)/20 = 5 -> ceil = 5
-    const totalMessages = chat.history.length;
+    const totalMessages = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
 // 计算跳转渲染窗口：以目标消息为中心，前后各 1 页
     //    避免渲染整段历史（可能几万条），也确保消息在 DOM 里
     const JUMP_WINDOW = MESSAGES_PER_PAGE * 2;

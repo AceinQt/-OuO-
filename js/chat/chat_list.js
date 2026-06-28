@@ -376,18 +376,22 @@ function goBackToContacts() {
                 }))];
                 noChatsPlaceholder.style.display = (db.characters.length + db.groups.length) === 0 ? 'block' : 'none';
 // 【修复】过滤掉用户全局状态推送的时间戳，防止列表被异常顶起
+// ★ 滑窗改造：排序时间戳改读冗余字段 lastMsgPreview，不再遍历 history（history 可能是空的）
                 const getEffectiveSortTime = (chatItem) => {
-                    if (!chatItem.history || chatItem.history.length === 0) return 0;
-                    // 从后往前找，找到第一个不是"用户全局状态通知"的消息时间戳
-                    for (let i = chatItem.history.length - 1; i >= 0; i--) {
-                        const m = chatItem.history[i];
-                        const isUserStatus = m.isUserStatusNotif || (m.role === 'user' && /\[.*?更新状态为：.*?\]/.test(m.content));
-                        if (!isUserStatus) {
-                            return m.timestamp;
-                        }
+                    // 优先用冗余字段（零成本）
+                    if (chatItem.lastMsgPreview && !chatItem.lastMsgPreview.isUserStatusNotif) {
+                        return chatItem.lastMsgPreview.timestamp || 0;
                     }
-                    // 如果全是状态通知，就保底返回最早一条的时间
-                    return chatItem.history[0].timestamp; 
+                    // 兜底：history 在内存时遍历（openChatRoom 后才有数据）
+                    if (chatItem.history && chatItem.history.length > 0) {
+                        for (let i = chatItem.history.length - 1; i >= 0; i--) {
+                            const m = chatItem.history[i];
+                            const isUserStatus = m.isUserStatusNotif || (m.role === 'user' && /\[.*?更新状态为：.*?\]/.test(m.content));
+                            if (!isUserStatus) return m.timestamp;
+                        }
+                        return chatItem.history[0].timestamp;
+                    }
+                    return 0;
                 };
 
                 const sortedChats = allChats.sort((a, b) => {
@@ -398,85 +402,96 @@ function goBackToContacts() {
                 });
                 sortedChats.forEach(chat => {
                     let lastMessageText = '开始聊天吧...';
-                    if (chat.history && chat.history.length > 0) {
+                    // ★ 滑窗改造：预览文本优先读冗余字段 lastMsgPreview，不再遍历 history
+                    const preview = chat.lastMsgPreview;
+                    if (preview && preview.content) {
+                        const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
+                        const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
+                        const imageRecogRegex = /\[.*?发来了一张图片：\]/;
+                        const voiceRegex = /\[.*?的语音：.*?\]/;
+                        const photoVideoRegex = /\[.*?发来的照片\/视频：.*?\]/;
+                        const transferRegex = /\[.*?的转账：.*?元.*?\]|\[.*?给你转账：.*?元.*?\]|\[.*?向.*?转账：.*?元.*?\]/;
+                        const stickerRegex = /\[.*?的表情包：.*?\]|\[.*?发送的表情包：.*?\]/;
+                        const giftRegex = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/;
+                        const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
+                        const renameRegex = /\[.*?修改群名为：.*?\]/;
+                        const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
+
+                        if (invisibleRegex.test(preview.content)) {
+                            // 不可见消息，尝试提取语义
+                            const timeSkipMatch = preview.content.match(timeSkipRegex);
+                            if (timeSkipMatch) { lastMessageText = timeSkipMatch[1]; }
+                            else if (inviteRegex.test(preview.content)) { lastMessageText = '新成员加入了群聊'; }
+                            else if (renameRegex.test(preview.content)) { lastMessageText = '群聊名称已修改'; }
+                            else { lastMessageText = 'ta正在等你'; }
+                        } else if (giftRegex.test(preview.content)) {
+                            lastMessageText = '[礼物]';
+                        } else if (stickerRegex.test(preview.content)) {
+                            lastMessageText = '[表情包]';
+                        } else if (voiceRegex.test(preview.content)) {
+                            lastMessageText = '[语音]';
+                        } else if (photoVideoRegex.test(preview.content)) {
+                            lastMessageText = '[照片/视频]';
+                        } else if (transferRegex.test(preview.content)) {
+                            lastMessageText = '[转账]';
+                        } else if (imageRecogRegex.test(preview.content)) {
+                            lastMessageText = '[图片]';
+                        } else {
+                            let text = preview.content.trim();
+                            const plainTextMatch = text.match(/^\[.*?：([\s\S]*)\]$/);
+                            const narrationMatch = text.match(/^\[system-narration:([\s\S]+?)\]$/);
+                            const contextMatch = text.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
+                            if (narrationMatch) { text = narrationMatch[1].trim(); }
+                            else if (contextMatch) { text = contextMatch[1].trim(); }
+                            else if (plainTextMatch && plainTextMatch[1]) { text = plainTextMatch[1].trim(); }
+                            text = text.replace(/\[发送时间:.*?\]$/, '').trim();
+                            const htmlRegex = /<[a-z][\s\S]*>/i;
+                            if (htmlRegex.test(text)) { lastMessageText = '[互动]'; }
+                            else { lastMessageText = urlRegex.test(text) ? '[图片]' : text; }
+                        }
+                    } else if (chat.history && chat.history.length > 0) {
+                        // 兜底：history 在内存时走原逻辑（openChatRoom 后才有数据）
                         const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
                         const visibleHistory = chat.history.filter(msg => !invisibleRegex.test(msg.content));
                         if (visibleHistory.length > 0) {
                             const lastMsg = visibleHistory[visibleHistory.length - 1];
                             const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
-                            const imageRecogRegex = /\[.*?发来了一张图片：\]/
+                            const imageRecogRegex = /\[.*?发来了一张图片：\]/;
                             const voiceRegex = /\[.*?的语音：.*?\]/;
                             const photoVideoRegex = /\[.*?发来的照片\/视频：.*?\]/;
                             const transferRegex = /\[.*?的转账：.*?元.*?\]|\[.*?给你转账：.*?元.*?\]|\[.*?向.*?转账：.*?元.*?\]/;
                             const stickerRegex = /\[.*?的表情包：.*?\]|\[.*?发送的表情包：.*?\]/;
                             const giftRegex = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/;
-
-
-
-                            if (giftRegex.test(lastMsg.content)) {
-                                lastMessageText = '[礼物]';
-                            } else if (stickerRegex.test(lastMsg.content)) {
-                                lastMessageText = '[表情包]';
-                            } else if (voiceRegex.test(lastMsg.content)) {
-                                lastMessageText = '[语音]';
-                            } else if (photoVideoRegex.test(lastMsg.content)) {
-                                lastMessageText = '[照片/视频]';
-                            } else if (transferRegex.test(lastMsg.content)) {
-                                lastMessageText = '[转账]';
-                            } else if (imageRecogRegex.test(lastMsg.content) || (lastMsg.parts && lastMsg.parts.some(p => p.type === 'image'))) {
-                                lastMessageText = '[图片]';
-                            } else if ((lastMsg.parts && lastMsg.parts.some(p => p.type === 'html'))) {
-                                lastMessageText = '[互动]';
-                            } else {
-                                    let text = lastMsg.content.trim();
-                                    
-// 1. 尝试匹配中文冒号的标准格式 [名字：内容]
-                                    const plainTextMatch = text.match(/^\[.*?：([\s\S]*)\]$/);
-                                    
-                                    // 2. 尝试匹配英文冒号的旁白格式 [system-narration:内容]
-                                    const narrationMatch = text.match(/^\[system-narration:([\s\S]+?)\]$/);
-
-                                    // 3. 【新增】尝试匹配剧情旁白格式 (兼容中英文冒号)
-                                    const contextMatch = text.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
-
-                                    if (narrationMatch) {
-                                        // 如果是系统旁白，提取内容
-                                        text = narrationMatch[1].trim();
-                                    } else if (contextMatch) {
-                                        // 【新增】如果是剧情旁白，提取内容
-                                        text = contextMatch[1].trim();
-                                    } else if (plainTextMatch && plainTextMatch[1]) {
-                                        // 如果是普通消息，提取内容
-                                        text = plainTextMatch[1].trim();
-                                    }
-
-                                    // 3. 清理末尾可能的时间戳
-                                    text = text.replace(/\[发送时间:.*?\]$/, '').trim(); 
-                                    
-                                    const htmlRegex = /<[a-z][\s\S]*>/i;
-                                    if (htmlRegex.test(text)) {
-                                        lastMessageText = '[互动]';
-                                    } else {
-                                        lastMessageText = urlRegex.test(text) ? '[图片]' : text;
-                                    }
-                                }
+                            if (giftRegex.test(lastMsg.content)) { lastMessageText = '[礼物]'; }
+                            else if (stickerRegex.test(lastMsg.content)) { lastMessageText = '[表情包]'; }
+                            else if (voiceRegex.test(lastMsg.content)) { lastMessageText = '[语音]'; }
+                            else if (photoVideoRegex.test(lastMsg.content)) { lastMessageText = '[照片/视频]'; }
+                            else if (transferRegex.test(lastMsg.content)) { lastMessageText = '[转账]'; }
+                            else if (imageRecogRegex.test(lastMsg.content) || (lastMsg.parts && lastMsg.parts.some(p => p.type === 'image'))) { lastMessageText = '[图片]'; }
+                            else if ((lastMsg.parts && lastMsg.parts.some(p => p.type === 'html'))) { lastMessageText = '[互动]'; }
+                            else {
+                                let text = lastMsg.content.trim();
+                                const plainTextMatch = text.match(/^\[.*?：([\s\S]*)\]$/);
+                                const narrationMatch = text.match(/^\[system-narration:([\s\S]+?)\]$/);
+                                const contextMatch = text.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
+                                if (narrationMatch) { text = narrationMatch[1].trim(); }
+                                else if (contextMatch) { text = contextMatch[1].trim(); }
+                                else if (plainTextMatch && plainTextMatch[1]) { text = plainTextMatch[1].trim(); }
+                                text = text.replace(/\[发送时间:.*?\]$/, '').trim();
+                                const htmlRegex = /<[a-z][\s\S]*>/i;
+                                if (htmlRegex.test(text)) { lastMessageText = '[互动]'; }
+                                else { lastMessageText = urlRegex.test(text) ? '[图片]' : text; }
+                            }
                         } else {
                             const lastEverMsg = chat.history[chat.history.length - 1];
                             const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
                             const renameRegex = /\[.*?修改群名为：.*?\]/;
                             const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
                             const timeSkipMatch = lastEverMsg.content.match(timeSkipRegex);
-
-                            if (timeSkipMatch) {
-                                lastMessageText = timeSkipMatch[1];
-                            } else if (inviteRegex.test(lastEverMsg.content)) {
-                                lastMessageText = '新成员加入了群聊';
-                            } else if (renameRegex.test(lastEverMsg.content)) {
-                                lastMessageText = '群聊名称已修改';
-                            } else {
-                                lastMessageText = 'ta正在等你';
-                            }
-
+                            if (timeSkipMatch) { lastMessageText = timeSkipMatch[1]; }
+                            else if (inviteRegex.test(lastEverMsg.content)) { lastMessageText = '新成员加入了群聊'; }
+                            else if (renameRegex.test(lastEverMsg.content)) { lastMessageText = '群聊名称已修改'; }
+                            else { lastMessageText = 'ta正在等你'; }
                         }
                     }
                     const li = document.createElement('li');
@@ -488,9 +503,11 @@ function goBackToContacts() {
                     const itemName = chat.type === 'private' ? chat.remarkName : chat.name;
                     const pinBadgeHTML = chat.isPinned ? '<span class="pin-badge">置顶</span>' : '';
                     let timeString = '';
-                    const lastMessage = chat.history && chat.history.length > 0
-    ? [...chat.history].reverse().find(m => !m.isUserStatusNotif) ?? null
-    : null;
+                    // ★ 滑窗改造：时间显示优先读冗余字段
+                    const lastMessage = (preview && !preview.isUserStatusNotif) ? preview
+                        : (chat.history && chat.history.length > 0)
+                            ? [...chat.history].reverse().find(m => !m.isUserStatusNotif) ?? null
+                            : null;
                     if (lastMessage) {
                         const date = new Date(lastMessage.timestamp);
                         const now = new Date();

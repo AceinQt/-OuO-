@@ -246,16 +246,12 @@ async function checkAndDeliverProactiveMessages() {
         const draft = chat.proactiveMessageQueue[msgIndex];
 
         let lastInteractTime = 0;
-        let lastRealMsgIndex = -1;
-        if (chat.history.length > 0) {
-            for (let i = chat.history.length - 1; i >= 0; i--) {
-                const m = chat.history[i];
-                if (!m.id?.includes('msg_proactive_') && !m.id?.includes('msg_visual_')) {
-                    lastRealMsgIndex = i;
-                    lastInteractTime = m.timestamp || 0;
-                    break;
-                }
-            }
+        // ★ 滑窗改造：后台遍历改用 Dexie 轻量查询，不依赖内存全量 history
+        const lastRealMsg = await (typeof findLastMessageMatching === 'function'
+            ? findLastMessageMatching(chat.id, m => !m.id?.includes('msg_proactive_') && !m.id?.includes('msg_visual_'))
+            : Promise.resolve((chat.history || []).slice().reverse().find(m => !m.id?.includes('msg_proactive_') && !m.id?.includes('msg_visual_'))));
+        if (lastRealMsg) {
+            lastInteractTime = lastRealMsg.timestamp || 0;
         }
 
         // 【修复 1】summary / idle 队列：用户在生成后说过话，整条作废，立即清除
@@ -272,13 +268,18 @@ async function checkAndDeliverProactiveMessages() {
         }
         
         let hasSentProactiveSinceLastReal = false;
-        if (chat.history.length > 0) {
-            let checkStartIndex = lastRealMsgIndex === -1 ? 0 : lastRealMsgIndex + 1;
-            for (let i = checkStartIndex; i < chat.history.length; i++) {
-                if (chat.history[i].id?.includes('msg_proactive_')) {
-                    hasSentProactiveSinceLastReal = true;
-                    break;
-                }
+        // ★ 滑窗改造：检查最近真实消息后是否有主动消息，改用 Dexie 轻量查
+        if (lastRealMsg && typeof findLastMessageMatching === 'function') {
+            const proactiveAfter = await findLastMessageMatching(chat.id, m =>
+                m.id?.includes('msg_proactive_') && (m.timestamp || 0) >= (lastRealMsg.timestamp || 0)
+            );
+            hasSentProactiveSinceLastReal = !!proactiveAfter;
+        } else if (chat.history && chat.history.length > 0) {
+            // 兜底：内存遍历
+            const lastRealIdx = chat.history.findIndex(m => m.id === lastRealMsg?.id);
+            const checkStart = lastRealIdx === -1 ? 0 : lastRealIdx + 1;
+            for (let i = checkStart; i < chat.history.length; i++) {
+                if (chat.history[i].id?.includes('msg_proactive_')) { hasSentProactiveSinceLastReal = true; break; }
             }
         }
 
@@ -561,10 +562,14 @@ function startBackgroundAudioTimer() {
                     
                 if (currentCount < maxCalls) {
                     let lastInteractTime = 0;
-                    if (chat.history && chat.history.length > 0) {
-                        const lastRealMsg = chat.history.filter(m => !m.id?.includes('msg_proactive_') && !m.id?.includes('msg_visual_')).slice(-1)[0];
-                        lastInteractTime = lastRealMsg?.timestamp || 0;
-                    }
+                        // ★ 滑窗改造：改用 Dexie 轻量查
+                        if (typeof findLastMessageMatching === 'function') {
+                            const lrm = await findLastMessageMatching(chat.id, m => !m.id?.includes('msg_proactive_') && !m.id?.includes('msg_visual_'));
+                            lastInteractTime = lrm?.timestamp || 0;
+                        } else if (chat.history && chat.history.length > 0) {
+                            const lastRealMsg = chat.history.filter(m => !m.id?.includes('msg_proactive_') && !m.id?.includes('msg_visual_')).slice(-1)[0];
+                            lastInteractTime = lastRealMsg?.timestamp || 0;
+                        }
                     const hasValidDraft = chat.proactiveMessageQueue && chat.proactiveMessageQueue.some(m => {
                         if (m.expireAt <= Date.now()) return false; 
                         if (m.type === 'time_window_summary') return true; 
@@ -935,8 +940,12 @@ ${exampleFormat}
 
         systemPrompt += awayInstruction;
 
-const memoryLength = chat.maxMemory || 15;
-        const recentHistory = chat.history.slice(-memoryLength).map(m => {
+        const memoryLength = chat.maxMemory || 15;
+        // ★ 滑窗改造：slice(-memoryLength) 改用 getRecentMessages（内存尾部够）
+        const recentMsgs = typeof getRecentMessages === 'function'
+            ? await getRecentMessages(chat, memoryLength)
+            : (chat.history || []).slice(-memoryLength);
+        const recentHistory = recentMsgs.map(m => {
             if (m.isHidden || m.isAiIgnore || m.role === 'system') return null;
             return m.content;
         }).filter(Boolean).join('\n');

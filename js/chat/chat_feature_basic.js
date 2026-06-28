@@ -373,7 +373,8 @@
                     showToast('当前没有聊天记录可删除');
                     return;
                 }
-                const totalMessages = chat.history.length;
+                // ★ 滑窗改造：总数读冗余字段
+                const totalMessages = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
                 const rangeInfo = document.getElementById('delete-chunk-range-info');
                 rangeInfo.textContent = `当前聊天总消息数: ${totalMessages}`;
                 document.getElementById('delete-chunk-form').reset();
@@ -394,7 +395,8 @@
                 deleteChunkForm.addEventListener('submit', (e) => {
                     e.preventDefault();
                     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                    const totalMessages = chat.history.length;
+                    // ★ 滑窗改造：总数读冗余字段
+                    const totalMessages = (typeof chat.msgCount === 'number') ? chat.msgCount : chat.history.length;
 
                     startRange = parseInt(document.getElementById('delete-range-start').value);
                     endRange = parseInt(document.getElementById('delete-range-end').value);
