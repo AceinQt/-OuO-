@@ -92,7 +92,6 @@ function setupHomeScreen() {
     if(typeof updateClock === 'function') updateClock();
     applyWallpaper(db.wallpaper);
     applyHomeScreenMode(db.homeScreenMode);
-    updateBatteryStatus();
 
     // 8. 绑定事件 (确保只绑定一次)
     bindHomeScreenEventsOnce();
@@ -218,32 +217,7 @@ async function applyHomeScreenMode(mode) {
     await saveGlobalKeys(['homeScreenMode']);
 }
 
-// 电池状态
-async function updateBatteryStatus() {
-    if ('getBattery' in navigator) {
-        try {
-            const battery = await navigator.getBattery();
-            const batteryLevelText = document.getElementById('battery-level');
-            const batteryFillRect = document.getElementById('battery-fill-rect');
 
-            const updateDisplay = () => {
-                if (!batteryLevelText || !batteryFillRect) return;
-                const level = Math.floor(battery.level * 100);
-                batteryLevelText.textContent = `${level}%`;
-                batteryFillRect.setAttribute('width', 18 * battery.level);
-                let fillColor = "currentColor";
-                if (battery.charging) fillColor = "#4CAF50"; 
-                else if (level <= 20) fillColor = "#f44336";
-                batteryFillRect.setAttribute('fill', fillColor);
-            };
-            updateDisplay();
-            battery.addEventListener('levelchange', updateDisplay);
-            battery.addEventListener('chargingchange', updateDisplay);
-        } catch (error) {
-            // 忽略错误
-        }
-    }
-}
 
 // 确保 setupInsWidgetAvatarModal 函数仍然存在
 function setupInsWidgetAvatarModal() {
@@ -337,10 +311,7 @@ function setupInsWidgetAvatarModal() {
 
 // --- 新增：更新主页聊天图标的未读消息角标 ---
 function updateHomeChatBadge() {
-    const chatAppIcon = document.getElementById('app-icon-chat-list-screen');
-    if (!chatAppIcon) return;
-    
-    // 计算私聊和群聊的总未读数
+    // 计算私聊和群聊的总未读数（先算，供桌面角标使用，不受 DOM 早退影响）
     let totalUnread = 0;
     if (db && db.characters) {
         totalUnread += db.characters.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
@@ -348,7 +319,25 @@ function updateHomeChatBadge() {
     if (db && db.groups) {
         totalUnread += db.groups.reduce((sum, g) => sum + (g.unreadCount || 0), 0);
     }
-    
+
+// ★ Step 4：同步 PWA 桌面图标角标（受通知总开关 + 角标独立开关 badgeEnabled 控制）
+    try {
+        const gn = db && db.globalNotifySettings;
+        const notifyOn = gn && gn.enabled;
+        const badgeOn = !gn || gn.badgeEnabled !== false; // 缺省视为开，兼容旧库
+        if (navigator.setAppBadge) {
+            if (notifyOn && badgeOn && totalUnread > 0) {
+                // 【修复】：强制转换为纯数字，防止某些浏览器解析出错导致只显示 1
+                navigator.setAppBadge(Number(totalUnread)).catch(() => {});
+            } else if (navigator.clearAppBadge) {
+                navigator.clearAppBadge().catch(() => {});
+            }
+        }
+    } catch (_) {}
+
+    const chatAppIcon = document.getElementById('app-icon-chat-list-screen');
+    if (!chatAppIcon) return;
+
     let badge = chatAppIcon.querySelector('.home-unread-badge');
     
     // 如果有未读消息

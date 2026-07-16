@@ -178,7 +178,16 @@ const pageActions = {
     'customize-screen': typeof renderCustomizeForm !== 'undefined' ? renderCustomizeForm : null,
     'tutorial-screen': typeof renderTutorialContent !== 'undefined' ? renderTutorialContent : null,
     'storage-analysis-screen': window.refreshStorageScreen,
-    'chat-list-screen': resetChatListTabs 
+    'notification-settings-screen': () => window.NotifyCenter?.initSettingsUI(),
+    'chat-list-screen': resetChatListTabs ,
+    'chat-appearance-screen': () => {
+        // 防御：清除 chat-list-screen Tab 切换可能遗留的 inline display
+        const tabBubbles = document.getElementById('tab-view-bubbles');
+        if (tabBubbles) tabBubbles.style.display = '';
+        if (typeof window.renderGlobalBubblePresets === 'function') {
+            window.renderGlobalBubblePresets();
+        }
+    }
 };
 
 // 5. 统一跳转函数
@@ -419,7 +428,9 @@ const splash = document.getElementById('app-splash-screen');
 
 // --- 7. 每日自动备份逻辑 ---
 async function runDailyBackupCheck() {
-    if (typeof GitHubService === 'undefined' || typeof createFullBackupData === 'undefined') return;
+    // ★ V5 修复：原代码调用不存在的 createFullBackupData/GitHubService.upload，自动备份从未生效。
+    //   现在直接复用手动"上传云端"的 V5 流式备份路径。
+    if (typeof GitHubService === 'undefined' || typeof performOptimizedCloudBackup !== 'function') return;
 
     const config = GitHubService.getConfig();
     if (!config || !config.autoBackup) return;
@@ -436,8 +447,7 @@ async function runDailyBackupCheck() {
     console.log("检测到今日首次启动，准备自动备份...");
     setTimeout(async () => {
         try {
-            const data = await createFullBackupData();
-            await GitHubService.upload(data);
+            await performOptimizedCloudBackup();
             localStorage.setItem(LAST_BACKUP_KEY, today);
             if (typeof showToast === 'function') showToast("每日自动备份完成");
             console.log("每日自动备份成功");
@@ -453,11 +463,42 @@ async function runDailyBackupCheck() {
 
 // A. Service Worker 注册与后台唤醒监听
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./js/sw.js')
+    window.addEventListener('load', async () => {
+        // ★ 迁移：注销旧的 /js/ 作用域 SW（历史版本注册在 ./js/sw.js，
+        //   作用域 /js/ 控制不了根页面、会导致 ready 永久挂起、点通知 404）。
+        //   sw.js 现已移到根目录（作用域 /），这里先清掉旧的，避免新旧并存。
+        try {
+            const olds = await navigator.serviceWorker.getRegistrations();
+            for (const r of olds) {
+                if (r.scope && r.scope.endsWith('/js/')) {
+                    await r.unregister();
+                    console.log('🧹 已注销旧的 /js/ 作用域 SW:', r.scope);
+                }
+            }
+        } catch (e) { console.log('清理旧 SW 时出错（忽略）:', e); }
+
+        navigator.serviceWorker.register('./sw.js')
             .then(async reg => {
                 console.log('✅ SW 注册成功:', reg.scope);
-                
+                // 存下 registration 供通知模块使用（虽然根作用域下 ready 可用，
+                // 但沿用这个引用最稳，避免时序问题）
+                window.__swRegistration = reg;
+
+                // 向 SW 询问版本号（唯一来源：sw.js 的 CACHE_NAME），拿到后打印到控制台
+                try {
+                    const sw = reg.active || navigator.serviceWorker.controller;
+                    if (sw) {
+                        const ch = new MessageChannel();
+                        ch.port1.onmessage = (e) => {
+                            if (e.data && e.data.type === 'VERSION') {
+                                window.__appVersion = e.data.version;
+                                console.log('OuO 版本: ' + e.data.version);
+                            }
+                        };
+                        sw.postMessage({ type: 'GET_VERSION' }, [ch.port2]);
+                    }
+                } catch (e) { console.log('获取版本号失败（忽略）:', e); }
+
                 // 尝试注册周期性后台同步 (Periodic Background Sync)
                 if ('periodicSync' in reg) {
                     try {
