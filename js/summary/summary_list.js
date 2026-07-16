@@ -692,8 +692,27 @@ function _renderSummaryBlocks(item, container, chat) {
                     delete block.lastAccessTime;
                 }
 
-                // E. 写入存储并刷新
+// E. 写入存储并刷新
                 await saveChunksToDB([block]);
+                
+                // ★★★ 修复 Bug：将被修改的片段重新拼接，并同步更新父总结的 content ★★★
+                // 确保长期总结读取到的是修改后的最新文本
+                const detailedParts = blocks
+                    .filter(b => b.detailedContent)
+                    .sort((a, b) => a.chunkIndex - b.chunkIndex)
+                    .map(b => {
+                        const rangeStr = (b.startMsgIndex && b.endMsgIndex)
+                            ? `（消息${b.startMsgIndex}–${b.endMsgIndex}）`
+                            : `（片段${b.chunkIndex + 1}）`;
+                        return `${rangeStr}\n${b.detailedContent}`;
+                    });
+                
+                if (detailedParts.length > 0) {
+                    item.content = detailedParts.join('\n\n');
+                    await saveMemoryItem(item, currentChatId, 'short'); // 保存更新后的父总结
+                }
+                // ★★★ 修复完毕 ★★★
+
                 renderVectorStats();
                 showToast(needClearEmbedding
                     ? '已保存，向量已清除，请重新向量化'
@@ -763,11 +782,11 @@ function _renderSummaryBlocks(item, container, chat) {
  * 优先用块记录的 startMsgIndex/endMsgIndex 精确重建；
  * 无范围记录时 fallback 到父总结全段。
  */
-function _rebuildChunkRawText(block, chat) {
+// [Step S3-S4] 异步化：懒加载后老范围不在内存窗口，走 DB。
+//   block 有 startTime/endTime 时用 ts range（O(log n)），否则用全局序号 range。
+//   非懒加载保留原 slice 路径，行为不变。调用方需 await。
+async function _rebuildChunkRawText(block, chat) {
     if (block.startMsgIndex && block.endMsgIndex) {
-        const startIdx = block.startMsgIndex - 1;
-        const endIdx   = block.endMsgIndex;
-
         const _filterMsg = m => {
             if (m.isAiIgnore || m.isHidden) return false;
             if (m.role === 'system') return false;
@@ -783,27 +802,34 @@ function _rebuildChunkRawText(block, chat) {
             return sender ? sender.realName : '未知成员';
         };
 
-        return (chat.history || []).slice(startIdx, endIdx)
-            .filter(_filterMsg)
+        let msgs;
+        if (window.LAZY_LOAD && block.startTime && block.endTime) {
+            msgs = await window.getMessagesByTsRange(chat.id, block.startTime, block.endTime);
+        } else if (window.LAZY_LOAD) {
+            msgs = await window.getMessagesByGlobalRange(chat.id, block.startMsgIndex, block.endMsgIndex);
+        } else {
+            msgs = (chat.history || []).slice(block.startMsgIndex - 1, block.endMsgIndex);
+        }
+        return msgs.filter(_filterMsg)
             .map(m => `${_getName(m)}: ${m.content}`)
             .join('\n');
     }
 
     // fallback：用父总结全段重建
     const parentSummary = (chat.memorySummaries || []).find(s => s.id === block.summaryId);
-    return parentSummary ? _rebuildRawText(parentSummary, chat) : '';
+    return parentSummary ? await _rebuildRawText(parentSummary, chat) : '';
 }
 
 
 /**
- * 通过父总结的 range 指针，从 chat.history 实时重建该范围的对话原文（兜底用）。
+ * 通过父总结的 range 指针，实时重建该范围的对话原文（兜底用）。
+ * [Step S3-S4] 异步化：懒加载后老范围不在内存窗口，走 DB 全局序号取。
  */
-function _rebuildRawText(summaryItem, chat) {
+async function _rebuildRawText(summaryItem, chat) {
     const range = summaryItem.range;
     if (!range || range.start == null) return '';
-
-    const startIdx = (range.start || 1) - 1;
-    const endIdx   = range.end || 0;
+    // '未知' 等非数字 range 直接返回空（与原 slice(NaN,NaN)=[] 行为一致）
+    if (typeof range.start !== 'number' || typeof range.end !== 'number') return '';
 
     const _filterMsg = m => {
         if (m.isAiIgnore || m.isHidden) return false;
@@ -821,9 +847,10 @@ function _rebuildRawText(summaryItem, chat) {
         return sender ? sender.realName : '未知成员';
     };
 
-    return (chat.history || [])
-        .slice(startIdx, endIdx)
-        .filter(_filterMsg)
+    const msgs = window.LAZY_LOAD
+        ? await window.getMessagesByGlobalRange(chat.id, range.start, range.end)
+        : (chat.history || []).slice(range.start - 1, range.end);
+    return msgs.filter(_filterMsg)
         .map(m => `${_getName(m)}: ${m.content}`)
         .join('\n');
 }
@@ -845,7 +872,8 @@ async function retryChunkBlock(blockId) {
 
     try {
         // [v1.6+] 优先用块自己的消息范围重建原文，避免全段原文 token 过多
-        const rawText = _rebuildChunkRawText(block, chat);
+        // [Step S3-S4] _rebuildChunkRawText 已异步化（懒加载走 DB）
+        const rawText = await _rebuildChunkRawText(block, chat);
         if (!rawText) throw new Error('原文重建失败，消息记录可能已被删除');
 
         const { url, key, model } = _getMemoryApiConfig('summary', chat);

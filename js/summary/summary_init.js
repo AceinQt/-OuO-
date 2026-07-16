@@ -20,7 +20,31 @@
 //  注意：消息时间戳字段假设为 m.timestamp（毫秒）
 //  若字段名不同（如 m.time、m.createdAt），请同步修改此处
 // ============================================================
-function _findRangeByTime(history, startTs, endTs) {
+// [Step S2] 懒加载后 chat.history 只有内存里最近 1500 条，老时间段在数组里根本找不到。
+// 改法：LAZY_LOAD 开时走 DB 索引 count，返回全局 1-based 序号；关时保留原逻辑。
+// 铁律：这里也不排序，只 count；返回值语义与老版一致（找不到时 -1/-1）。
+async function _findRangeByTime(chat, startTs, endTs) {
+    if (window.LAZY_LOAD) {
+        if (!chat || !window.dexieDB) return { start: -1, end: -1 };
+        const chatId = chat.id;
+        // 先探一眼该 ts 范围内到底有没有消息（有 → 才有意义算 start/end）
+        const inRange = await window.getMessagesByTsRange(chatId, startTs, endTs);
+        if (inRange.length === 0) return { start: -1, end: -1 };
+        // start = 1 + 该 chat 中 ts < startTs 的消息条数
+        //   between 第 5 参数 false = 上界开区间（严格小于 startTs）
+        const startCount = await window.dexieDB.messages
+            .where('[chatId+timestamp]')
+            .between([chatId, Number.NEGATIVE_INFINITY], [chatId, startTs], true, false)
+            .count();
+        // end = 该 chat 中 ts <= endTs 的消息条数
+        const end = await window.dexieDB.messages
+            .where('[chatId+timestamp]')
+            .between([chatId, Number.NEGATIVE_INFINITY], [chatId, endTs], true, true)
+            .count();
+        return { start: startCount + 1, end };
+    }
+    // 非懒加载：原逻辑（保证一键回滚时行为完全不变）
+    const history = chat?.history || [];
     let start = -1, end = -1;
     for (let i = 0; i < history.length; i++) {
         const ts = history[i].timestamp;
@@ -35,7 +59,10 @@ function _findRangeByTime(history, startTs, endTs) {
 // ============================================================
 //  辅助：实时预览按时间新建的序号范围
 // ============================================================
-function _updateTimeRangePreview() {
+// [Step S2] 时间范围预览：改 async。快速改时间字段时用 seq 号丢弃过期结果，
+// 避免"先返回的老查询覆盖新查询"的显示错乱。
+let _timeRangePreviewSeq = 0;
+async function _updateTimeRangePreview() {
     const sY = parseInt(document.getElementById('time-start-year').value);
     const sM = parseInt(document.getElementById('time-start-month').value);
     const sD = parseInt(document.getElementById('time-start-day').value);
@@ -47,9 +74,12 @@ function _updateTimeRangePreview() {
 
     const resultEl = document.getElementById('time-range-result');
     if (!resultEl) return;
+    
+    const submitBtn = document.querySelector('#generate-journal-form button[type="submit"]');
 
     if ([sY, sM, sD, sH, eY, eM, eD, eH].some(isNaN)) {
         resultEl.textContent = '';
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
         return;
     }
 
@@ -59,45 +89,74 @@ function _updateTimeRangePreview() {
     if (startTs > endTs) {
         resultEl.style.color = 'var(--danger-color, #e74c3c)';
         resultEl.textContent = '⚠ 起始时间不能晚于截止时间';
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
         return;
     }
 
     const chat = getCurrentChatObject();
     if (!chat) return;
 
-    const { start, end } = _findRangeByTime(chat.history, startTs, endTs);
+    resultEl.style.color = '#888';
+    resultEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 消息统计中...';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
+
+    // 竞态保护：只有当前这次是最新调用才允许写 DOM
+    const mySeq = ++_timeRangePreviewSeq;
+    const { start, end } = await _findRangeByTime(chat, startTs, endTs);
+    if (mySeq !== _timeRangePreviewSeq) return;
 
     if (start === -1 || end === -1) {
         resultEl.style.color = 'var(--danger-color, #e74c3c)';
         resultEl.textContent = '⚠ 该时间段内未找到聊天记录';
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
     } else {
         resultEl.style.color = '#888';
         resultEl.textContent = `✓ 对应消息序号：第 ${start} 条 ~ 第 ${end} 条（共 ${end - start + 1} 条）`;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.style.background = '#0099FF'; }
     }
 }
 
 // ============================================================
 //  辅助：实时预览单日期（日记tab）
 // ============================================================
-function _updateSingleDatePreview() {
+// [Step S2] 单日期预览：同上 async 化 + 竞态保护
+let _singleDatePreviewSeq = 0;
+async function _updateSingleDatePreview() {
     const sY = parseInt(document.getElementById('time-single-year').value);
     const sM = parseInt(document.getElementById('time-single-month').value);
     const sD = parseInt(document.getElementById('time-single-day').value);
     const resultEl = document.getElementById('time-single-result');
     if (!resultEl) return;
-    if ([sY, sM, sD].some(isNaN)) { resultEl.textContent = ''; return; }
+    
+    const submitBtn = document.querySelector('#generate-journal-form button[type="submit"]');
+
+    if ([sY, sM, sD].some(isNaN)) { 
+        resultEl.textContent = ''; 
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
+        return; 
+    }
 
     const startTs = new Date(sY, sM - 1, sD, 0, 0, 0, 0).getTime();
     const endTs   = new Date(sY, sM - 1, sD, 23, 59, 59, 999).getTime();
     const chat = getCurrentChatObject();
     if (!chat) return;
-    const { start, end } = _findRangeByTime(chat.history, startTs, endTs);
+
+    resultEl.style.color = '#888';
+    resultEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 消息统计中...';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
+
+    const mySeq = ++_singleDatePreviewSeq;
+    const { start, end } = await _findRangeByTime(chat, startTs, endTs);
+    if (mySeq !== _singleDatePreviewSeq) return;
+
     if (start === -1 || end === -1) {
         resultEl.style.color = 'var(--danger-color, #e74c3c)';
         resultEl.textContent = '⚠ 该日期内未找到聊天记录';
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
     } else {
         resultEl.style.color = '#888';
         resultEl.textContent = `✓ 对应消息序号：第 ${start} 条 ~ 第 ${end} 条（共 ${end - start + 1} 条）`;
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.style.background = '#0099FF'; }
     }
 }
 
@@ -356,6 +415,20 @@ function setupMemoryJournalScreen() {
             const isJournal = currentMemoryTab === 'journal';
             document.getElementById('time-range-full').style.display   = isJournal ? 'none' : '';
             document.getElementById('time-range-single').style.display = isJournal ? '' : 'none';
+            
+            // 切换到按时间模式时，触发重新校验（控制提交按钮显隐）
+            if (isJournal) {
+                _updateSingleDatePreview();
+            } else {
+                _updateTimeRangePreview();
+            }
+        } else {
+            // 切回其他模式时恢复提交按钮可用
+            const submitBtn = document.querySelector('#generate-journal-form button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.style.background = '#0099FF';
+            }
         }
 
         // 空白模式不支持同时生成日记
@@ -386,7 +459,7 @@ function setupMemoryJournalScreen() {
     // ============================================================
     //  生成按钮逻辑分流（+号）
     // ============================================================
-    generateNewBtn.addEventListener('click', () => {
+    generateNewBtn.addEventListener('click', async () => {
         if (currentChatType === 'group' && currentMemoryTab === 'journal') {
             showToast('群聊无法生成个人日记');
             return;
@@ -402,10 +475,10 @@ function setupMemoryJournalScreen() {
             return;
         }
 
-        // 短期总结 / 日记 —— 打开三模式弹窗
+        // 短期总结 / 日记 —— 立即打开弹窗（加载态），避免点击无反馈
+        // [Step S2+] 原实现先 await getMessageCount 再 show 弹窗，点击到弹窗出现有延迟，
+        //   用户会以为没点到反复点。改成：先把弹窗弹出来（带 spinner 占位），再异步取数填充。
         const chat = getCurrentChatObject();
-        const totalMessages = chat ? chat.history.length : 0;
-
         const modalTitle = document.getElementById('generate-modal-title');
         if (currentMemoryTab === 'summary') {
             modalTitle.textContent = '生成短期总结';
@@ -413,31 +486,19 @@ function setupMemoryJournalScreen() {
             modalTitle.textContent = '生成角色日记';
         }
 
-        document.getElementById('journal-range-info').textContent = `当前聊天总消息数: ${totalMessages}`;
-
         // 重置弹窗状态
         generateForm.reset();
         newEntryModeSelect.value = 'by-index';
         _applyModePanel('by-index');
-        document.getElementById('time-range-result').textContent  = '';
-        document.getElementById('time-single-result').textContent = '';
 
-        // --- 按消息序号：默认填入"未总结"的起止范围 ---
+        const rangeInfoEl       = document.getElementById('journal-range-info');
+        const rangeStartInput   = document.getElementById('journal-range-start');
+        const rangeEndInput     = document.getElementById('journal-range-end');
+        const timeRangeResult   = document.getElementById('time-range-result');
+        const timeSingleResult  = document.getElementById('time-single-result');
+
+        // 按时间面板的默认日期不依赖 DB，先填好（与原逻辑一致）
         const now = new Date();
-        if (chat && totalMessages > 0) {
-            const existingItems = currentMemoryTab === 'summary'
-                ? (chat.memorySummaries || [])
-                : (chat.memoryJournals  || []);
-            let maxEnd = 0;
-            existingItems.forEach(item => {
-                const e = typeof item.range?.end === 'number' ? item.range.end : parseInt(item.range?.end);
-                if (!isNaN(e) && e > maxEnd) maxEnd = e;
-            });
-            document.getElementById('journal-range-start').value = maxEnd > 0 && maxEnd < totalMessages ? maxEnd + 1 : 1;
-            document.getElementById('journal-range-end').value   = totalMessages;
-        }
-
-        // --- 按时间（总结）：今天 0:00 ~ 明天 0:00 ---
         const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
         document.getElementById('time-start-year').value  = now.getFullYear();
         document.getElementById('time-start-month').value = now.getMonth() + 1;
@@ -453,7 +514,48 @@ function setupMemoryJournalScreen() {
         document.getElementById('time-single-month').value = now.getMonth() + 1;
         document.getElementById('time-single-day').value   = now.getDate();
 
+        // ★ 把"总消息数/序号范围"区先置为加载态，让用户立刻看到反馈
+        if (timeRangeResult)  timeRangeResult.textContent  = '';
+        if (timeSingleResult) timeSingleResult.textContent = '';
+        if (rangeStartInput)  rangeStartInput.value = '';
+        if (rangeEndInput)    rangeEndInput.value   = '';
+        if (rangeInfoEl) {
+            rangeInfoEl.innerHTML = '<span style="color:#888;"><i class="fas fa-spinner fa-spin"></i> 加载记忆中...</span>';
+        }
+
+        // ★ 立即显示弹窗（此时仍是加载态），用户不再觉得"没点到"
         generateModal.classList.add('visible');
+        
+        // ★ 预加载期间将提交按钮置灰，防止用户手速太快提交默认值
+        const submitBtn = generateForm.querySelector('button[type="submit"]');
+        if (submitBtn) { submitBtn.disabled = true; submitBtn.style.background = '#bdbdbd'; }
+
+        // ★ 再异步取真实总数（懒加载下走 DB count，原 chat.history.length 只有 1500）
+        const totalMessages = chat
+            ? (window.LAZY_LOAD ? await window.getMessageCount(chat.id) : chat.history.length)
+            : 0;
+
+        if (rangeInfoEl) rangeInfoEl.textContent = `当前聊天总消息数: ${totalMessages}`;
+
+        // --- 按消息序号：默认填入"未总结"的起止范围（依赖 totalMessages，故放这） ---
+        if (chat && totalMessages > 0) {
+            const existingItems = currentMemoryTab === 'summary'
+                ? (chat.memorySummaries || [])
+                : (chat.memoryJournals  || []);
+            let maxEnd = 0;
+            existingItems.forEach(item => {
+                const e = typeof item.range?.end === 'number' ? item.range.end : parseInt(item.range?.end);
+                if (!isNaN(e) && e > maxEnd) maxEnd = e;
+            });
+            if (rangeStartInput) rangeStartInput.value = maxEnd > 0 && maxEnd < totalMessages ? maxEnd + 1 : 1;
+            if (rangeEndInput)   rangeEndInput.value   = totalMessages;
+        } else {
+            if (rangeStartInput) rangeStartInput.value = 1;
+            if (rangeEndInput)   rangeEndInput.value   = 0;
+        }
+        
+        // 恢复按钮正常可点
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.style.background = '#0099FF'; }
     });
 
     // ============================================================
@@ -461,83 +563,111 @@ function setupMemoryJournalScreen() {
     // ============================================================
     generateForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        const submitBtn = generateForm.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn ? submitBtn.textContent : '';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.background = '#bdbdbd';
+            submitBtn.textContent = '查询中...';
+        }
+        
+        const restoreSubmitBtn = () => {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.style.background = '#0099FF';
+                submitBtn.textContent = originalBtnText;
+            }
+        };
+
         const mode = newEntryModeSelect.value;
 
-        // ----- 模式①：按消息序号 -----
-        if (mode === 'by-index') {
-            const start = parseInt(document.getElementById('journal-range-start').value);
-            const end   = parseInt(document.getElementById('journal-range-end').value);
-            const generateBoth = (
-                currentMemoryTab === 'summary' &&
-                document.getElementById('generate-both-switch').checked &&
-                currentChatType !== 'group'
-            );
+        try {
+            // ----- 模式①：按消息序号 -----
+            if (mode === 'by-index') {
+                const start = parseInt(document.getElementById('journal-range-start').value);
+                const end   = parseInt(document.getElementById('journal-range-end').value);
+                const generateBoth = (
+                    currentMemoryTab === 'summary' &&
+                    document.getElementById('generate-both-switch').checked &&
+                    currentChatType !== 'group'
+                );
 
-            if (isNaN(start) || isNaN(end) || start <= 0 || end < start) {
-                showToast('请输入有效的起止范围');
-                return;
+                if (isNaN(start) || isNaN(end) || start <= 0 || end < start) {
+                    showToast('请输入有效的起止范围');
+                    restoreSubmitBtn();
+                    return;
+                }
+                generateModal.classList.remove('visible');
+                restoreSubmitBtn();
+                await generateMemoryContent(start, end, generateBoth);
+
+            // ----- 模式②：按时间 -----
+            } else if (mode === 'by-time') {
+                const isJournal = currentMemoryTab === 'journal';
+                let startTs, endTs, occurredAtOverride;
+
+                if (isJournal) {
+                    // 日记：单日期
+                    const sY = parseInt(document.getElementById('time-single-year').value);
+                    const sM = parseInt(document.getElementById('time-single-month').value);
+                    const sD = parseInt(document.getElementById('time-single-day').value);
+                    if ([sY, sM, sD].some(isNaN)) { showToast('请填写日期'); restoreSubmitBtn(); return; }
+                    startTs = new Date(sY, sM - 1, sD, 0, 0, 0, 0).getTime();
+                    endTs   = new Date(sY, sM - 1, sD, 23, 59, 59, 999).getTime();
+                    occurredAtOverride = `${sY}-${pad(sM)}-${pad(sD)}`;
+                } else {
+                    // 总结：完整起止
+                    const sY = parseInt(document.getElementById('time-start-year').value);
+                    const sM = parseInt(document.getElementById('time-start-month').value);
+                    const sD = parseInt(document.getElementById('time-start-day').value);
+                    const sH = parseInt(document.getElementById('time-start-hour').value);
+                    const eY = parseInt(document.getElementById('time-end-year').value);
+                    const eM = parseInt(document.getElementById('time-end-month').value);
+                    const eD = parseInt(document.getElementById('time-end-day').value);
+                    const eH = parseInt(document.getElementById('time-end-hour').value);
+                    if ([sY, sM, sD, sH, eY, eM, eD, eH].some(isNaN)) { showToast('请填写完整的起止时间'); restoreSubmitBtn(); return; }
+                    startTs = new Date(sY, sM - 1, sD, sH, 0, 0, 0).getTime();
+                    endTs   = new Date(eY, eM - 1, eD, eH, 59, 59, 999).getTime();
+                    occurredAtOverride = `${sY}-${pad(sM)}-${pad(sD)}`;
+                    if (startTs > endTs) { showToast('起始时间不能晚于截止时间'); restoreSubmitBtn(); return; }
+                }
+
+                const chat = getCurrentChatObject();
+                // [Step S2] async 化，DB 走全局查询
+                const { start, end } = await _findRangeByTime(chat, startTs, endTs);
+                if (start === -1 || end === -1) { showToast('该时间段内未找到聊天记录'); restoreSubmitBtn(); return; }
+
+                const generateBoth = (
+                    currentMemoryTab === 'summary' &&
+                    document.getElementById('generate-both-switch').checked &&
+                    currentChatType !== 'group'
+                );
+                generateModal.classList.remove('visible');
+                restoreSubmitBtn();
+                await generateMemoryContent(start, end, generateBoth, occurredAtOverride);
+
+            // ----- 模式③：新建空白 -----
+            } else if (mode === 'blank') {
+                const bY = parseInt(document.getElementById('blank-year').value);
+                const bM = parseInt(document.getElementById('blank-month').value);
+                const bD = parseInt(document.getElementById('blank-day').value);
+
+                // 日期留空则默认今天
+                const now2 = new Date();
+                const y = isNaN(bY) ? now2.getFullYear() : bY;
+                const m = isNaN(bM) ? now2.getMonth() + 1 : bM;
+                const d = isNaN(bD) ? now2.getDate() : bD;
+                const occurredAt = `${y}-${pad(m)}-${pad(d)}`;
+
+                generateModal.classList.remove('visible');
+                restoreSubmitBtn();
+                await _createBlankEntry(occurredAt);
             }
-            generateModal.classList.remove('visible');
-            await generateMemoryContent(start, end, generateBoth);
-
-        // ----- 模式②：按时间 -----
-        } else if (mode === 'by-time') {
-            const isJournal = currentMemoryTab === 'journal';
-            let startTs, endTs, occurredAtOverride;
-
-            if (isJournal) {
-                // 日记：单日期
-                const sY = parseInt(document.getElementById('time-single-year').value);
-                const sM = parseInt(document.getElementById('time-single-month').value);
-                const sD = parseInt(document.getElementById('time-single-day').value);
-                if ([sY, sM, sD].some(isNaN)) { showToast('请填写日期'); return; }
-                startTs = new Date(sY, sM - 1, sD, 0, 0, 0, 0).getTime();
-                endTs   = new Date(sY, sM - 1, sD, 23, 59, 59, 999).getTime();
-                occurredAtOverride = `${sY}-${pad(sM)}-${pad(sD)}`;
-            } else {
-                // 总结：完整起止
-                const sY = parseInt(document.getElementById('time-start-year').value);
-                const sM = parseInt(document.getElementById('time-start-month').value);
-                const sD = parseInt(document.getElementById('time-start-day').value);
-                const sH = parseInt(document.getElementById('time-start-hour').value);
-                const eY = parseInt(document.getElementById('time-end-year').value);
-                const eM = parseInt(document.getElementById('time-end-month').value);
-                const eD = parseInt(document.getElementById('time-end-day').value);
-                const eH = parseInt(document.getElementById('time-end-hour').value);
-                if ([sY, sM, sD, sH, eY, eM, eD, eH].some(isNaN)) { showToast('请填写完整的起止时间'); return; }
-                startTs = new Date(sY, sM - 1, sD, sH, 0, 0, 0).getTime();
-                endTs   = new Date(eY, eM - 1, eD, eH, 59, 59, 999).getTime();
-                occurredAtOverride = `${sY}-${pad(sM)}-${pad(sD)}`;
-                if (startTs > endTs) { showToast('起始时间不能晚于截止时间'); return; }
-            }
-
-            const chat = getCurrentChatObject();
-            const { start, end } = _findRangeByTime(chat.history, startTs, endTs);
-            if (start === -1 || end === -1) { showToast('该时间段内未找到聊天记录'); return; }
-
-            const generateBoth = (
-                currentMemoryTab === 'summary' &&
-                document.getElementById('generate-both-switch').checked &&
-                currentChatType !== 'group'
-            );
-            generateModal.classList.remove('visible');
-            await generateMemoryContent(start, end, generateBoth, occurredAtOverride);
-
-        // ----- 模式③：新建空白 -----
-        } else if (mode === 'blank') {
-            const bY = parseInt(document.getElementById('blank-year').value);
-            const bM = parseInt(document.getElementById('blank-month').value);
-            const bD = parseInt(document.getElementById('blank-day').value);
-
-            // 日期留空则默认今天
-            const now2 = new Date();
-            const y = isNaN(bY) ? now2.getFullYear() : bY;
-            const m = isNaN(bM) ? now2.getMonth() + 1 : bM;
-            const d = isNaN(bD) ? now2.getDate() : bD;
-            const occurredAt = `${y}-${pad(m)}-${pad(d)}`;
-
-            generateModal.classList.remove('visible');
-            await _createBlankEntry(occurredAt);
+        } catch (err) {
+            console.error(err);
+            showToast('处理异常: ' + err.message);
+            restoreSubmitBtn();
         }
     });
 
@@ -546,6 +676,23 @@ function setupMemoryJournalScreen() {
     // ============================================================
     longTermForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        const submitBtn = longTermForm.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn ? submitBtn.textContent : '';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.background = '#bdbdbd';
+            submitBtn.textContent = '查询中...';
+        }
+        
+        const restoreSubmitBtn = () => {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.style.background = '#0099FF';
+                submitBtn.textContent = originalBtnText;
+            }
+        };
+
         const sY = pad(document.getElementById('long-start-year').value);
         const sM = pad(document.getElementById('long-start-month').value);
         const sD = pad(document.getElementById('long-start-day').value);
@@ -559,9 +706,11 @@ function setupMemoryJournalScreen() {
 
         if (startDateStr > endDateStr) {
             showToast('开始日期不能晚于结束日期');
+            restoreSubmitBtn();
             return;
         }
         longTermModal.classList.remove('visible');
+        restoreSubmitBtn();
         await generateLongTermSummaryContent(startDateStr, endDateStr);
     });
 

@@ -232,6 +232,13 @@ async function performGeneration(chat, start, end, type, occurredAtOverride = nu
     const endIndex   = end;
     const now        = new Date(); // ← 提到这里
 
+    // [Step S3] 懒加载后 chat.history 只有最近 1500 条，老范围必须走 DB。
+    //   DB 按全局 1-based 序号 [start, end] 闭区间取消息；非懒加载保留原 slice 路径。
+    //   取一次供 summary / journal 两个分支复用，避免双倍 IO。
+    const rangeMsgs = window.LAZY_LOAD
+        ? await window.getMessagesByGlobalRange(chat.id, start, end)
+        : chat.history.slice(startIndex, endIndex);
+
     // ─── 消息过滤函数（summary / journal 公用）────────────────
     const _filterMsg = m => {
         if (m.isAiIgnore) return false;
@@ -255,8 +262,9 @@ async function performGeneration(chat, start, end, type, occurredAtOverride = nu
 
     if (type === 'summary') {
         // [v1.6+] 先附全局序号（1-based），供切块后记录精确消息范围
- const rawWithIndex = chat.history.slice(startIndex, endIndex)
-    .map((m, i) => ({ ...m, _globalIdx: startIndex + i + 1 }));
+        // [Step S3] 数据源改为 rangeMsgs（DB 或 slice），_globalIdx = start + i（与原 startIndex+i+1 等价）
+ const rawWithIndex = rangeMsgs
+    .map((m, i) => ({ ...m, _globalIdx: start + i }));
 
 // ★ 收集所有 visual timesense 的位置
 const dividerIdxs = rawWithIndex
@@ -282,7 +290,7 @@ const rawChunks = _buildSummaryChunks(rawFiltered, chat.chunkGranularity || 10);
             .map((c, i) => `=== 片段${i}（共${c.msgs.length}条消息）===\n${c._text}`)
             .join('\n\n');
     } else {
-        messagesToSummarize = chat.history.slice(startIndex, endIndex)
+        messagesToSummarize = rangeMsgs
             .filter(_filterMsg)
             .map(m => `${_getName(m)}: ${m.content}`)
             .join('\n');
@@ -362,7 +370,11 @@ const chunkFmt = messageChunks.map((_, i) =>
     }
     
     // 判断是否在总结"最新记录"
-    const isLatest  = (end === chat.history.length);
+    // [Step S3] 懒加载后 chat.history.length 只有 1500，原 === chat.history.length 永远 false。
+    //   改查 DB 总数：end 达到 DB 总数即视为"总结到最新"（顺风车 isLatest 分支才走得通）。
+    //   非懒加载时 totalDbCount === chat.history.length，行为与原版完全一致。
+    const totalDbCount = window.LAZY_LOAD ? await window.getMessageCount(chat.id) : chat.history.length;
+    const isLatest  = (end >= totalDbCount);
     let nextSlots   = [];
     
     if (type === 'summary') {
@@ -591,6 +603,10 @@ const rawContent = await _fetchCompletion(url, key, {
         if (Object.keys(proactiveOptions).length > 0 && typeof pushProactiveMessage === 'function') {
             pushProactiveMessage(chat.id, 'time_window_summary', proactiveOptions, 24);
             console.log("[赠品] 已将赠品放入奖池，等待开奖！");
+            // 生成完立即移交给 CF 推送节点（前台、时间充裕；未启用则内部跳过）
+            if (window.PushNode && typeof window.PushNode.handoffChat === 'function') {
+                window.PushNode.handoffChat(chat.id).catch(() => {});
+            }
         }
     }
 
@@ -730,7 +746,9 @@ async function generateMemoryContent(start, end, generateBoth, occurredAtOverrid
         if (!chat) throw new Error("未找到聊天对象");
         const startIndex = start - 1;
         const endIndex   = end;
-        if (startIndex < 0 || endIndex > chat.history.length || startIndex >= endIndex) {
+        // [Step S3] 上界改查 DB 总数，懒加载后 chat.history.length 不再等于真实总数
+        const totalMessages = window.LAZY_LOAD ? await window.getMessageCount(chat.id) : chat.history.length;
+        if (startIndex < 0 || endIndex > totalMessages || startIndex >= endIndex) {
             throw new Error("无效的消息范围");
         }
 

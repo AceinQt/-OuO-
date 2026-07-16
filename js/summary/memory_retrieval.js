@@ -116,12 +116,11 @@ async function retrieveTopChunks(queryVec, chunks, topK = DEFAULT_TOP_K, minScor
 
 // ── [v1.6] 通过父总结的 range 指针重建原始对话文本 ──────────
 // 不依赖持久化的 rawText 字段，节省 IndexedDB 存储空间。
-function _reconstructRawText(summaryItem, chat) {
-    const range = summaryItem?.range;
-    if (!range || range.start == null) return '';
-
-    const startIdx = (range.start || 1) - 1;
-    const endIdx   = range.end   || 0;
+// [Step S3-S4] 异步化：懒加载后老范围不在内存窗口，走 DB。
+//   item 可以是 summaryItem（有 .range）或 chunk（有 startTime/endTime + startMsgIndex/endMsgIndex）。
+//   chunk 优先用 ts range（热路径 O(log n)），summaryItem 用全局序号 range。
+async function _reconstructRawText(item, chat) {
+    if (!item) return '';
 
     const _filterMsg = m => {
         if (m.isAiIgnore || m.isHidden) return false;
@@ -143,23 +142,50 @@ function _reconstructRawText(summaryItem, chat) {
         return sender ? sender.realName : '未知成员';
     };
 
-    return (chat.history || [])
-        .slice(startIdx, endIdx)
-        .filter(_filterMsg)
+    let msgs;
+    if (window.LAZY_LOAD) {
+        if (item.startTime && item.endTime) {
+            // chunk 路径：ts range，O(log n)，热路径友好
+            msgs = await window.getMessagesByTsRange(chat.id, item.startTime, item.endTime);
+        } else if (item.range && typeof item.range.start === 'number' && typeof item.range.end === 'number') {
+            msgs = await window.getMessagesByGlobalRange(chat.id, item.range.start, item.range.end);
+        } else if (typeof item.startMsgIndex === 'number' && typeof item.endMsgIndex === 'number') {
+            msgs = await window.getMessagesByGlobalRange(chat.id, item.startMsgIndex, item.endMsgIndex);
+        } else {
+            return '';
+        }
+    } else {
+        // 非懒加载：原 slice 路径
+        let startIdx, endIdx;
+        if (item.range && item.range.start != null) {
+            if (typeof item.range.start !== 'number' || typeof item.range.end !== 'number') return '';
+            startIdx = item.range.start - 1;
+            endIdx   = item.range.end;
+        } else if (typeof item.startMsgIndex === 'number' && typeof item.endMsgIndex === 'number') {
+            startIdx = item.startMsgIndex - 1;
+            endIdx   = item.endMsgIndex;
+        } else {
+            return '';
+        }
+        msgs = (chat.history || []).slice(startIdx, endIdx);
+    }
+
+    return msgs.filter(_filterMsg)
         .map(m => `${_getName(m)}: ${m.content}`)
         .join('\n');
 }
 
 // 把检索结果组装成可注入的文本
 // [v1.6] 按分数分三级注入：
-function formatRetrievedContext(scoredChunks, chat, minScore = DEFAULT_MIN_SCORE) {
+// [Step S3-S4] 异步化：高分原文注入走 _reconstructRawText（懒加载时 DB 取老消息）
+async function formatRetrievedContext(scoredChunks, chat, minScore = DEFAULT_MIN_SCORE) {
     if (!scoredChunks.length) return '';
 
     const range     = MAX_RERANK_SCORE - minScore;
     const midThres  = minScore + range * TIER_MID_RATIO;
     const highThres = minScore + range * TIER_HIGH_RATIO;
 
-    return scoredChunks.map(({ chunk, score }) => {
+    return (await Promise.all(scoredChunks.map(async ({ chunk, score }) => {
         const chunkDate = new Date(chunk.startTime || chunk.timestamp || 0);
 const today     = new Date();
 today.setHours(0, 0, 0, 0);
@@ -193,8 +219,8 @@ if (diffDays === 0) {
         let content;
 
         if (score >= highThres) {
-            const chunkRange = { start: chunk.startMsgIndex, end: chunk.endMsgIndex };
-            const raw = _reconstructRawText({ range: chunkRange }, chat);
+            // [Step S4] 直接传 chunk（有 startTime/endTime），命中 ts range 快路径
+            const raw = await _reconstructRawText(chunk, chat);
             content = raw || chunk.summary || '';
         } else if (score >= midThres) {
             const parentSummary = (chat?.memorySummaries || []).find(s => s.id === chunk.summaryId);
@@ -204,7 +230,7 @@ if (diffDays === 0) {
         }
 
         return `[动态记忆 · ${dateStr}${emoTag}]\n${content}`;
-    }).join('\n\n---\n\n');
+    }))).join('\n\n---\n\n');
 }
 
 // 判断消息内容是否属于语义空内容（叹词/单字/纯表情）
@@ -308,7 +334,7 @@ async function buildRetrievedMemoryContext(recentHistory, chat) {
         // [v1.6] retrieveTopChunks 返回 [{chunk,score}]，传给 formatRetrievedContext 分级渲染
         const scoredChunks = await retrieveTopChunks(queryVec, candidates, topK, minScore);
 
-        return formatRetrievedContext(scoredChunks, chat);
+        return await formatRetrievedContext(scoredChunks, chat);
 
     } catch (e) {
         console.warn('[Retrieval] 向量检索失败，降级为空：', e.message);
