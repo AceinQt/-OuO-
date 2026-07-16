@@ -75,12 +75,41 @@ function openSearchModal() {
 }
 
 // 执行搜索逻辑
-function performSearch(dateStr, keyword) {
-    const chat = (currentChatType === 'private') 
-        ? db.characters.find(c => c.id === currentChatId) 
+async function performSearch(dateStr, keyword) {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
         : db.groups.find(g => g.id === currentChatId);
 
     if (!chat || !chat.history) return;
+
+    // ★ Step 4：懒加载时改查 IndexedDB（能搜到窗口外的老消息）
+    if (window.LAZY_LOAD) {
+        const hideLoading = (typeof showLoadingToast === 'function')
+            ? showLoadingToast('搜索中…') : null;
+        try {
+            const results = await window.searchMessagesInDB(currentChatId, dateStr, keyword);
+            if (hideLoading) hideLoading();
+            allMatchedResults = results; // 已按 timestamp 降序（最新在前），与老路径的 reverse() 结果等价
+            renderedCount = 0;
+            searchResultsList.innerHTML = '';
+            searchScrollContainer.scrollTop = 0;
+            searchEmptyEl.style.display = 'none';
+            searchNoMoreEl.style.display = 'none';
+            searchLoadingEl.style.display = 'none';
+            searchConfigModal.classList.remove('visible');
+            switchScreen('search-results-screen');
+            if (allMatchedResults.length === 0) {
+                searchEmptyEl.style.display = 'block';
+            } else {
+                renderNextBatch();
+            }
+        } catch (e) {
+            if (hideLoading) hideLoading();
+            console.error('❌ [搜索] DB 搜索失败:', e);
+            if (typeof showToast === 'function') showToast('搜索失败');
+        }
+        return;
+    }
 
 const invisibleRegex = /\[.*?更新状态为[:：].*?\]|\[system:.*?\]|\[.*?(?:接收|退回).*?的转账\]|\[.*?已接收礼物\]|\[系统情景通知：.*?\]/;
     // 1. 筛选数据 (计算密集型操作，数据极大时可考虑 Web Worker，但几万条内通常 JS 还能扛住)
@@ -246,13 +275,37 @@ async function confirmJumpToMessage(messageId) {
 }
 
 // 核心功能：跳转到指定消息
-function jumpToMessageInChat(messageId) {
-    const chat = (currentChatType === 'private') 
-        ? db.characters.find(c => c.id === currentChatId) 
+async function jumpToMessageInChat(messageId) {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
         : db.groups.find(g => g.id === currentChatId);
-    
+
     // 1. 找到索引
-    const msgIndex = chat.history.findIndex(m => m.id === messageId);
+    let msgIndex = chat.history.findIndex(m => m.id === messageId);
+
+    // ★ Step 4：懒加载时窗口外的消息不在内存，先从 DB 抓目标前后各 100 条 merge 进来
+    if (msgIndex === -1 && window.LAZY_LOAD) {
+        try {
+            // 从搜索结果里取目标的 timestamp（allMatchedResults 一定有这条）
+            const hit = (typeof allMatchedResults !== 'undefined' && allMatchedResults)
+                ? allMatchedResults.find(m => m.id === messageId) : null;
+            if (!hit) { showToast('消息似乎不存在'); return; }
+            const around = await window.fetchAroundMessage(currentChatId, hit.timestamp || 0, 100, 100);
+            const existing = new Set(chat.history.map(m => m.id));
+            const fresh = around.filter(m => !existing.has(m.id));
+            if (fresh.length > 0) {
+                chat.history.push(...fresh);
+                chat.history.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)); // 铁律排序
+                if (typeof window.assertHistoryOrder === 'function') {
+                    window.assertHistoryOrder(chat, 'search-jump-merge');
+                }
+            }
+            msgIndex = chat.history.findIndex(m => m.id === messageId);
+        } catch (e) {
+            console.error('❌ [搜索] 跳转 merge 失败:', e);
+        }
+    }
+
     if (msgIndex === -1) {
         showToast('消息似乎不存在');
         return;

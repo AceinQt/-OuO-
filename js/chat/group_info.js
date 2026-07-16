@@ -138,7 +138,7 @@ function setupGroupInfoScreen() {
     // ── 5. Tab 切换（事件委托） ───────────────────────────────────────
     const tabBar = document.getElementById('group-info-tab-bar');
     if (tabBar) {
-        tabBar.addEventListener('click', (e) => {
+        tabBar.addEventListener('click', async (e) => {
             const btn = e.target.closest('.char-info-tab-btn');
             if (!btn) return;
             const tab = btn.dataset.tab;
@@ -148,7 +148,7 @@ function setupGroupInfoScreen() {
             const panel = screen.querySelector(`.char-info-tab-panel[data-panel="${tab}"]`);
             if (panel) panel.classList.add('active');
 
-            if (tab === 'stats') renderGroupTokenStats(screen.dataset.groupId);
+            if (tab === 'stats') await renderGroupTokenStats(screen.dataset.groupId);
         });
     }
 }
@@ -280,8 +280,26 @@ function renderGroupTokenStats(groupId) {
     const group = db.groups.find(g => g.id === groupId);
     if (!group) return;
 
+    // [懒加载 UI] 先把统计面板留空 + 弹出 loading，等全部算完再一次性揭开，避免空数据/旧数据闪烁
+    const statsPanel = document.querySelector('#group-info-screen .char-info-tab-panel[data-panel="stats"]');
+    if (statsPanel) statsPanel.style.visibility = 'hidden';
+    const _hideLoading = (typeof showLoadingToast === 'function') ? showLoadingToast('正在统计数据...') : null;
+
+    return _renderGroupTokenStatsInner(group, statsPanel, _hideLoading);
+}
+
+async function _renderGroupTokenStatsInner(group, statsPanel, _hideLoading) {
+    try {
     // ── 消息总数 ──────────────────────────────────────────────────────
-    const msgCount = (group.history || []).length;
+    // [懒加载] group.history 只有内存窗口内的 ~1500 条，真实总数必须走 DB count。
+    //   关掉懒加载时回退到 group.history.length，行为与改造前一致。
+    let msgCount;
+    if (window.LAZY_LOAD && typeof window.getMessageCount === 'function') {
+        try { msgCount = await window.getMessageCount(group.id); }
+        catch (e) { msgCount = group.history ? group.history.length : 0; }
+    } else {
+        msgCount = group.history ? group.history.length : 0;
+    }
     const msgCountEl = document.getElementById('group-stat-msg-count');
     if (msgCountEl) msgCountEl.textContent = msgCount;
 
@@ -394,6 +412,11 @@ function renderGroupTokenStats(groupId) {
         renderBar('memory',  memoryTokens);
         renderBar('forum',   forumTokens);
     });
+    } finally {
+        // [懒加载 UI] 数字/内容已就绪，揭开面板并关掉 loading（柱状图在下一帧动画长出）
+        if (statsPanel) statsPanel.style.visibility = 'visible';
+        if (_hideLoading) _hideLoading();
+    }
 }
 
 // ── 辅助函数 ──────────────────────────────────────────────────────────

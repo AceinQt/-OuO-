@@ -137,12 +137,71 @@ async function applyAwaySettings(chat, mode, dailyLimit, frequency, timerInterva
     // ─────────────────────────────────
 
     await saveSingleChat(chat.id, currentChatType);
-    
+
+    // 切到免打扰 / 固定模式：这两种不该有顺风车推送，撤销该会话在 CF 上的待发任务
+    if ((mode === 'dnd' || mode === 'timer') && window.PushNode && typeof window.PushNode.cancelChat === 'function') {
+        try { await window.PushNode.cancelChat(chat); } catch (_) {}
+    }
+
     const awayBtns = document.querySelectorAll('.expansion-item[data-action*="proactive"], .expansion-item[onclick*="openProactiveMessagingSettings"]');
     awayBtns.forEach(btn => {
         if (mode === 'fixed' || mode === 'timer') btn.classList.add('active');
         else btn.classList.remove('active');
     });
+}
+
+// ==========================================
+// 【设计1 公共件】时段区间换算 + scheduledAt 冻结
+// ==========================================
+// 迟到多久以内仍算“到点送达”(据此决定是否弹系统通知):10 分钟
+const ON_TIME_NOTIFY_WINDOW_MS = 10 * 60 * 1000;
+
+// 由时段 ID(如 noon / noon_0)与锚点时间,推出该时段最近一次的 [start, end) 绝对区间。
+// 生成端(paFreezeScheduledAt)与配信端共用同一套换算,保证冻结值与回退值一致。
+function getRecentSlotInterval(slotId, anchorTime) {
+    let startHour, duration;
+    switch (slotId.toLowerCase().split('_')[0]) {
+        case 'night':     startHour = 22; duration = 8; break;
+        case 'morning':   startHour = 6;  duration = 4; break;
+        case 'noon':      startHour = 10; duration = 4; break;
+        case 'afternoon': startHour = 14; duration = 4; break;
+        case 'evening':   startHour = 18; duration = 4; break;
+        default:          startHour = 10; duration = 4; break;
+    }
+    let start = new Date(anchorTime);
+    start.setHours(startHour, 0, 0, 0);
+    let diff = start.getTime() - anchorTime;
+    if (diff > 12 * 3600 * 1000) start.setDate(start.getDate() - 1);
+    else if (diff < -12 * 3600 * 1000) start.setDate(start.getDate() + 1);
+    let end = new Date(start.getTime());
+    end.setHours(end.getHours() + duration);
+    return { start: start.getTime(), end: end.getTime() };
+}
+
+// 【设计1 核心】把一批预生成消息的 "HH:MM" 换算成“绝对发送时刻”并冻结到 msg.scheduledAt。
+// 只在生成时(锚点=生成时刻)算一次并存库,配信时直接读取,不再按“当前时间”重算——
+// 这正是修掉“同组消息重开被拆散/时间戳变成配信时刻”的根本:冻结值恒为连续。
+// 幂等:已冻结的不再改动;无 time 的兜底消息保持 null(配信端走回退)。
+function paFreezeScheduledAt(content, anchorTime) {
+    if (!content || typeof content !== 'object') return;
+    for (const slotId of Object.keys(content)) {
+        const slot = content[slotId];
+        if (!slot || !Array.isArray(slot.messages)) continue;
+        const anchor = slot.generatedAt || anchorTime; // 兼容自带 generatedAt 的槽
+        const { start, end } = getRecentSlotInterval(slotId, anchor);
+        for (const msg of slot.messages) {
+            if (typeof msg.scheduledAt === 'number') continue; // 幂等,已冻结
+            if (!msg.time) { msg.scheduledAt = null; continue; }
+            const [h, m] = String(msg.time).split(':').map(Number);
+            let d = new Date(start);
+            d.setHours(h, m, 0, 0);
+            let ts = d.getTime();
+            // 跨天修正:与配信端一致的 ±12h 阈值
+            if (ts < start - 12 * 3600 * 1000) ts += 24 * 3600 * 1000;
+            else if (ts > end + 12 * 3600 * 1000) ts -= 24 * 3600 * 1000;
+            msg.scheduledAt = ts;
+        }
+    }
 }
 
 /**
@@ -159,15 +218,23 @@ function pushProactiveMessage(chatId, type, content, expireHours = 24) {
         chat.proactiveMessageQueue = chat.proactiveMessageQueue.filter(m => m.type !== 'time_window_idle');
     }
     
-    chat.proactiveMessageQueue.push({
-        id: `promsg_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    const _genAt = Date.now();
+    // 【设计1】生成即冻结每条消息的绝对发送时刻 scheduledAt,配信时直接读取,不再按 time 重算
+    paFreezeScheduledAt(content, _genAt);
+chat.proactiveMessageQueue.push({
+        id: `promsg_${_genAt}_${Math.random().toString(36).substr(2, 5)}`,
         type: type,
-        content: content, 
-        generatedAt: Date.now(),
-        expireAt: Date.now() + (expireHours * 60 * 60 * 1000) 
+        content: content,
+        generatedAt: _genAt,
+        expireAt: _genAt + (expireHours * 60 * 60 * 1000)
     });
     
     console.log(`[赠品] ${chat.realName || chat.name} 更换了有概率的赠品内容，原赠品已销毁。`);
+
+    // 顺风车消息生成后，立即移交给 CF 推送节点
+    if (window.PushNode && typeof window.PushNode.handoffChat === 'function') {
+        window.PushNode.handoffChat(chat.id).catch(() => {});
+    }
 }
 
 // ==========================================
@@ -185,37 +252,108 @@ async function checkAndDeliverProactiveMessages() {
         night: 5, morning: 70, noon: 90, afternoon: 60, evening: 90     
     };
 
-    function getRecentSlotInterval(slotId, anchorTime) {
-        let startHour, duration;
-        switch(slotId.toLowerCase().split('_')[0]) {
-            case 'night': startHour = 22; duration = 8; break;
-            case 'morning': startHour = 6; duration = 4; break;
-            case 'noon': startHour = 10; duration = 4; break;
-            case 'afternoon': startHour = 14; duration = 4; break;
-            case 'evening': startHour = 18; duration = 4; break;
-            default: startHour = 10; duration = 4; break; 
-        }
-        
-        let anchor = new Date(anchorTime);
-        let start = new Date(anchor);
-        start.setHours(startHour, 0, 0, 0);
-        
-        let diff = start.getTime() - anchorTime;
-        if (diff > 12 * 3600 * 1000) {
-            start.setDate(start.getDate() - 1);
-        } else if (diff < -12 * 3600 * 1000) {
-            start.setDate(start.getDate() + 1);
-        }
-
-        let end = new Date(start.getTime());
-        end.setHours(end.getHours() + duration);
-        return { start: start.getTime(), end: end.getTime() };
-    }
+    // getRecentSlotInterval 已上移到模块作用域(与生成端 paFreezeScheduledAt 共用),此处不再重复定义。
 
     const checkQueue =[
         ...(db.characters || []).map(c => ({ chat: c, type: 'private' })),
         ...(db.groups ||[]).map(g => ({ chat: g, type: 'group' }))
     ];
+
+    // ── 【CF 推送】把已移交给 CF、且到点的 peek 话题，静默写入历史 ──────────────
+    // CF 只负责弹通知，消息本体必须靠本地写进 chat.history，否则“收到通知、点开无消息”。
+    // 与 summary/idle 的“迟到补投”同理：不重复弹通知(CF 已弹)，只补齐历史。
+    // App 打开/切回前台时会跑本函数，从而把 App 被杀期间 CF 推过的 peek 补进历史。
+    if (window.PushNode && typeof window.PushNode.isReady === 'function' && window.PushNode.isReady()) {
+        for (const { chat, type } of checkQueue) {
+            if (!chat.proactiveMessageQueue) continue;
+            const peek = chat.proactiveMessageQueue.find(m => m.type === 'time_window_peek');
+            if (!peek || !peek.content) continue;
+            let materialized = false;
+            for (const key of Object.keys(peek.content)) {
+                const topic = peek.content[key];
+                if (!topic || !topic._cfHandedOff || topic._cfMaterialized) continue;
+                if (typeof topic._cfScheduledAt !== 'number' || topic._cfScheduledAt > tNow) continue;
+                if (!Array.isArray(topic.messages) || !topic.messages.length) { topic._cfMaterialized = true; continue; }
+
+                let baseTs = Math.min(topic._cfScheduledAt, tNow - topic.messages.length * 1000);
+                const putMsgs = [];
+
+                // 与本地投递路径(见下方 i===0 分支)一致：这批 peek 距上次真实互动超过 30 分钟，
+                // 先补一条 [time-divider]，否则 CF 静默写入的历史会缺时间戳。
+                let lastRealTs = 0;
+                for (let j = chat.history.length - 1; j >= 0; j--) {
+                    const hm = chat.history[j];
+                    if (hm && hm.id && !hm.id.includes('msg_proactive_') && !hm.id.includes('msg_visual_')) {
+                        lastRealTs = hm.timestamp || 0; break;
+                    }
+                }
+                if (lastRealTs && baseTs - lastRealTs > 30 * 60 * 1000) {
+                    const divider = {
+                        id: `msg_visual_timesense_cfpeek_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+                        role: 'system',
+                        content: '[time-divider]',
+                        parts: [{ type: 'text', text: '[time-divider]' }],
+                        timestamp: baseTs - 1
+                    };
+                    chat.history.push(divider);
+                    putMsgs.push(divider);
+                    if (typeof currentChatId !== 'undefined' && currentChatId === chat.id && typeof addMessageBubble === 'function') {
+                        addMessageBubble(divider, chat.id, type);
+                    }
+                }
+
+                for (let i = 0; i < topic.messages.length; i++) {
+                    const msgInfo = topic.messages[i];
+                    let actionStr = msgInfo.action || '的消息';
+                    if (['的照片', '发来的照片', '的照片/视频'].includes(actionStr)) actionStr = '发来的照片/视频';
+                    else if (actionStr === '发来的语音') actionStr = '的语音';
+                    else if (actionStr === '发来的转账') actionStr = '的转账';
+                    else if (actionStr === '的礼物') actionStr = '送来的礼物';
+
+                    let finalContent = `[${msgInfo.sender}${actionStr}：${msgInfo.text}]`;
+                    if (type === 'private' && chat.offlineModeEnabled) {
+                        if (actionStr === '的动作') finalContent = `[system-narration:${msgInfo.text}]`;
+                        else if (actionStr === '的语言') finalContent = `[${msgInfo.sender}的消息：${msgInfo.text}]`;
+                        else if (actionStr === '更新状态为') finalContent = `[${msgInfo.sender}更新状态为：${msgInfo.text}]`;
+                    }
+
+                    const newMsg = {
+                        id: `msg_proactive_cfpeek_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 5)}`,
+                        role: 'assistant',
+                        content: finalContent,
+                        parts: [{ type: 'text', text: finalContent }],
+                        timestamp: baseTs + i * 1000
+                    };
+                    if (actionStr === '撤回了一条消息' || actionStr === '撤回了上一条消息') {
+                        newMsg.isWithdrawn = true; newMsg.originalContent = msgInfo.text;
+                    }
+                    if (type === 'group' && chat.members && chat.members.length > 0) {
+                        const sName = (msgInfo.sender || '').trim();
+                        const matched = chat.members.find(m => m.realName === sName || m.groupNickname === sName);
+                        newMsg.senderId = matched ? matched.id : chat.members[0].id;
+                    }
+                    chat.history.push(newMsg);
+                    putMsgs.push(newMsg);
+                    if (typeof currentChatId !== 'undefined' && currentChatId === chat.id && typeof addMessageBubble === 'function') {
+                        addMessageBubble(newMsg, chat.id, type);
+                    }
+                }
+                topic._cfMaterialized = true;
+                materialized = true;
+                if (putMsgs.length) {
+                    await saveMessagesToDB(putMsgs, chat.id, type);
+                    if (typeof currentChatId === 'undefined' || currentChatId !== chat.id) {
+                        // 未读只计真实消息，排除可能补插的 [time-divider] 视觉消息
+                        chat.unreadCount = (chat.unreadCount || 0) + topic.messages.length;
+                    }
+                }
+            }
+            if (materialized) {
+                hasDelivered = true;
+                if (typeof saveSingleChat === 'function') { try { await saveSingleChat(chat.id, type); } catch (_) {} }
+            }
+        }
+    }
 
     for (const { chat, type } of checkQueue) {
         // 【修复 3】：严格拦截免打扰和 Timer 固定模式，防止它偷吃 Peek 池子的盲盒消息
@@ -291,8 +429,19 @@ async function checkAndDeliverProactiveMessages() {
 
         for (const slotId of Object.keys(draft.content)) {
             const slotData = draft.content[slotId];
-            if (!slotData.messages || slotData.messages.length === 0) continue; 
-            
+            if (!slotData.messages || slotData.messages.length === 0) continue;
+            // peek 话题 3 天过期(话题有时效性)：到期直接从池中清除，不再投递
+            // 例外：已移交 CF 但尚未物化的话题不清(否则标记随对象丢失→守卫失效→重复排期/推送与物化分叉)
+            if (isPeekSource) {
+                const slotExpire = slotData.expireAt || ((slotData.generatedAt || 0) + 72 * 60 * 60 * 1000);
+                if (slotExpire <= tNow && !(slotData._cfHandedOff && !slotData._cfMaterialized)) { delete draft.content[slotId]; continue; }
+            }
+            // 已移交给 CF 推送的 peek 话题：本地不再重复投递（仅在推送节点启用时；未启用则无视）
+            if (isPeekSource && slotData._cfHandedOff &&
+                window.PushNode && typeof window.PushNode.isReady === 'function' && window.PushNode.isReady()) {
+                continue;
+            }
+
             let firstMsgTimeStr = slotData.messages[0].time;
             let groupTargetTime;
             let baseStart, baseEnd;
@@ -373,7 +522,8 @@ async function checkAndDeliverProactiveMessages() {
         }
 
         if (isPeekSource) {
-            candidates.sort((a, b) => b.groupTargetTime - a.groupTargetTime);
+            // 候选均已 ≥ 上次聊天+1h(见上方门槛)，取送达时刻最小者 = 最贴“上次聊天+1h”的一组
+            candidates.sort((a, b) => a.groupTargetTime - b.groupTargetTime);
             candidates =[candidates[0]];
         } else {
             candidates.sort((a, b) => a.groupTargetTime - b.groupTargetTime);
@@ -395,20 +545,30 @@ async function checkAndDeliverProactiveMessages() {
                 
                 for (let i = 0; i < candidate.messages.length; i++) {
                     const msgInfo = candidate.messages[i];
-                    let msgFakeTimestamp = candidate.groupTargetTime;
-                    
-                    if (msgInfo.time) {
-                        const [hours, minutes] = msgInfo.time.split(':').map(Number);
-                        let tempDate = new Date(candidate.baseStart);
-                        tempDate.setHours(hours, minutes, 0, 0);
-                        msgFakeTimestamp = tempDate.getTime();
-                        
-                        if (msgFakeTimestamp < candidate.baseStart - 12 * 3600 * 1000) msgFakeTimestamp += 24 * 3600 * 1000;
-                        else if (msgFakeTimestamp > candidate.baseEnd + 12 * 3600 * 1000) msgFakeTimestamp -= 24 * 3600 * 1000;
+                    let msgFakeTimestamp;
+
+                    if (!isPeekSource && typeof msgInfo.scheduledAt === 'number') {
+                        // 【设计1】优先用“生成时冻结”的绝对时刻,配信时不再按当前时间重算——
+                        // 这样同一组消息的时间戳恒为连续,重开(按时间戳重排)也不会被拆散。
+                        msgFakeTimestamp = msgInfo.scheduledAt;
+                    } else {
+                        // 回退:peek 备用池 / 旧库数据无 scheduledAt,沿用按 time 相对 baseStart 的复原逻辑
+                        msgFakeTimestamp = candidate.groupTargetTime;
+                        if (msgInfo.time) {
+                            const [hours, minutes] = msgInfo.time.split(':').map(Number);
+                            let tempDate = new Date(candidate.baseStart);
+                            tempDate.setHours(hours, minutes, 0, 0);
+                            msgFakeTimestamp = tempDate.getTime();
+
+                            if (msgFakeTimestamp < candidate.baseStart - 12 * 3600 * 1000) msgFakeTimestamp += 24 * 3600 * 1000;
+                            else if (msgFakeTimestamp > candidate.baseEnd + 12 * 3600 * 1000) msgFakeTimestamp -= 24 * 3600 * 1000;
+                        }
                     }
 
-                    if (msgFakeTimestamp <= currentFakeTimestamp) msgFakeTimestamp = currentFakeTimestamp + 60 * 1000;
-                    if (msgFakeTimestamp > tNow) msgFakeTimestamp = tNow - 1000; 
+                    // 先“天花板”(不晚于当前,避免出现未来消息),再“地板”(严格晚于上一条,组内保持递增)。
+                    // 顺序很重要:先压未来再保序,能让同组连发始终连续、不互相错位或被拆散。
+                    if (msgFakeTimestamp > tNow) msgFakeTimestamp = tNow - 1000;
+                    if (msgFakeTimestamp <= currentFakeTimestamp) msgFakeTimestamp = currentFakeTimestamp + 1000;
                     
                     let timeGap = msgFakeTimestamp - currentFakeTimestamp;
                     currentFakeTimestamp = msgFakeTimestamp;
@@ -480,6 +640,20 @@ async function checkAndDeliverProactiveMessages() {
                 }
                 deliveredCount++;
 
+                // 【设计1·双模式】区分“到点即时送达”与“迟到补投”:
+                //   · 到点(保活生效,落地时刻≈现在)→ 弹系统通知(模式B)
+                //   · 迟到(被杀后打开才处理)→ 视作“过去已发送”补投,不打扰用户(模式A)
+                // 判据用本组“意图发送时刻” groupTargetTime 与现在的差值,而非被 clamp 过的落地时刻。
+                const _lateMs = tNow - candidate.groupTargetTime;
+                if (_lateMs <= ON_TIME_NOTIFY_WINDOW_MS) {
+                    // Step 2：后台主动消息投递时弹系统通知（内部已判权限/开关/可见性）
+                    if (window.NotifyCenter) {
+                        NotifyCenter.notifyMessages(chat, type, msgsToPut);
+                    }
+                } else {
+                    console.log(`[顺风车] ${chat.realName || chat.name} 迟到补投约 ${Math.round(_lateMs / 60000)} 分钟,按“过去已发送”处理,不弹通知。`);
+                }
+
                 // 【修复 2 续】发成功后销毁其余所有候选，只发一组
                 for (const rest of candidates) {
                     delete draft.content[rest.slotId];
@@ -508,53 +682,44 @@ async function checkAndDeliverProactiveMessages() {
 }
 
 // ==========================================
-// 全局闲置计时器与后台静默推演
+// 全局闲置计时器与后台静默推演 (重构版 - 独立计时双轨制 & 兼容iOS)
 // ==========================================
 let bgAudioElement = null;
-let bgTimeoutId = null;
-const silentWavBase64 = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA";
+let bgTimeoutId = null;        
+let generationTimeoutId = null; 
+const keepAliveAudioSrc = "./audio/keepalive.mp3";
 
-function unlockAudioElement() {
-    const needsAudio = typeof db !== 'undefined' && 
-        [...(db.characters || []), ...(db.groups || [])].some(
-            chat => chat.proactiveMode === 'fixed' || chat.proactiveMode === 'timer'
-        );
-    
-    if (!needsAudio) {
-        window.removeEventListener('touchstart', unlockAudioElement, { passive: true });
-        window.removeEventListener('click', unlockAudioElement, { passive: true });
-        return;
-    }
-
-    if (!bgAudioElement) {
-        bgAudioElement = new Audio(silentWavBase64);
-        bgAudioElement.loop = true; 
-        bgAudioElement.volume = 1;  
-        bgAudioElement.setAttribute('playsinline', '');
-        bgAudioElement.setAttribute('webkit-playsinline', '');
-    }
-    
-    bgAudioElement.play().then(() => {
+// ==========================================
+// 【新增修复】：彻底销毁音频和通知栏播放卡片
+// ==========================================
+function killKeepAliveAudio() {
+    if (bgAudioElement) {
         bgAudioElement.pause();
-    }).catch(err => {
-        console.log("精灵唱歌被拦截，等待下一次敲击...");
-    });
-
-    window.removeEventListener('touchstart', unlockAudioElement, { passive: true });
-    window.removeEventListener('click', unlockAudioElement, { passive: true });
+        bgAudioElement.src = ''; // 拔掉音频源
+        bgAudioElement.removeAttribute('src');
+        bgAudioElement.load();   // 强制浏览器卸载内存中的音频
+        bgAudioElement = null;   // 彻底丢弃对象
+    }
+    // 强制通知系统：当前没有任何媒体在播放了
+    if ('mediaSession' in navigator) {
+        try {
+            navigator.mediaSession.metadata = null;
+            navigator.mediaSession.playbackState = 'none';
+        } catch (_) {}
+    }
+    console.log('[保活精灵] 音频播放器已彻底销毁，通知栏卡片应已清除。');
 }
 
-function startBackgroundAudioTimer() {
-    stopBackgroundAudioTimer(); 
-    
-    let maxKeepAliveMs = 5 * 60 * 1000; 
-    let needsGenerationOrTimer = false;
+// 评估保活时长，同时返回是否需要生成消息
+function evaluateKeepAliveNeeds() {
+    let keepAliveDuration = 0;
+    let needsGeneration = false;
+    const todayStr = new Date().toDateString();
 
     if (typeof db !== 'undefined') {
-        const todayStr = new Date().toDateString();
         const allChats = [...(db.characters || []), ...(db.groups ||[])];
-        
         allChats.forEach(chat => {
+            // 1. 判断主动模式是否需要生成消息
             if (chat.proactiveMode === 'fixed') {
                 const maxCalls = chat.proactiveDailyLimit || 10;
                 const currentCount = (chat.dailyProactiveUsage && chat.dailyProactiveUsage.date === todayStr) ? chat.dailyProactiveUsage.count : 0;
@@ -571,59 +736,131 @@ function startBackgroundAudioTimer() {
                         if (m.type === 'time_window_idle') return m.generatedAt >= lastInteractTime;
                         return false;
                     });
-                    if (!hasValidDraft) needsGenerationOrTimer = true;
+                    if (!hasValidDraft) needsGeneration = true;
                 }
             }
-            
+            // 2. 判断固定定时模式
             if (chat.proactiveMode === 'timer') {
-                needsGenerationOrTimer = true;
+                needsGeneration = true;
                 const userKeepAliveMs = (chat.proactiveKeepAlive || 30) * 60 * 1000;
-                if (userKeepAliveMs > maxKeepAliveMs) {
-                    maxKeepAliveMs = userKeepAliveMs; 
-                }
+                if (userKeepAliveMs > keepAliveDuration) keepAliveDuration = userKeepAliveMs;
             }
         });
     }
 
-    if (!needsGenerationOrTimer) {
-        console.log('[精灵] 虽然user离开了，但奖池已满且无固定定时任务，精灵休息。');
-        return; 
+    // 基础 5 分钟保活（防止生成还没跑完就被杀）
+    if (needsGeneration && keepAliveDuration < 5 * 60 * 1000) {
+        keepAliveDuration = 10 * 60 * 1000;
     }
 
-    console.log(`[精灵] user离开了，精灵开始唱歌... (本次保活上限: ${Math.floor(maxKeepAliveMs/60000)} 分钟)`);
+    // 3. 全局通知保活叠加
+    const gn = (typeof db !== 'undefined') ? db.globalNotifySettings : null;
+    if (gn && gn.enabled && gn.keepAliveEnabled !== false && (gn.keepAliveMinutes || 0) > 0) {
+        const gms = gn.keepAliveMinutes * 60 * 1000;
+        if (gms > keepAliveDuration) keepAliveDuration = gms;
+    }
 
+    return { keepAliveDuration, needsGeneration };
+}
+
+
+
+function handleUserInteractionForAudio() {
+    const { keepAliveDuration, needsGeneration } = evaluateKeepAliveNeeds();
+
+    if (keepAliveDuration <= 0) {
+        if (bgAudioElement && !bgAudioElement.paused) killKeepAliveAudio();
+        if (generationTimeoutId) clearTimeout(generationTimeoutId);
+        return;
+    }
+
+    // 初始化音频标签：循环播放近似静音的真实 MP3（防杀核心）
     if (!bgAudioElement) {
-        bgAudioElement = new Audio(silentWavBase64);
+        bgAudioElement = new Audio();
         bgAudioElement.loop = true;
-        bgAudioElement.volume = 1; 
+        bgAudioElement.volume = 1; // 音量正常以获取系统媒体焦点（音频本身近似静音，用户听不到）
         bgAudioElement.setAttribute('playsinline', '');
         bgAudioElement.setAttribute('webkit-playsinline', '');
+        bgAudioElement.preload = 'auto';
+        bgAudioElement.src = keepAliveAudioSrc;
+
+        // 媒体控制中心适配（增强版“伪装成正规播放器”，提高安卓通知栏挂载媒体卡片的概率）
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: 'OuO 后台运行中…',
+                artist: '正在等待新消息',
+                album: '消息通知运行中',
+                // 关键：提供封面图，安卓 Chrome 才更倾向于把它当“真正的音乐播放器”而非 UI 提示音，
+                //       从而在状态栏常驻媒体控制卡片、降低后台被杀概率。图标同 APP_ICON。
+                artwork: [
+                    { src: './icon/icon_cat.png', sizes: '192x192', type: 'image/png' },
+                    { src: './icon/icon_cat.png', sizes: '512x512', type: 'image/png' }
+                ]
+            });
+            navigator.mediaSession.setActionHandler('play', () => {
+                bgAudioElement.play().catch(() => {});
+            });
+            navigator.mediaSession.setActionHandler('pause', () => {
+                bgAudioElement.pause();
+            });
+            // 【关键破解点】注册上一首/下一首（内部留空即可）。安卓 Chrome 看到有这些标准
+            //   曲目操作，会更坚定地判定这是一个正规音乐播放器，进一步稳固后台媒体会话。
+            try { navigator.mediaSession.setActionHandler('previoustrack', () => {}); } catch (_) {}
+            try { navigator.mediaSession.setActionHandler('nexttrack', () => {}); } catch (_) {}
+            // 汇报播放状态，让系统认定处于“正在播放”，媒体卡片更稳定。
+            try { navigator.mediaSession.playbackState = 'playing'; } catch (_) {}
+        }
     }
 
-    bgAudioElement.play().catch(e => console.log("[精灵] 精灵发声失败:", e));
+    // 播放和唤醒：必须在“用户手势内”首次调用 play() 才能解锁 iOS 的后台播放许可。
+    // 本函数绑定在 window 的 touchstart/click 上，用户在前台随便点一下就完成解锁+起播。
+    if (bgAudioElement.paused) {
+        const p = bgAudioElement.play();
+        if (p && typeof p.catch === 'function') {
+            p.catch(e => {
+                // iOS 首次点击时音频常常还没加载完，play() 会抛 AbortError/NotAllowedError——属良性。
+                // 此刻元素已被用户手势“解锁”，等它就绪后自动补一次 play() 即可，无需用户二次点击。
+                if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) {
+                    const retry = () => { if (bgAudioElement.paused) bgAudioElement.play().catch(() => {}); };
+                    if (bgAudioElement.readyState >= 3) retry(); // 已就绪，直接补播
+                    else bgAudioElement.addEventListener('canplaythrough', retry, { once: true });
+                } else {
+                    console.log("[保活精灵] 解锁失败:", e);
+                }
+            });
+        }
+    }
 
+    // ── 轨道1：音频保活倒计时 ──
+    if (bgTimeoutId) clearTimeout(bgTimeoutId);
     bgTimeoutId = setTimeout(() => {
-        console.log(`[精灵] 保活时间到期，精灵唱完了，唤醒一次主动补池...`);
-        triggerIdleProactiveGeneration(); 
-        stopBackgroundAudioTimer(); 
-    }, maxKeepAliveMs);
+        console.log(`[保活精灵] ${Math.floor(keepAliveDuration/60000)} 分钟保活到期，休眠释放资源。`);
+        if (bgAudioElement && !bgAudioElement.paused) killKeepAliveAudio();
+        // 同步媒体会话状态，避免通知栏卡片停留在“正在播放”的假象
+        if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'paused'; } catch (_) {} }
+    }, keepAliveDuration);
+
+    // ── 轨道2：雷打不动的 5 分钟生成倒计时 ──
+    if (generationTimeoutId) clearTimeout(generationTimeoutId);
+    if (needsGeneration) {
+        generationTimeoutId = setTimeout(() => {
+            console.log(`[保活精灵] 闲置5分钟达到，唤醒一次主动补池...`);
+            if (typeof triggerIdleProactiveGeneration === 'function') {
+                triggerIdleProactiveGeneration(); 
+            }
+        }, 5 * 60 * 1000);
+    }
 }
 
-function stopBackgroundAudioTimer() {
-    if (bgTimeoutId) {
-        clearTimeout(bgTimeoutId);
-        bgTimeoutId = null;
-    }
-    if (bgAudioElement && !bgAudioElement.paused) {
-        bgAudioElement.pause();
-        bgAudioElement.currentTime = 0; 
-    }
+// 兼容旧代码调用
+function ensureBgAudioUnlocked() {
+    handleUserInteractionForAudio();
 }
+window.ensureBgAudioUnlocked = ensureBgAudioUnlocked;
 
 (function setupInactivityTracker() {
+    // 轮询检查发送
     setInterval(async () => {
-        console.log(`[时计] 定时检查是否到达抽奖时间 或 固定触发时间...`);
-        
         const now = Date.now();
         const lastRun = parseInt(localStorage.getItem('last_proactive_run') || '0', 10);
         if (now - lastRun < 50000) return;
@@ -641,15 +878,21 @@ function stopBackgroundAudioTimer() {
         }
     }, 60000);
 
-    window.addEventListener('touchstart', unlockAudioElement, { passive: true });
-    window.addEventListener('click', unlockAudioElement, { passive: true });
+    // 每次点击都会重置那两个计时器
+    window.addEventListener('touchstart', handleUserInteractionForAudio, { passive: true });
+    window.addEventListener('click', handleUserInteractionForAudio, { passive: true });
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
-            startBackgroundAudioTimer();
-        } else {
-            console.log(`[精灵] user回来了，精灵噤声。`);
-            stopBackgroundAudioTimer();
+            console.log(`[保活精灵] App进入后台，当前保活状态: ${bgAudioElement && !bgAudioElement.paused ? '工作中' : '休眠中'}`);
+            // 进入后台：把到点该发的主动消息移交给 CF 推送节点（未启用则内部直接跳过）
+            if (window.PushNode && typeof window.PushNode.reconcile === 'function') {
+                window.PushNode.reconcile().catch(e => console.warn('[推送节点] reconcile 异常:', e));
+            }
+        } else if (document.visibilityState === 'visible') {
+            // 回到前台：不动 CF 任务。已移交的照常到点推送；App 开着时本地投递也会触发，
+            // 两者用同一个通知 tag('chat-'+id) 折叠去重，用户只看到一条。
+            // (撤销只发生在用户真正让消息失效的操作：发消息 / 切模式 / 关总开关)
         }
     });
 })();
@@ -797,10 +1040,15 @@ async function triggerIdleProactiveGeneration() {
 
             console.log(`[礼物] ${chat.name || chat.realName} 正在付费填充奖池...`);
             await generateBackgroundProactiveMessages(chat, maxCalls, type);
-            
+
             chat.dailyProactiveUsage.count++;
             await saveSingleChat(chat.id, type);
         }
+    }
+
+    // 后台生成了新的 idle 消息后，若此刻已在后台，补一次移交（否则要等下次进后台）
+    if (document.visibilityState === 'hidden' && window.PushNode && typeof window.PushNode.reconcile === 'function') {
+        window.PushNode.reconcile().catch(e => console.warn('[推送节点] idle 生成后 reconcile 异常:', e));
     }
 }
 
@@ -1102,39 +1350,50 @@ const memoryLength = chat.maxMemory || 15;
                     let uniqueKey = `${k}_peek_${Date.now()}_${Math.floor(Math.random()*1000)}`;
                     existingPeek.content[uniqueKey] = {
                         ...proactiveOptions[k],
-                        generatedAt: Date.now() 
+                        generatedAt: Date.now(),
+                        expireAt: Date.now() + 72 * 60 * 60 * 1000 // 每组话题独立 3 天过期(话题有时效性)
                     };
                 }
                 
                 let allKeys = Object.keys(existingPeek.content);
                 if (allKeys.length > 10) {
-                    allKeys.sort((a, b) => {
-                        let timeA = existingPeek.content[a].generatedAt || 0;
-                        let timeB = existingPeek.content[b].generatedAt || 0;
-                        return timeA - timeB;
-                    });
-                    let keysToKeep = allKeys.slice(-10);
+                    // 已移交 CF 但未物化的话题必须保留(标记随裁剪丢失会致守卫失效/推送与物化分叉)，
+                    // 其余按 generatedAt 由旧到新填满剩余名额。
+                    const c = existingPeek.content;
+                    const isPinned = k => c[k] && c[k]._cfHandedOff && !c[k]._cfMaterialized;
+                    const pinned = allKeys.filter(isPinned);
+                    const rest = allKeys.filter(k => !isPinned(k))
+                        .sort((a, b) => (c[a].generatedAt || 0) - (c[b].generatedAt || 0));
+                    const room = Math.max(0, 10 - pinned.length);
+                    const keysToKeep = pinned.concat(rest.slice(-room));
                     let newContent = {};
-                    keysToKeep.forEach(k => newContent[k] = existingPeek.content[k]);
+                    keysToKeep.forEach(k => newContent[k] = c[k]);
                     existingPeek.content = newContent;
                 }
                 console.log(`[Peek顺风车] 成功收集${Object.keys(proactiveOptions).length}组，当前备用池容量: ${Object.keys(existingPeek.content).length}/10`);
             } else {
+                const _idleGenAt = Date.now();
+                // 【设计1】idle 池同样在生成时冻结 scheduledAt(peek 备用池除外,保留其“就近重定时”特性)
+                paFreezeScheduledAt(proactiveOptions, _idleGenAt);
                 const newProactiveData = {
-                    id: `promsg_idle_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                    id: `promsg_idle_${_idleGenAt}_${Math.random().toString(36).substr(2, 6)}`,
                     type: queueType,
-                    generatedAt: Date.now(),
-                    expireAt: Date.now() + 12 * 60 * 60 * 1000, 
+                    generatedAt: _idleGenAt,
+                    expireAt: _idleGenAt + 12 * 60 * 60 * 1000,
                     content: proactiveOptions
                 };
                 chat.proactiveMessageQueue = (chat.proactiveMessageQueue ||[]).filter(m => m.type !== queueType);
                 chat.proactiveMessageQueue.push(newProactiveData);
-                console.log(`[奖池填充成功] 等待开奖！`);            
+                console.log(`[奖池填充成功] 等待开奖！`);
+            }
+            // 生成完(idle 或 peek)立即移交给 CF 推送节点（未启用则内部跳过）
+            if (window.PushNode && typeof window.PushNode.handoffChat === 'function') {
+                window.PushNode.handoffChat(chat.id).catch(() => {});
             }
         } else {
             console.warn(`[奖池填充失败] 解析失败或 AI 未按格式返回内容。`);
         }
     } catch (error) {
-        console.error("抽奖系统机器故障！", error);        
+        console.error("抽奖系统机器故障！", error);
     }
 }

@@ -1,4 +1,5 @@
-let isLoadingHistory = false; // 新增：防止重复加载标志位
+let isLoadingHistory = false; // 原有的：控制 DOM 渲染的锁
+let isFetchingDB = false;     // 新增的：控制后台静默读 DB 的锁
 let selectedLinkStickerIds = new Set(); // 关联弹窗选中的ID
 let currentStickerCategory = '全部';    // 主面板当前选中的分类
 let currentLinkStickerCategory = '全部';// 关联弹窗当前选中的分类
@@ -156,32 +157,41 @@ function setupChatRoom() {
     regenerateBtn.addEventListener('click', handleRegenerate);
 
 // ==========================================
-    // 【核心修复】双向滚动监听 (向上加载旧消息，向下加载新消息)
+    // 【核心修复】双向滚动监听 (加入无感预加载)
     // ==========================================
     messageArea.addEventListener('scroll', () => {
-        if (isLoadingHistory) return; // 如果正在加载，直接跳过
-
         // 1. 向上滚动：加载历史消息 (Older)
         if (messageArea.scrollTop < 50) {
             const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
             if (!chat || !chat.history) return;
-            const totalMessages = chat.history.length;
             
-            // 只有当还有更旧的消息时才加载
-            if (totalMessages > currentPage * MESSAGES_PER_PAGE) {
-                loadMoreMessages(); // 这是原有的加载旧消息函数
+            const totalMessages = chat.history.length;
+            const renderedMessages = currentPage * MESSAGES_PER_PAGE;
+            const unrenderedMemory = totalMessages - renderedMessages; // 内存里还没渲染的剩余条数
+
+            // [A] DOM 渲染逻辑：只要内存里还有货，就无脑调用 loadMoreMessages (它内部有 isLoadingHistory 锁防抖)
+            if (unrenderedMemory > 0) {
+                if (!isLoadingHistory) {
+                    loadMoreMessages(); 
+                }
+            } 
+            // 极端兜底：内存真的一滴都没有了，且后台还没拉回来，只能硬等（出现转圈）
+            else if (window.LAZY_LOAD && !chat._noMoreOlderInDB && !isLoadingHistory && !isFetchingDB) {
+                loadOlderFromDB(); 
+            }
+
+            // [B] 无感预加载逻辑 (Silent Pre-fetch)：
+            // 当内存剩余不足 3 页 (比如少于 60 条) 时，后台偷偷去 DB 进货 200 条
+            if (window.LAZY_LOAD && !chat._noMoreOlderInDB && unrenderedMemory < (MESSAGES_PER_PAGE * 3)) {
+                preloadOlderFromDBInBackground(chat);
             }
         }
 
-        // 2. 向下滚动：加载后续消息 (Newer)
-        // 判断是否接近底部 (容差 50px)
+        // 2. 向下滚动：加载后续消息 (Newer) 保持不变
+        if (isLoadingHistory) return;
         const isNearBottom = messageArea.scrollHeight - messageArea.scrollTop - messageArea.clientHeight < 50;
-        
-        if (isNearBottom) {
-            // 只有当我们不在第一页（即 currentPage > 1）时，说明下面还有更新的消息
-            if (currentPage > 1) {
-                loadNewerMessages(); // ===> 这是我们需要新增的函数 <===
-            }
+        if (isNearBottom && currentPage > 1) {
+            loadNewerMessages();
         }
     });
 
@@ -802,13 +812,75 @@ for (const sid of sessionIds) {
 function loadMoreMessages() {
     if (isLoadingHistory) return; // 如果正在加载，直接退出
     isLoadingHistory = true;      // 设为正在加载
-    
+
     // 稍微给一点延迟（例如 200ms），让 Loading 图标能显示出来一瞬间，
     // 否则本地渲染太快，用户可能感觉不到加载动作，体验反而生硬
     setTimeout(() => {
         currentPage++;
         renderMessages(true, false);
-    }, 200); 
+    }, 200);
+}
+
+// === Step 3：懒加载模式下，翻到内存窗口顶部时从 DB 取更旧的一页 ===
+async function loadOlderFromDB() {
+    if (isLoadingHistory) return;
+    const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history || chat.history.length === 0) return;
+    isLoadingHistory = true;
+
+    // 顶部 Loading 指示（复用现有样式）
+    const topLoader = document.createElement('div');
+    topLoader.className = 'history-loading-indicator';
+    topLoader.innerHTML = `<div class="custom-spinner"></div>`;
+    messageArea.insertBefore(topLoader, messageArea.firstChild);
+
+    try {
+        const oldestTs = chat.history[0].timestamp || 0;
+        const inMemoryIds = new Set(chat.history.map(m => m.id));
+        const DB_FETCH_CHUNK = 200; 
+        const older = await window.fetchOlderMessages(currentChatId, oldestTs, inMemoryIds, DB_FETCH_CHUNK);
+        topLoader.remove();
+        if (!older || older.length === 0) {
+            chat._noMoreOlderInDB = true; // 真到头了，本次会话不再查
+            isLoadingHistory = false;
+            return;
+        }
+        // 前插到 chat.history（older 已升序且 timestamp 全 <= oldestTs，不整体重排，避免打乱已渲染 DOM）
+        chat.history.unshift(...older);
+        // 复用现有渲染路径：currentPage++ 后 renderMessages(true) 会切出这一页并前插到 DOM
+        currentPage++;
+        renderMessages(true, false); // 其内部会把 isLoadingHistory 置回 false
+    } catch (e) {
+        console.error('❌ [懒加载] 加载更旧消息失败:', e);
+        topLoader.remove();
+        isLoadingHistory = false;
+    }
+}
+
+// === 新增：后台无感预加载 DB 数据 ===
+async function preloadOlderFromDBInBackground(chat) {
+    if (isFetchingDB || chat._noMoreOlderInDB) return;
+    isFetchingDB = true; // 上锁，防止重复查库
+
+    try {
+        const oldestTs = chat.history[0].timestamp || 0;
+        const inMemoryIds = new Set(chat.history.map(m => m.id));
+        
+        // 每次偷偷进货 200 条
+        const DB_FETCH_CHUNK = 200; 
+        const older = await window.fetchOlderMessages(currentChatId, oldestTs, inMemoryIds, DB_FETCH_CHUNK);
+
+        if (!older || older.length === 0) {
+            chat._noMoreOlderInDB = true; // 数据库到底了
+        } else {
+            // ★ 重点：只把数据塞进内存，绝对不触碰 DOM，也不改 currentPage
+            chat.history.unshift(...older);
+        }
+    } catch (e) {
+        console.error('❌ [懒加载] 后台预加载更旧消息失败:', e);
+    } finally {
+        isFetchingDB = false; // 解锁
+    }
 }
 
 // === 新增函数 1：触发加载后续消息 ===
@@ -1159,7 +1231,11 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
                 
                 if (chat && chat.proactiveMessageQueue) {
-        chat.proactiveMessageQueue = chat.proactiveMessageQueue.filter(m => 
+        // 用户发言：撤销该会话在 CF 上的待发推送（summary/idle 作废，peek 也一并撤，未启用则内部跳过）
+        if (window.PushNode && typeof window.PushNode.cancelChat === 'function') {
+            window.PushNode.cancelChat(chat).catch(() => {});
+        }
+        chat.proactiveMessageQueue = chat.proactiveMessageQueue.filter(m =>
             m.type !== 'time_window_summary' && m.type !== 'time_window_idle'
         );
     }

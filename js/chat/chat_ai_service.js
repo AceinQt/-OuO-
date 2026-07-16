@@ -569,6 +569,11 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         await saveSingleChat(targetChatId, targetChatType);
         renderChatList();
 
+        // Step 2：若此刻在后台，弹系统通知（标题=角色名，内部已判权限/开关/可见性）
+        if (window.NotifyCenter) {
+            NotifyCenter.notifyMessages(chat, targetChatType, newMessagesForDB);
+        }
+
     } catch (error) {
         console.error("🔴 处理 AI 回复时发生错误:", error);
     }

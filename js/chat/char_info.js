@@ -151,7 +151,7 @@ function setupCharacterEditScreen() {
     // 6. Tab 切换（事件委托，避免重复绑定）
     const tabBar = charScreen.querySelector('.char-info-tab-bar');
     if (tabBar) {
-        tabBar.addEventListener('click', (e) => {
+        tabBar.addEventListener('click', async (e) => {
             const btn = e.target.closest('.char-info-tab-btn');
             if (!btn) return;
             const tab = btn.dataset.tab;
@@ -162,7 +162,7 @@ function setupCharacterEditScreen() {
             if (panel) panel.classList.add('active');
             if (tab === 'stats') {
     const charId = document.getElementById('character-edit-id').value;
-    renderTokenStats(charId);
+    await renderTokenStats(charId);
 }
         });
     }
@@ -218,14 +218,26 @@ function formatTokenDisplay(num) {
 /**
  * 核心：计算并渲染统计页面
  */
-function renderTokenStats(charId) {
+async function renderTokenStats(charId) {
     const char = db.characters.find(c => c.id === charId);
     if (!char) return;
 
-    // 1. 聊天总数统计
-    const msgCount = char.history ? char.history.length : 0;
-    document.getElementById('stat-msg-count').textContent = msgCount;
+    // [懒加载 UI] 先把统计面板留空 + 弹出 loading，等全部算完再一次性揭开，避免空数据/旧数据闪烁
+    const statsPanel = document.querySelector('#character-edit-screen .char-info-tab-panel[data-panel="stats"]');
+    if (statsPanel) statsPanel.style.visibility = 'hidden';
+    const _hideLoading = (typeof showLoadingToast === 'function') ? showLoadingToast('正在统计数据...') : null;
 
+    // 1. 聊天总数统计
+    // [懒加载] char.history 只有内存窗口内的 ~1500 条，真实总数必须走 DB count。
+    //   关掉懒加载时回退到 char.history.length，行为与改造前一致。
+    let msgCount;
+    if (window.LAZY_LOAD && typeof window.getMessageCount === 'function') {
+        try { msgCount = await window.getMessageCount(char.id); }
+        catch (e) { msgCount = char.history ? char.history.length : 0; }
+    } else {
+        msgCount = char.history ? char.history.length : 0;
+    }
+    document.getElementById('stat-msg-count').textContent = msgCount;
     // --- 2. 各维度 Token 拆解 ---
     
     // 【上下文 Context】
@@ -394,6 +406,10 @@ function renderTokenStats(charId) {
         renderBar('memory', memoryTokens);
         renderBar('forum', forumTokens);
     });
+
+    // [懒加载 UI] 数字/内容已就绪，揭开面板并关掉 loading（柱状图在下一帧动画长出）
+    if (statsPanel) statsPanel.style.visibility = 'visible';
+    if (_hideLoading) _hideLoading();
 }
 
 document.addEventListener('DOMContentLoaded', () => {

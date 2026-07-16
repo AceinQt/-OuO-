@@ -168,8 +168,11 @@ function setupChatSettings() {
             if (result !== null) {
                 const num = parseInt(result, 10);
                 if (!isNaN(num) && num > 0) {
-                    document.getElementById('setting-max-memory').value = num;
-                    document.getElementById('setting-max-memory-display').textContent = num;
+                    // ★ maxMemory 上限 1000（必须 < 懒加载内存窗口 1500）
+                    const capped = Math.min(num, 1000);
+                    document.getElementById('setting-max-memory').value = capped;
+                    document.getElementById('setting-max-memory-display').textContent = capped;
+                    if (capped < num) showToast('最大记忆轮数已限制为 1000');
                 } else {
                     showToast('请输入有效的正整数');
                 }

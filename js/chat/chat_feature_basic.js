@@ -367,17 +367,38 @@
                 });
             }          
             
-             function openDeleteChunkModal() {
+             // 🌟 缓存当前聊道的消息总数：openDeleteChunkModal 已查过并显示给用户，
+             // submit（点"下一步"）时直接复用，避免重复 await DB count 造成停顿
+             let cachedChunkTotal = null;
+
+             async function openDeleteChunkModal() {
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                if (!chat || !chat.history || chat.history.length === 0) {
+                if (!chat) {
                     showToast('当前没有聊天记录可删除');
                     return;
                 }
-                const totalMessages = chat.history.length;
+                // 先弹窗给即时反馈，再异步计算真实总数（懒加载下 chat.history 只有内存窗口，必须走 DB count）
                 const rangeInfo = document.getElementById('delete-chunk-range-info');
-                rangeInfo.textContent = `当前聊天总消息数: ${totalMessages}`;
                 document.getElementById('delete-chunk-form').reset();
+                rangeInfo.textContent = '正在统计消息总数...';
                 document.getElementById('delete-chunk-modal').classList.add('visible');
+
+                let totalMessages;
+                if (window.LAZY_LOAD && typeof window.getMessageCount === 'function') {
+                    try { totalMessages = await window.getMessageCount(chat.id); }
+                    catch (e) { totalMessages = chat.history ? chat.history.length : 0; }
+                } else {
+                    totalMessages = chat.history ? chat.history.length : 0;
+                }
+
+                if (!totalMessages) {
+                    document.getElementById('delete-chunk-modal').classList.remove('visible');
+                    showToast('当前没有聊天记录可删除');
+                    return;
+                }
+                // 缓存供 submit 直接复用，避免点"下一步"时再查一次 DB count
+                cachedChunkTotal = { chatId: chat.id, total: totalMessages };
+                rangeInfo.textContent = `当前聊天总消息数: ${totalMessages}`;
             }
 
             function setupDeleteHistoryChunk() {
@@ -391,10 +412,20 @@
                 // 🌟 修复1：在这里提前声明 messagesToDelete，让下面两个步骤都能共享这个变量
                 let startRange, endRange, messagesToDelete;
 
-                deleteChunkForm.addEventListener('submit', (e) => {
+                deleteChunkForm.addEventListener('submit', async (e) => {
                     e.preventDefault();
                     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                    const totalMessages = chat.history.length;
+
+                    // 🌟 复用打开输入框时已查好的总数，避免点"下一步"时重复 await DB count 造成停顿
+                    let totalMessages;
+                    if (cachedChunkTotal && cachedChunkTotal.chatId === chat.id) {
+                        totalMessages = cachedChunkTotal.total;
+                    } else if (window.LAZY_LOAD && typeof window.getMessageCount === 'function') {
+                        try { totalMessages = await window.getMessageCount(chat.id); }
+                        catch (err) { totalMessages = chat.history.length; }
+                    } else {
+                        totalMessages = chat.history.length;
+                    }
 
                     startRange = parseInt(document.getElementById('delete-range-start').value);
                     endRange = parseInt(document.getElementById('delete-range-end').value);
@@ -404,9 +435,42 @@
                         return;
                     }
 
-                    const startIndex = startRange - 1;
-                    const endIndex = endRange;
-                    messagesToDelete = chat.history.slice(startIndex, endIndex);
+                    // 🌟 先立刻弹出确认框并显示加载态，避免预览查询较慢时用户以为卡住/没点到
+                    messagesToDelete = null;
+                    previewBox.innerHTML = `<p style="text-align: center; color: #999; margin: 5px 0;">读取预览中…</p>`;
+                    confirmBtn.disabled = true;
+                    confirmBtn.style.opacity = '0.5';
+                    confirmBtn.style.cursor = 'not-allowed';
+                    deleteChunkModal.classList.remove('visible');
+                    confirmModal.classList.add('visible');
+
+                    // 记录本次加载对应的范围，用于防止用户快速重复操作时旧结果覆盖新结果
+                    const reqStart = startRange, reqEnd = endRange;
+
+                    // 取要删除的消息：懒加载走 DB 全局序号（老范围可能不在内存窗口内），否则内存 slice
+                    let loaded;
+                    try {
+                        if (window.LAZY_LOAD && typeof window.getMessagesByGlobalRange === 'function') {
+                            try { loaded = await window.getMessagesByGlobalRange(chat.id, startRange, endRange); }
+                            catch (err) { loaded = chat.history.slice(startRange - 1, endRange); }
+                        } else {
+                            loaded = chat.history.slice(startRange - 1, endRange);
+                        }
+                    } catch (err) {
+                        loaded = null;
+                    }
+
+                    // 确认框已被关闭，或用户又发起了新的范围请求，则丢弃这次结果
+                    if (!confirmModal.classList.contains('visible') || reqStart !== startRange || reqEnd !== endRange) {
+                        return;
+                    }
+
+                    if (!loaded) {
+                        previewBox.innerHTML = `<p style="text-align: center; color: #e74c3c; margin: 5px 0;">预览加载失败，请关闭后重试</p>`;
+                        return;
+                    }
+
+                    messagesToDelete = loaded;
 
                     // --- NEW PREVIEW LOGIC ---
                     let previewHtml = '';
@@ -440,20 +504,29 @@
                     }
                     previewBox.innerHTML = previewHtml;
 
-                    deleteChunkModal.classList.remove('visible');
-                    confirmModal.classList.add('visible');
+                    // 预览就绪，恢复确认按钮
+                    confirmBtn.disabled = false;
+                    confirmBtn.style.opacity = '';
+                    confirmBtn.style.cursor = '';
                 });
 
                 confirmBtn.addEventListener('click', async () => {
+                    // 预览尚未加载完成（按钮理论上已置灰），保险起见直接忽略
+                    if (!messagesToDelete) return;
                     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                    const startIndex = startRange - 1;
-                    const count = endRange - startIndex;
+                    const idsToDelete = messagesToDelete.map(m => m.id);
+                    const count = idsToDelete.length;
 
-                    chat.history.splice(startIndex, count);
-                    await deleteMessagesFromDB(messagesToDelete.map(m=>m.id));
+                    // 先删 DB，再按 id 从内存窗口剔除命中的
+                    //（懒加载下 chat.history 只是最近窗口，按全局 index splice 会删错，必须按 id 过滤）
+                    await deleteMessagesFromDB(idsToDelete);
+                    const delSet = new Set(idsToDelete);
+                    chat.history = chat.history.filter(m => !delSet.has(m.id));
                     await saveSingleChat(currentChatId, currentChatType);
 
                     confirmModal.classList.remove('visible');
+                    // 删除后总数已变，作废旧缓存，下次打开重新统计
+                    cachedChunkTotal = null;
                     showToast(`已成功删除 ${count} 条消息`);
                     currentPage = 1;
                     renderMessages(false, true);
@@ -462,5 +535,9 @@
 
                 cancelBtn.addEventListener('click', () => {
                     confirmModal.classList.remove('visible');
+                    // 复位按钮状态，避免下次残留置灰
+                    confirmBtn.disabled = false;
+                    confirmBtn.style.opacity = '';
+                    confirmBtn.style.cursor = '';
                 });
             }                               

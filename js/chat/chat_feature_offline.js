@@ -25,6 +25,11 @@
                 chat.offlineModeEnabled = isNowEnabled;
                 const now = Date.now();
 
+                // 切换线下模式影响 peek 是否可推，撤销该会话待发的 CF 任务，下次进后台按新状态重排
+                if (window.PushNode && typeof window.PushNode.cancelChat === 'function') {
+                    window.PushNode.cancelChat(chat).catch(() => {});
+                }
+
                 // =======================================================
                 // 情况 1: 退出线下模式
                 // =======================================================
