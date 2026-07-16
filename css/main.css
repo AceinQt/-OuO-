@@ -20,6 +20,7 @@
 @import './pages/chat/user_info.css';
 @import './pages/chat/group_info.css';
 @import './pages/chat/call_overlay.css';
+@import './pages/chat/notification_settings.css';
 
 /* summary */
 @import './pages/summary.css';
