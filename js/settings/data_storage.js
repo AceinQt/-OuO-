@@ -50,6 +50,20 @@ const dataStorage = {
         };
 
         try {
+            // ★ [懒加载] char/group.history 只有内存窗口内的 ~1500 条，
+            //   直接 stringify 会严重低估"角色与聊天"体积。先从 DB 流式累加每个 chat 的全量消息体积，
+            //   后面 char 统计时删掉内存 history、改用这份全量体积补回。关掉懒加载时不走这步。
+            const histBytesByChat = {};
+            if (window.LAZY_LOAD && typeof dexieDB !== 'undefined') {
+                try {
+                    await dexieDB.messages.toCollection().each(msg => {
+                        const cid = msg && msg.chatId;
+                        if (!cid) return;
+                        try { histBytesByChat[cid] = (histBytesByChat[cid] || 0) + JSON.stringify(msg).length; } catch (e) {}
+                    });
+                } catch (e) { console.warn('[storage] 消息体积统计失败:', e); }
+            }
+
             // 1. 角色与聊天 (包含 PeekData，不含已剥离的记忆/向量字段)
             (db.characters || []).forEach(char => {
                 const safeChar = { ...char };
@@ -57,15 +71,27 @@ const dataStorage = {
                 delete safeChar.memoryJournals;
                 delete safeChar.longTermSummaries;
                 delete safeChar.memoryChunks;
-                // history 已挂载回内存，直接 stringify 统计消息体积，无需估算
-                categorizedSizes.characters += stringify(safeChar);
+                if (window.LAZY_LOAD) {
+                    // history 只是窗口，不能代表全量；删掉后用 DB 全量体积补回
+                    delete safeChar.history;
+                    categorizedSizes.characters += stringify(safeChar) + (histBytesByChat[char.id] || 0);
+                } else {
+                    // history 已挂载回内存，直接 stringify 统计消息体积，无需估算
+                    categorizedSizes.characters += stringify(safeChar);
+                }
             });
             (db.groups || []).forEach(group => {
                 const safeGroup = { ...group };
                 delete safeGroup.memorySummaries;
+                delete safeGroup.memoryJournals;
                 delete safeGroup.longTermSummaries;
                 delete safeGroup.memoryChunks;
-                categorizedSizes.characters += stringify(safeGroup);
+                if (window.LAZY_LOAD) {
+                    delete safeGroup.history;
+                    categorizedSizes.characters += stringify(safeGroup) + (histBytesByChat[group.id] || 0);
+                } else {
+                    categorizedSizes.characters += stringify(safeGroup);
+                }
             });
             categorizedSizes.characters += stringify(db.peekData);
 
@@ -114,20 +140,27 @@ const dataStorage = {
             categorizedSizes.settings += stringify(db.homeScreenMode);
             categorizedSizes.settings += stringify(db.fontUrl);
             categorizedSizes.settings += stringify(db.homeStatusBarColor);
+            categorizedSizes.settings += stringify(db.homeNavigationBarColor);
 
 // ★ 8. 学习模块
 categorizedSizes.study += stringify(db.studyBooks);
 categorizedSizes.study += stringify(db.studyQuestions);
 categorizedSizes.study += stringify(db.studyRecords);
-// ★ V8：正文和共读消息在独立表，需从 Dexie 读取
+categorizedSizes.study += stringify(db.studyBanks);
+categorizedSizes.study += stringify(db.studyExams);
+categorizedSizes.study += stringify(db.studyExamRecords);
+categorizedSizes.study += stringify(db.studySettings);
+// ★ V8：正文和共读消息在独立表，需从 Dexie 读取；★ V12：章节总结同
 if (typeof dexieDB !== 'undefined') {
     try {
-        const [allContents, allCoreadMsgs] = await Promise.all([
+        const [allContents, allCoreadMsgs, allBookSummaries] = await Promise.all([
             dexieDB.studyBookContents.toArray(),
             dexieDB.studyCoreadMessages.toArray(),
+            dexieDB.studyBookSummaries.toArray(),
         ]);
         allContents.forEach(r => categorizedSizes.study += stringify(r));
         allCoreadMsgs.forEach(r => categorizedSizes.study += stringify(r));
+        allBookSummaries.forEach(r => categorizedSizes.study += stringify(r));
     } catch(e) {}
 }
 
@@ -141,27 +174,55 @@ if (typeof dexieDB !== 'undefined') {
 };
 
 window.refreshStorageScreen = async function() {
-    if (window.setupBackupButtons) {
-        window.setupBackupButtons();
+    const contentEl = document.querySelector('#storage-analysis-screen .content');
+    
+    // 1. 开始计算前：立即隐藏内容并禁用点击
+    if (contentEl) {
+        contentEl.style.transition = 'none';
+        contentEl.style.opacity = '0';
+        contentEl.style.pointerEvents = 'none'; // <--- 新增：加载时禁用点击
+        void contentEl.offsetWidth; 
+        contentEl.style.transition = 'opacity 0.3s ease';
     }
 
-    const chartContainer = document.getElementById('storage-chart-container');
-    const detailsList = document.getElementById('storage-details-list');
-    const totalSizeEl = document.getElementById('storage-total-size');
-
-    const info = await dataStorage.getStorageInfo();
-    if (!info) return;
-
-    if (totalSizeEl) {
-        totalSizeEl.textContent = formatBytes(info.totalSize);
+    let hideLoading = () => {};
+    if (typeof showLoadingToast === 'function') {
+        hideLoading = showLoadingToast("数据统计中，请稍候……");
     }
 
-    renderStorageChart(chartContainer, info);
-    renderStorageDetails(detailsList, info);
+    try {
+        if (window.setupBackupButtons) {
+            window.setupBackupButtons();
+        }
+
+        const chartContainer = document.getElementById('storage-chart-container');
+        const detailsList = document.getElementById('storage-details-list');
+        const totalSizeEl = document.getElementById('storage-total-size');
+
+        const info = await dataStorage.getStorageInfo();
+        if (!info) return;
+
+        if (totalSizeEl) {
+            totalSizeEl.textContent = formatBytes(info.totalSize);
+        }
+
+        renderStorageChart(chartContainer, info);
+        renderStorageDetails(detailsList, info);
+        
         if (typeof GitHubService !== 'undefined') {
-        GitHubService.initUI();
-    }
+            GitHubService.initUI();
+        }
 
+    } catch (e) {
+        console.error("加载存储分析数据异常:", e);
+    } finally {
+        // 3. 计算完成：隐藏 Toast，内容淡入，恢复点击
+        hideLoading();
+        if (contentEl) {
+            contentEl.style.opacity = '1';
+            contentEl.style.pointerEvents = 'auto'; // <--- 新增：显示后恢复正常点击
+        }
+    }
 };
 
 function formatBytes(bytes, decimals = 2) {

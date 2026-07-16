@@ -572,7 +572,7 @@ function importApiPresets(type) {
 }
 
 // ============================================================
-// 拉取模型列表
+// 拉取模型列表 (已适配自定义 AppUI.prompt 手动输入机制)
 // ============================================================
 async function fetchModels(tabType) {
     const isChat     = tabType === 'chat';
@@ -596,23 +596,25 @@ async function fetchModels(tabType) {
         : `${url}/v1/models`;
     const headers = provider === 'gemini' ? {} : { Authorization: `Bearer ${key}` };
 
-    btn.classList.add('loading'); btn.disabled = true;
+    btn.classList.add('loading'); 
+    btn.disabled = true;
+
     try {
         const res = await fetch(endpoint, { method: 'GET', headers });
         if (!res.ok) {
             const err = new Error(`网络响应错误: ${res.status}`);
-            err.response = res; throw err;
+            err.response = res; 
+            throw err;
         }
         const json = await res.json();
         let models = [];
-if (provider !== 'gemini' && json.data) {
-    const keepFullId = url.includes('nvidia');
-    models = json.data.map(e =>
-        keepFullId ? e.id : e.id.replace(/^[^/]+\//, '')
-    );
-} else if (provider === 'gemini' && json.models) {
-    models = json.models.map(e => e.name.replace('models/', ''));
-}
+        // [修复更新] 移除了正则截断逻辑，强制保留厂商前缀的完整模型名
+        if (provider !== 'gemini' && json.data) {
+            models = json.data.map(e => e.id);
+        } else if (provider === 'gemini' && json.models) {
+            models = json.models.map(e => e.name.replace('models/', ''));
+        }
+
         modelSel.innerHTML = '';
         if (models.length > 0) {
             models.forEach(m => {
@@ -622,14 +624,47 @@ if (provider !== 'gemini' && json.data) {
             });
             showToast('模型列表拉取成功！');
         } else {
-            modelSel.innerHTML = '<option value="">未找到任何模型</option>';
+            throw new Error('接口未返回任何模型数据');
         }
+        
+        // 成功时恢复按钮状态
+        btn.classList.remove('loading'); 
+        btn.disabled = false;
+
     } catch (ex) {
-        if (typeof showApiError === 'function') showApiError(ex);
-        else showToast('拉取失败：' + ex.message);
-        modelSel.innerHTML = '<option value="">拉取失败</option>';
-    } finally {
-        btn.classList.remove('loading'); btn.disabled = false;
+        // 请求失败，在弹窗前先停止 loading 动画
+        btn.classList.remove('loading'); 
+        btn.disabled = false;
+
+        // 使用你封装的 AppUI.prompt 组件
+        const manualModel = await AppUI.prompt(
+            `自动拉取失败: ${ex.message}\n企业级接口通常不支持拉取，请直接手动填写。`, 
+            "例如: GLM-5.2", // placeholder
+            "手动输入模型", // title
+            "确定添加",     // confirmText
+            "取消"        // cancelText
+        );
+
+        if (manualModel && manualModel.trim() !== '') {
+            const m = manualModel.trim();
+            // 将输入的模型加入下拉菜单并选中
+            modelSel.innerHTML = `<option value="${m}">${m}</option>`;
+            modelSel.value = m;
+            
+            // 重要：因为是通过代码修改的值，必须手动触发 change 事件，
+            // 让 _watchDirty 监听到，从而触发保存按钮亮起
+            modelSel.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            showToast('已手动添加模型：' + m);
+        } else {
+            // 用户点击取消或未输入
+            if (typeof showApiError === 'function') {
+                showApiError(ex);
+            } else {
+                showToast('拉取失败，且未输入模型');
+            }
+            modelSel.innerHTML = '<option value="">拉取失败，请重新获取或手动填写</option>';
+        }
     }
 }
 
@@ -656,7 +691,7 @@ function _refreshChatTabUI() {
             const m = document.getElementById('api-chat-model');
             if (m) { m.innerHTML = `<option value="${s.model}">${s.model}</option>`; m.value = s.model; }
         }
-_setChecked('api-chat-stream', s.streamEnabled === true);
+        _setChecked('api-chat-stream', s.streamEnabled === true);
         _setChecked('api-chat-compat', !!s.compatibilityModeEnabled);
         _setVal('api-chat-temp', s.temperature !== undefined ? s.temperature : 0.8);
         _setPresetNameInput('chat', '未命名预设');
