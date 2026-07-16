@@ -54,16 +54,7 @@
                 
                 <!-- 个性签名 -->
                 <div contenteditable="true" class="widget-signature" id="widget-signature" placeholder="编辑个性签名..."></div>
-                
-                <!-- 电池小组件 (SVG 图标直接写在这里) -->
-                <div class="widget-battery">
-                    <svg width="32" height="23" viewBox="0 0 24 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M1 2.5C1 1.94772 1.44772 1.5 2 1.5H20C20.5523 1.5 21 1.94772 21 2.5V9.5C21 10.0523 20.5523 10.5 20 10.5H2C1.44772 10.5 1 10.0523 1 9.5V2.5Z" stroke="currentColor" stroke-opacity="1" stroke-width="1"/>
-                        <path d="M22.5 4V8" stroke="currentColor" stroke-opacity="1" stroke-width="1.5" stroke-linecap="round"/>
-                        <rect id="battery-fill-rect" x="2" y="2.5" width="18" height="7" rx="0.5" fill="currentColor" fill-opacity="1"/>
-                    </svg>
-                    <span id="battery-level">--%</span>
-                </div>
+               
             </div>
 
             <div class="app-grid">
@@ -139,15 +130,23 @@
         <div class="title-container">
             <h1 class="title" id="chat-list-title">聊天</h1>
         </div>
-        <div class="action-btn-group">
-            <button class="action-btn" id="create-group-btn" title="群聊">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-            </button>
-            <button class="action-btn" id="import-character-card-btn" title="导入">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            </button>
+<div class="action-btn-group">
+            <!-- 隐藏的导入 input 必须保留，供导入角色功能调用 -->
             <input type="file" id="character-card-input" accept="image/png,application/json" style="display: none;">
-            <button class="action-btn" id="chat-list-add-btn">+</button>
+            
+            <!-- 统一的加号按钮 -->
+            <button class="action-btn" id="chat-list-add-btn" title="添加">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <!-- 设置按钮：呼出侧边栏 -->
+            <button class="action-btn" id="chat-list-settings-btn" title="设置">
+<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+            </button>
         </div>
     </header>    
     <!-- 内容区域 -->
@@ -189,169 +188,19 @@
         </div>        
     </div>
 </div>
-<!-- Tab 3: 外观及气泡预设管理 -->
-<div id="tab-view-bubbles" class="tab-content-view" style="display:none;">
-    
-    <!-- 上半部分：固定卡片 (预设名称、操作按钮、预览区) -->
-    <div class="appearance-card top-fixed-card" id="bubble-preset-header-card">
-<div class="appearance-header">
-    <!-- 标签 1：选中状态（预设名称） -->
-    <div class="appearance-tab-active">
-        <input type="text" id="global-bubble-preset-name" class="preset-name-input" placeholder="输入预设名称">
-        <button type="button" class="icon-btn add-btn" id="global-bubble-add-btn" title="新建预设">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            </button>
-    </div>
-    
-    <!-- 标签 2：未选中状态（按钮组，和背景融合） -->
-    <div class="appearance-tab-inactive">
-        <div class="appearance-actions">
-            
-            <button type="button" class="icon-btn" id="global-bubble-save-btn" title="保存外观">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M15 20V15H9V20M18 20H6C4.89543 20 4 19.1046 4 18V6C4 4.89543 4.89543 4 6 4H14.1716C14.702 4 15.2107 4.21071 15.5858 4.58579L19.4142 8.41421C19.7893 8.78929 20 9.29799 20 9.82843V18C20 19.1046 19.1046 20 18 20Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-</button>
-            <button type="button" class="icon-btn" id="global-bubble-export-btn" title="导出">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-            </button>
-            <button type="button" class="icon-btn" id="global-bubble-import-btn" title="导入">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-            </button>          
-            <button type="button" class="icon-btn" id="global-bubble-manage-btn" title="管理">
-                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>
-            </button>
-            <input type="file" id="global-bubble-import-input" accept=".json" style="display: none;">
-        </div>
-    </div>
-</div>
-</div>
-    <div class="appearance-card top-fixed-card" id="bubble-css-preview-card">
-        <div id="global-bubble-css-preview" class="bubble-css-preview">
-            <button type="button" id="preview-prev-btn" class="preview-nav-btn left">◀</button>
-            <button type="button" id="preview-next-btn" class="preview-nav-btn right">▶</button>
-            
-            <div id="preview-inner-container" class="preview-inner"></div>
-        </div>
-        <div id="preview-mode-title" class="preview-title">预览：消息气泡</div>
-
-    </div>
-
-<!-- 下半部分：分栏卡片 (侧边Tab + 内容区) -->
-    <div class="appearance-card"  id="bottom-content-card">
-        <div class="bottom-btn-card" id="bottom-btn-card">
-      <div class="bottom-btn">
-         <button class="side-tab-btn active" data-pane="pane-basic">基础</button>
-         <button class="side-tab-btn" data-pane="pane-css">高级</button>
-       </div>
-       <button type="button" class="action-btn" id="reset-basic-css-btn"><svg viewBox="0 0 24 24">
-                            <path
-                                d="M17.65,6.35C16.2,4.9,14.21,4,12,4A8,8,0,0,0,4,12A8,8,0,0,0,12,20C15.73,20,18.84,17.45,19.73,14H17.65C16.83,16.33,14.61,18,12,18A6,6,0,0,1,6,12A6,6,0,0,1,12,6C13.66,6,15.14,6.69,16.22,7.78L13,11H20V4L17.65,6.35Z" />
-                        </svg>
-</button>      
-    </div>
-          <div id="pane-basic" class="content-pane active">
-              <div class="bubble-settings-item row">
-                <label>隐藏头像</label>
-                <label class="switch"><input type="checkbox" id="setting-hide-avatar"><span class="slider round"></span></label>
-              </div>
-              <div class="bubble-settings-item row">
-                 <label>字体：</label>
-                 <input type="text" id="setting-custom-font" placeholder="例如: https://.../font.ttf">
-              </div>
-              <div class="bubble-settings-item row">
-                 <label>气泡类型：</label>
-                        <select id="setting-bubble-type">
-                        <option value="normal">普通气泡</option>                                   <option value="narration">旁白气泡</option>
-                        <option value="transfer">转账气泡</option>
-                        <option value="quote">引用气泡</option>
-                        </select>
-                        <select id="setting-bubble-side">
-                        <option value="sent">我方</option>
-                        <option value="received">对方</option>
-                        </select>
-              </div>
-
-                    <!-- 分类气泡属性控制框 -->
-              <div id="bubble-type-settings-box">
-                  <div class="bubble-settings-item"><label>当前正在修改：<span style="color:var(--primary-color);" id="current-type-label">普通气泡 - 我方</span></label>
-                  </div>
-                  <hr>      
-                  <div class="bubble-settings-item row">
-                     <label>气泡颜色：</label>
-                     <input type="color" id="setting-bg">
-                     <input type="text" id="setting-bg-text" placeholder="#HEX">
-                  </div>
-                                    <div class="bubble-settings-item col">
-                      <label>不透明度：<span class="val-display" id="val-opacity">1</span></label>
-                      <input type="range" class="bubble-slider" id="setting-opacity" step="0.05" min="0" max="1">                      
-                  </div>
-
-                  <div class="bubble-settings-item col">
-                     <label>模糊度：<span class="val-display" id="val-blur">0</span>px</label>
-                     <input type="range" class="bubble-slider" id="setting-blur" min="0" max="20" step="1">
-                     
-                  </div>
-                  <hr>
-                  <div class="bubble-settings-item row">     
-                    <label>字体颜色：</label>
-                    <input type="color" id="setting-fontcolor">
-                    <input type="text" id="setting-fontcolor-text" placeholder="#HEX">
-                  </div>
-             <div class="bubble-settings-item col">     
-                    <label>字体大小：<span class="val-display" id="val-fontsize">16</span>px</label>
-                    <input type="range" class="bubble-slider" id="setting-fontsize" min="12" max="24" step="1">                   
-                  </div>
-                  <hr>     
-                  <div class="bubble-settings-item row">
-                      <label>描边颜色：</label>
-                      <input type="color" id="setting-stroke-c">
-                      <input type="text" id="setting-stroke-c-text" placeholder="#HEX">
-                  </div>
-                  <div class="bubble-settings-item col">
-                      <label>描边宽度：
-                      <span class="val-display" id="val-stroke-w">0</span>px</label>
-                      <input type="range" class="bubble-slider" id="setting-stroke-w" min="0" max="5" step="1">
-                  </div>
-<div class="bubble-settings-item row">
-   <label>描边方向：</label>
-   <label class="custom-check-label">
-       <input type="checkbox" class="stroke-side-cb" value="top">
-       <span class="custom-check-mark"></span> 上
-   </label>
-   <label class="custom-check-label">
-       <input type="checkbox" class="stroke-side-cb" value="right">
-       <span class="custom-check-mark"></span> 右
-   </label>
-   <label class="custom-check-label">
-       <input type="checkbox" class="stroke-side-cb" value="bottom">
-       <span class="custom-check-mark"></span> 下
-   </label>
-   <label class="custom-check-label">
-       <input type="checkbox" class="stroke-side-cb" value="left">
-       <span class="custom-check-mark"></span> 左
-   </label>
-</div>
-
-                  <div class="bubble-settings-item col">
-                      <label>边角弧度：
-                      <span class="val-display" id="val-radius">8</span>px</label>
-                      <input type="range" class="bubble-slider" id="setting-radius" min="0" max="30" step="1">
-                  </div>
-              </div>
-            </div>
-
-            <!-- 栏目二：自定义 CSS -->
-            <div id="pane-css" class="content-pane">
-                <textarea id="global-bubble-custom-css" placeholder="在此输入高级 CSS 代码..."></textarea>
-            </div>
-    </div>
-</div>
 </main>
+<!-- ===== 添加操作选择底部菜单 ===== -->
+    <div id="add-action-sheet" class="action-sheet-overlay">
+        <div class="action-sheet">
+            <button class="action-sheet-button" id="action-sheet-add-chat-btn">新建聊天</button>
+            <!-- 保留原有 ID，确保原本的群聊和导入功能免修改直接生效 -->
+            <button class="action-sheet-button" id="create-group-btn">新建群聊</button>
+            <button class="action-sheet-button" id="import-character-card-btn">导入角色</button>
+            <div style="height: 5px; background-color: transparent;"></div>
+            <button class="action-sheet-button action-sheet-cancel" id="cancel-add-action-btn" style="color: #999;">取消</button>
+        </div>
+    </div>
 
-    <!-- 底部 Tab 切换 (新样式 + SVG) -->
     <!-- 底部 Tab 切换 -->
     <nav class="bottom-nav-tabs">
         <div class="nav-tab-item active" data-tab="messages">
@@ -368,18 +217,484 @@
             </svg>
             <span>我</span>
         </div>
-        <div class="nav-tab-item" data-tab="bubbles">
- <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M2 6C2 3.79086 3.79086 2 6 2C8.20914 2 10 3.79086 10 6V18C10 20.2091 8.20914 22 6 22C3.79086 22 2 20.2091 2 18V6Z"/>
-<path d="M9.99977 8.24268L13.3134 4.92902C14.8755 3.36692 17.4082 3.36692 18.9703 4.92902C20.5324 6.49112 20.5324 9.02378 18.9703 10.5859L9.30615 20.25"/>
-<path d="M6 22L18 22C20.2091 22 22 20.2091 22 18C22 15.7909 20.2091 14 18 14L15.5 14"/>
-<path d="M7 18C7 18.5523 6.55228 19 6 19C5.44772 19 5 18.5523 5 18C5 17.4477 5.44772 17 6 17C6.55228 17 7 17.4477 7 18Z"/>
-</svg>
-            <span>外观</span>
-        </div>
     </nav>
+<!-- 聊天列表侧边栏 -->
+<div id="chat-list-sidebar" class="settings-sidebar sidebar">
+  <div class="header">设 置</div>
+  <div class="bottom-content-scroll" id="chat-sidebar-content">
+    <div class="settings-card menu-list-style">
+        <!-- 外观 -->
+        <div class="settings-item" id="chat-sidebar-appearance-btn" style="cursor:pointer;">
+          <div class="setting-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 6C2 3.79086 3.79086 2 6 2C8.20914 2 10 3.79086 10 6V18C10 20.2091 8.20914 22 6 22C3.79086 22 2 20.2091 2 18V6Z"/>
+              <path d="M9.99977 8.24268L13.3134 4.92902C14.8755 3.36692 17.4082 3.36692 18.9703 4.92902C20.5324 6.49112 20.5324 9.02378 18.9703 10.5859L9.30615 20.25"/>
+              <path d="M6 22L18 22C20.2091 22 22 20.2091 22 18C22 15.7909 20.2091 14 18 14L15.5 14"/>
+              <path d="M7 18C7 18.5523 6.55228 19 6 19C5.44772 19 5 18.5523 5 18C5 17.4477 5.44772 17 6 17C6.55228 17 7 17.4477 7 18Z"/>
+            </svg>
+          </div>
+          <div class="item-details"><span class="item-name">外观</span></div>
+          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+                <!-- 消息通知按钮 -->
+        <div class="settings-item" id="chat-sidebar-notification-btn" style="cursor:pointer;">
+          <div class="setting-icon-box">
+            <!-- 铃铛图标 -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+            </svg>
+          </div>
+          <div class="item-details"><span class="item-name">消息通知</span></div>
+          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+    </div>
+  </div>
+</div>
+<!-- 遮罩：点击空白处收起侧边栏 -->
+<div id="chat-list-overlay" class="reader-toc-overlay"></div>
 </div>
 
+
+<!-- 外观页面（独立 screen） -->
+<div id="chat-appearance-screen" class="screen">
+    <header class="app-header">
+        <button class="back-btn" data-target="chat-list-screen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="title-container">
+            <h1 class="title">外观</h1>
+        </div>
+        <div class="action-btn-group"></div>
+    </header>
+    <main class="content">
+        <div id="tab-view-bubbles" class="tab-content-view active" style="display:flex;">
+
+            <!-- 上半部分：固定卡片 (预设名称、操作按钮、预览区) -->
+            <div class="appearance-card top-fixed-card" id="bubble-preset-header-card">
+                <div class="appearance-header">
+                    <!-- 标签 1：选中状态（预设名称） -->
+                    <div class="appearance-tab-active">
+                        <input type="text" id="global-bubble-preset-name" class="preset-name-input" placeholder="输入预设名称">
+                        <button type="button" class="icon-btn add-btn" id="global-bubble-add-btn" title="新建预设">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                        </button>
+                    </div>
+
+                    <!-- 标签 2：未选中状态（按钮组，和背景融合） -->
+                    <div class="appearance-tab-inactive">
+                        <div class="appearance-actions">
+                            <button type="button" class="icon-btn" id="global-bubble-save-btn" title="保存外观">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M15 20V15H9V20M18 20H6C4.89543 20 4 19.1046 4 18V6C4 4.89543 4.89543 4 6 4H14.1716C14.702 4 15.2107 4.21071 15.5858 4.58579L19.4142 8.41421C19.7893 8.78929 20 9.29799 20 9.82843V18C20 19.1046 19.1046 20 18 20Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <button type="button" class="icon-btn" id="global-bubble-export-btn" title="导出">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                            </button>
+                            <button type="button" class="icon-btn" id="global-bubble-import-btn" title="导入">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                            </button>
+                            <button type="button" class="icon-btn" id="global-bubble-manage-btn" title="管理">
+                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <input type="file" id="global-bubble-import-input" accept=".json" style="display: none;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="appearance-card top-fixed-card" id="bubble-css-preview-card">
+                <div id="global-bubble-css-preview" class="bubble-css-preview">
+                    <button type="button" id="preview-prev-btn" class="preview-nav-btn left">◀</button>
+                    <button type="button" id="preview-next-btn" class="preview-nav-btn right">▶</button>
+                    <div id="preview-inner-container" class="preview-inner"></div>
+                </div>
+                <div id="preview-mode-title" class="preview-title">预览：消息气泡</div>
+            </div>
+
+            <!-- 下半部分：分栏卡片 (侧边Tab + 内容区) -->
+            <div class="appearance-card" id="bottom-content-card">
+                <div class="bottom-btn-card" id="bottom-btn-card">
+                    <div class="bottom-btn">
+                        <button class="side-tab-btn active" data-pane="pane-basic">基础</button>
+                        <button class="side-tab-btn" data-pane="pane-css">高级</button>
+                    </div>
+                    <button type="button" class="action-btn" id="reset-basic-css-btn">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M17.65,6.35C16.2,4.9,14.21,4,12,4A8,8,0,0,0,4,12A8,8,0,0,0,12,20C15.73,20,18.84,17.45,19.73,14H17.65C16.83,16.33,14.61,18,12,18A6,6,0,0,1,6,12A6,6,0,0,1,12,6C13.66,6,15.14,6.69,16.22,7.78L13,11H20V4L17.65,6.35Z" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="pane-basic" class="content-pane active">
+                    <div class="bubble-settings-item row">
+                        <label>隐藏头像</label>
+                        <label class="switch"><input type="checkbox" id="setting-hide-avatar"><span class="slider round"></span></label>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>字体：</label>
+                        <input type="text" id="setting-custom-font" placeholder="例如: https://.../font.ttf">
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>气泡类型：</label>
+                        <select id="setting-bubble-type">
+                            <option value="normal">普通气泡</option>
+                            <option value="narration">旁白气泡</option>
+                            <option value="transfer">转账气泡</option>
+                            <option value="quote">引用气泡</option>
+                        </select>
+                        <select id="setting-bubble-side">
+                            <option value="sent">我方</option>
+                            <option value="received">对方</option>
+                        </select>
+                    </div>
+
+                    <!-- 分类气泡属性控制框 -->
+                    <div id="bubble-type-settings-box">
+                        <div class="bubble-settings-item"><label>当前正在修改：<span style="color:var(--primary-color);" id="current-type-label">普通气泡 - 我方</span></label></div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>气泡颜色：</label>
+                            <input type="color" id="setting-bg">
+                            <input type="text" id="setting-bg-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>不透明度：<span class="val-display" id="val-opacity">1</span></label>
+                            <input type="range" class="bubble-slider" id="setting-opacity" step="0.05" min="0" max="1">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>模糊度：<span class="val-display" id="val-blur">0</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-blur" min="0" max="20" step="1">
+                        </div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>字体颜色：</label>
+                            <input type="color" id="setting-fontcolor">
+                            <input type="text" id="setting-fontcolor-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>字体大小：<span class="val-display" id="val-fontsize">16</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-fontsize" min="12" max="24" step="1">
+                        </div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>描边颜色：</label>
+                            <input type="color" id="setting-stroke-c">
+                            <input type="text" id="setting-stroke-c-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>描边宽度：<span class="val-display" id="val-stroke-w">0</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-stroke-w" min="0" max="5" step="1">
+                        </div>
+                        <div class="bubble-settings-item row">
+                            <label>描边方向：</label>
+                            <label class="custom-check-label">
+                                <input type="checkbox" class="stroke-side-cb" value="top">
+                                <span class="custom-check-mark"></span> 上
+                            </label>
+                            <label class="custom-check-label">
+                                <input type="checkbox" class="stroke-side-cb" value="right">
+                                <span class="custom-check-mark"></span> 右
+                            </label>
+                            <label class="custom-check-label">
+                                <input type="checkbox" class="stroke-side-cb" value="bottom">
+                                <span class="custom-check-mark"></span> 下
+                            </label>
+                            <label class="custom-check-label">
+                                <input type="checkbox" class="stroke-side-cb" value="left">
+                                <span class="custom-check-mark"></span> 左
+                            </label>
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>边角弧度：<span class="val-display" id="val-radius">8</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-radius" min="0" max="30" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 栏目二：自定义 CSS -->
+                <div id="pane-css" class="content-pane">
+                    <textarea id="global-bubble-custom-css" placeholder="在此输入高级 CSS 代码..."></textarea>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+
+<!-- 消息通知设置页面 -->
+<div id="notification-settings-screen" class="screen">
+    <header class="app-header">
+        <button class="back-btn" data-target="chat-list-screen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="title-container">
+            <h1 class="title">消息通知</h1>
+        </div>
+        <div class="placeholder"></div>
+    </header>
+    <main class="content">        
+        
+        <!-- ================= 系统通知 ================= -->
+        <div class="settings-group-title">
+            <span>系统通知</span>
+            <svg class="settings-group-info-icon" onclick="showNotifyGroupInfo('system-notify')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+            </svg>
+        </div>
+        
+        <div class="settings-card">
+            <div class="settings-item toggle-setting">
+                <div class="setting-icon-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                        <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                    </svg>
+                </div>
+                <div class="item-details">
+                    <span class="item-name">允许系统通知</span>
+                </div>
+                <div class="settings-item-action">
+                    <label class="switch">
+                        <input type="checkbox" id="system-notification-toggle">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+            </div>
+        </div>
+        
+         
+        <!-- ================= 被主开关折叠的进阶区域 ================= -->
+        <div id="advanced-notification-settings" class="d-none">
+            
+            <!-- 通知内容 -->
+            <div class="settings-group-title">
+                <span>通知内容</span>
+                <svg class="settings-group-info-icon" onclick="showNotifyGroupInfo('notify-content')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+            </div>
+            
+            <div class="settings-card">
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">发送一条测试消息</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <botton class="btn-test" id="notify-test-btn">发送</botton>
+                    </div>
+                </div>
+
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 12 12 17 22 12"></polyline><polyline points="2 17 12 22 22 17"></polyline></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">折叠同一会话的消息</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <label class="switch">
+                            <input type="checkbox" id="notify-fold-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">显示角色 / 群名</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <label class="switch">
+                            <input type="checkbox" id="notify-showname-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.73 21a2 2 0 0 1-3.46 0"></path><path d="M18.63 13A17.89 17.89 0 0 1 18 8"></path><path d="M6.26 6.26A5.86 5.86 0 0 0 6 8c0 7-3 9-3 9h14"></path><path d="M18 8a6 6 0 0 0-9.33-5"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">静音通知</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <label class="switch">
+                            <input type="checkbox" id="notify-silent-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><circle cx="18" cy="6" r="3" fill="currentColor"></circle></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">桌面图标角标（红点）</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <label class="switch">
+                            <input type="checkbox" id="notify-badge-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 后台保活 -->
+            <div class="settings-group-title">
+                <span>后台保活</span>
+                <svg class="settings-group-info-icon" onclick="showNotifyGroupInfo('keepalive')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+            </div>
+            
+            <div class="settings-card">
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">允许后台持续保活</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <label class="switch">
+                            <input type="checkbox" id="notify-keepalive-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">后台保活时长（分钟）</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <input type="number" id="notify-keepalive-input" min="1" max="1440" value="30" class="form-control settings-input-number">
+                    </div>
+                </div>
+            </div>
+
+
+
+            <!-- 进阶：自定义推送节点 -->
+            <div class="settings-group-title">
+                <span>离线推送（实验）</span>
+                <svg class="settings-group-info-icon" onclick="showNotifyGroupInfo('push-node')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                </svg>
+            </div>
+            
+            <div class="settings-card">
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">启用推送节点</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <label class="switch">
+                            <input type="checkbox" id="push-node-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="settings-item column-layout">
+                    <div class="item-header">
+                        <div class="setting-icon-box">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                        </div>
+                        <span class="item-name">Worker 地址</span>
+                    </div>
+                    <input type="text" id="push-worker-url" class="form-control settings-input-text" placeholder="https://xxx.workers.dev">
+                </div>
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">生成 VAPID 密钥对</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <botton class="btn-test" id="push-gen-vapid">生成</botton>
+                    </div>
+                </div>               
+
+                <div class="settings-item column-layout">
+                    <div class="item-header">
+                        <div class="setting-icon-box">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                        </div>
+                        <span class="item-name">VAPID 公钥</span>
+                    </div>
+                    <input type="text" id="push-vapid-public" class="form-control settings-input-text" placeholder="生成或粘贴公钥">
+                </div>
+
+                <div class="settings-item column-layout">
+                    <div class="item-header">
+                        <div class="setting-icon-box">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                        </div>
+                        <span class="item-name">客户端令牌（可选）</span>
+                    </div>
+                    <input type="text" id="push-client-token" class="form-control settings-input-text" placeholder="留空表示不校验">
+                </div>
+
+                <!-- 私钥 (利用 .d-none 初始隐藏，JS会继续利用 parentElement 逻辑接管) -->
+                <div class="settings-item column-layout d-none">
+                    <div class="item-header">
+                        <div class="setting-icon-box text-warning">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>
+                        </div>
+                        <span class="item-name text-warning">VAPID 私钥</span>
+                    </div>
+                    <textarea id="push-vapid-private-display" readonly rows="2" class="form-control settings-textarea"></textarea>
+                </div>
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-name">发送推送测试消息</span>
+                    </div>
+                    <div class="settings-item-action">
+                        <botton class="btn-test" id="push-test-task-btn">发送</botton>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="settings-item-hint compact" id="push-node-hint"></div>
+
+
+        </div> <!-- /#advanced-notification-settings -->
+    </main>
+</div>
 
     <!-- 聊天室页面 -->
         <div id="chat-room-screen" class="screen">
@@ -517,6 +832,275 @@
                     <!-- Items will be populated by JS -->
                 </div>
             </div>
+<!-- ================== Private Chat Settings (侧边栏) ================== -->
+<div id="chat-settings-sidebar" class="settings-sidebar redesigned-sidebar">
+<div class="sidebar-top-section">
+        <!-- 1. 头像叠加居中区 -->
+        <div class="overlapping-avatars-center">
+            <div class="avatar-wrapper char-avatar-wrapper">
+                <img src="" alt="角色头像" id="setting-char-avatar-preview" class="avatar-preview">
+            </div>
+            <div class="avatar-wrapper user-avatar-wrapper">
+                <img src="" alt="我的头像" id="setting-my-avatar-preview" class="avatar-preview">
+            </div>
+        </div>
+
+        <!-- 2. 心跳折线 -->
+        <div class="heartbeat-divider">
+            <svg width="220" height="16" viewBox="0 0 220 16" preserveAspectRatio="none">
+                <!-- 折线在正中心 100-120 的位置跳动 -->
+                <path d="M0,8 L95,8 L100,2 L105,14 L110,6 L115,10 L120,8 L220,8" stroke="#90caf9" stroke-width="2" fill="none" stroke-linejoin="round"/>
+            </svg>
+        </div>
+
+        <!-- 3. 对称名字 -->
+        <div class="names-row">
+            <div class="name-block">
+                <span id="setting-char-remark-display" class="name-text-span">未设置</span>
+            </div>
+                        <div class="name-block">
+                <span id="setting-my-nickname-display" class="name-text-span">未设置</span>
+            </div>
+        </div>
+
+        <!-- 4. 对称按钮 -->
+        <div class="actions-row">
+            <!-- 左侧：角色操作 -->
+            <div class="action-group">
+                <div class="icon-btn-wrapper mini-btn edit-char-btn" id="sidebar-edit-char-btn" title="编辑角色">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </div>
+                                <div class="icon-btn-wrapper mini-btn" id="sidebar-peek-btn" title="偷看角色手机">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
+                </div>
+            </div>
+                        <!-- 右侧：用户操作 -->
+            <div class="action-group">
+                <div class="icon-btn-wrapper mini-btn" id="edit-user-persona-btn" title="编辑昵称">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                </div>
+                <div class="icon-btn-wrapper mini-btn" id="bind-user-persona-btn" title="更换身份">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 下半部分：白色底色，左上圆角，列表菜单 -->
+    <div class="sidebar-bottom-section">
+        <div class="bottom-header"></div>
+        
+        <form id="chat-settings-form" class="bottom-content-scroll">
+            
+<!-- ====== 隐藏的表单数据 ====== -->
+            <input type="file" id="setting-char-avatar-upload" accept="image/*" style="display:none;">
+            <!-- 把背景上传控件也集中放在这里隐藏，防止破坏 CSS 布局 -->
+            <input type="file" id="setting-chat-bg-upload" accept="image/*" style="display:none;">
+            
+            <input type="hidden" id="setting-char-real-name">
+            <input type="hidden" id="setting-char-remark">
+            <textarea id="setting-char-persona" style="display:none;"></textarea>
+            
+            <input type="hidden" id="setting-my-avatar-src">
+            <input type="hidden" id="setting-my-name">
+            <input type="hidden" id="setting-my-nickname">
+            <textarea id="setting-my-persona" style="display:none;"></textarea>
+            <span id="setting-my-realname-display" style="display:none;"></span>
+            
+            <!-- 隐藏的记忆轮数 Input，用来配合原有保存逻辑 -->
+            <input type="hidden" id="setting-max-memory" value="10">
+            <!-- ============================== -->
+
+            <!-- 设置项列表 -->
+            <div class="settings-card menu-list-style">
+                
+                <!-- 关联世界书 -->
+                <div class="settings-item" id="link-world-book-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-book"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+                    <div class="item-details"><span class="item-name">关联世界书</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                <!-- API 预设 -->
+<div class="settings-item">
+    <div class="setting-icon-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+    </div>
+    <div class="item-details"><span class="item-name">API 预设</span></div>
+    <select id="setting-chat-api-preset" class="inline-select"></select>
+    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+</div>
+                <!-- 最大记忆轮数 (Prompt触发) -->
+                <div class="settings-item" id="setting-max-memory-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-cpu"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg></div>
+                    <div class="item-details"><span class="item-name">最大记忆轮数</span></div>
+                    <span id="setting-max-memory-display" class="item-value">10</span>
+                    <svg class="chevron-icon" style="margin-left: 5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                                <!-- 时间感知 -->
+<div class="settings-item toggle-setting" style="cursor: default;">
+    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+    <div class="item-details"><span class="item-name">时间感知加强</span></div>
+    <label class="switch">
+        <input type="checkbox" id="setting-time-perception">
+        <span class="slider round"></span>
+    </label>
+</div>
+                <!-- 聊天气泡外观 -->
+                <div class="settings-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-message-circle"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></div>
+                    <div class="item-details"><span class="item-name">聊天气泡外观</span></div>
+                    <select id="setting-theme-color" class="inline-select"></select>
+                    <svg class="chevron-icon" style="margin-left: 5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                <!-- 双语聊天模式 -->
+                <div class="settings-item toggle-setting" style="cursor: default;">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-type"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg></div>
+                    <div class="item-details"><span class="item-name">双语聊天模式</span></div>
+                    <label class="switch">
+                        <input type="checkbox" id="setting-bilingual-mode">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <!-- 更换聊天背景 -->
+                <label class="settings-item" for="setting-chat-bg-upload" style="margin-bottom:0; cursor:pointer;">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-image"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
+                    <div class="item-details"><span class="item-name">更换聊天背景</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </label>                
+                <!-- 清空聊天记录 (移入菜单作为普通选项卡，红字/红图标预警) -->
+                <div class="settings-item" id="clear-chat-history-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></div>
+                    <div class="item-details"><span class="item-name">清空聊天记录</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+            </div>
+        </form>
+        <!-- 固定底部保存按钮（form 外） -->
+        <div class="bottom-actions sidebar-fixed-save">
+            <button type="submit" form="chat-settings-form" class="btn btn-primary action-btn-full">保存设置</button>
+        </div>
+    </div>
+</div>
+<!-- ================== Group Chat Settings (侧边栏) ================== -->
+<div id="group-settings-sidebar" class="settings-sidebar redesigned-sidebar">
+
+    <!-- 上半部分：灰色，群头像居中 + 群名称 -->
+    <div class="sidebar-top-section group-top-section">
+        <div class="group-avatar-center">
+            <img src="" alt="群头像" id="setting-group-avatar-preview" class="group-avatar-large">
+            <input type="file" id="setting-group-avatar-upload" accept="image/*" style="display:none;">
+        </div>
+        <div class="group-name-row">
+            <span id="setting-group-name-display" class="group-name-text">群聊名称</span>
+            <div class="icon-btn-wrapper mini-btn" id="sidebar-group-info-btn" title="群聊详情">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            </div>
+        </div>
+    </div>
+
+    <!-- 下半部分：白色底色，左上圆角，列表菜单 -->
+    <div class="sidebar-bottom-section">
+        <div class="bottom-header"></div>
+
+        <form id="group-settings-form" class="bottom-content-scroll">
+
+            <!-- ====== 隐藏字段（供保存逻辑读取）====== -->
+            <input type="hidden" id="setting-group-name">
+            <img src="" id="setting-group-my-avatar-preview" style="display:none;" alt="">
+            <input type="file" id="setting-group-my-avatar-upload" accept="image/*" style="display:none;">
+            <input type="hidden" id="setting-group-my-realname">
+            <input type="hidden" id="setting-group-my-nickname">
+            <textarea id="setting-group-my-persona" style="display:none;"></textarea>
+            <input type="hidden" id="setting-group-max-memory" value="10">
+            <input type="file" id="setting-group-chat-bg-upload" accept="image/*" style="display:none;">
+            <!-- ======================================= -->
+
+            <div class="settings-card menu-list-style">
+
+                <!-- ① 群成员 -->
+                <div class="settings-item group-members-item">
+                    <div class="setting-icon-box">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                    </div>
+                    <div class="item-details"><span class="item-name">群成员</span></div>
+                </div>
+                <!-- 成员头像网格（独立区块，不在 settings-item 内，避免撑坏布局） -->
+                <div class="group-members-grid-wrapper">
+                    <div class="group-members-list" id="group-members-list-container"></div>
+                </div>
+
+                <!-- ② 关联世界书 -->
+                <div class="settings-item" id="link-group-world-book-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
+                    <div class="item-details"><span class="item-name">关联世界书</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+<!-- API 预设 -->
+<div class="settings-item">
+    <div class="setting-icon-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+        </svg>
+    </div>
+    <div class="item-details"><span class="item-name">API 预设</span></div>
+    <select id="setting-group-api-preset" class="inline-select"></select>
+    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+</div>
+                <!-- ③ 最大记忆轮数 -->
+                <div class="settings-item" id="setting-group-max-memory-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg></div>
+                    <div class="item-details"><span class="item-name">最大记忆轮数</span></div>
+                    <span id="setting-group-max-memory-display" class="item-value">10</span>
+                    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                
+                <!-- ③-b 时间感知 -->
+<div class="settings-item toggle-setting" style="cursor: default;">
+    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+    <div class="item-details"><span class="item-name">时间感知加强</span></div>
+    <label class="switch">
+        <input type="checkbox" id="setting-group-time-perception">
+        <span class="slider round"></span>
+    </label>
+</div>
+
+                <!-- ④ 聊天气泡外观 -->
+                <div class="settings-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></div>
+                    <div class="item-details"><span class="item-name">聊天气泡外观</span></div>
+                    <select id="setting-group-theme-color" class="inline-select"></select>
+                    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+
+                <!-- ⑤ 更换聊天背景 -->
+                <label class="settings-item" for="setting-group-chat-bg-upload" style="margin-bottom:0; cursor:pointer;">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
+                    <div class="item-details"><span class="item-name">更换聊天背景</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </label>
+
+                <!-- ⑥ 清空聊天记录 -->
+                <div class="settings-item danger-item" id="clear-group-chat-history-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></div>
+                    <div class="item-details"><span class="item-name">清空聊天记录</span></div>
+                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+
+            </div>
+        </form>
+
+        <!-- 固定底部保存按钮（在 form 外，用 form 属性关联） -->
+        <div class="bottom-actions sidebar-fixed-save">
+            <button type="submit" form="group-settings-form" class="btn btn-primary action-btn-full">保存设置</button>
+        </div>
+    </div>
+</div>
         </div>
 
 <!-- ================== 独立页面：用户档案编辑 ================== -->
@@ -771,7 +1355,6 @@
   </div>
 </div>
 
-<!-- ================== Group Info Screen ================== -->
 <!-- ================== Group Info Screen ================== -->
 <div id="group-info-screen" class="screen">
 
@@ -1664,277 +2247,8 @@
         </div>
         <input type="file" id="image-upload-input" accept="image/*" style="display:none;">
 
-<!-- ================== Private Chat Settings (侧边栏) ================== -->
-<div id="chat-settings-sidebar" class="settings-sidebar redesigned-sidebar">
-<div class="sidebar-top-section">
-        <!-- 1. 头像叠加居中区 -->
-        <div class="overlapping-avatars-center">
-            <div class="avatar-wrapper char-avatar-wrapper">
-                <img src="" alt="角色头像" id="setting-char-avatar-preview" class="avatar-preview">
-            </div>
-            <div class="avatar-wrapper user-avatar-wrapper">
-                <img src="" alt="我的头像" id="setting-my-avatar-preview" class="avatar-preview">
-            </div>
-        </div>
-
-        <!-- 2. 心跳折线 -->
-        <div class="heartbeat-divider">
-            <svg width="220" height="16" viewBox="0 0 220 16" preserveAspectRatio="none">
-                <!-- 折线在正中心 100-120 的位置跳动 -->
-                <path d="M0,8 L95,8 L100,2 L105,14 L110,6 L115,10 L120,8 L220,8" stroke="#90caf9" stroke-width="2" fill="none" stroke-linejoin="round"/>
-            </svg>
-        </div>
-
-        <!-- 3. 对称名字 -->
-        <div class="names-row">
-            <div class="name-block">
-                <span id="setting-char-remark-display" class="name-text-span">未设置</span>
-            </div>
-                        <div class="name-block">
-                <span id="setting-my-nickname-display" class="name-text-span">未设置</span>
-            </div>
-        </div>
-
-        <!-- 4. 对称按钮 -->
-        <div class="actions-row">
-            <!-- 左侧：角色操作 -->
-            <div class="action-group">
-                <div class="icon-btn-wrapper mini-btn edit-char-btn" id="sidebar-edit-char-btn" title="编辑角色">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                </div>
-                                <div class="icon-btn-wrapper mini-btn" id="sidebar-peek-btn" title="偷看角色手机">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect><line x1="12" y1="18" x2="12.01" y2="18"></line></svg>
-                </div>
-            </div>
-                        <!-- 右侧：用户操作 -->
-            <div class="action-group">
-                <div class="icon-btn-wrapper mini-btn" id="edit-user-persona-btn" title="编辑昵称">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-                </div>
-                <div class="icon-btn-wrapper mini-btn" id="bind-user-persona-btn" title="更换身份">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 下半部分：白色底色，左上圆角，列表菜单 -->
-    <div class="sidebar-bottom-section">
-        <div class="bottom-header"></div>
-        
-        <form id="chat-settings-form" class="bottom-content-scroll">
-            
-<!-- ====== 隐藏的表单数据 ====== -->
-            <input type="file" id="setting-char-avatar-upload" accept="image/*" style="display:none;">
-            <!-- 把背景上传控件也集中放在这里隐藏，防止破坏 CSS 布局 -->
-            <input type="file" id="setting-chat-bg-upload" accept="image/*" style="display:none;">
-            
-            <input type="hidden" id="setting-char-real-name">
-            <input type="hidden" id="setting-char-remark">
-            <textarea id="setting-char-persona" style="display:none;"></textarea>
-            
-            <input type="hidden" id="setting-my-avatar-src">
-            <input type="hidden" id="setting-my-name">
-            <input type="hidden" id="setting-my-nickname">
-            <textarea id="setting-my-persona" style="display:none;"></textarea>
-            <span id="setting-my-realname-display" style="display:none;"></span>
-            
-            <!-- 隐藏的记忆轮数 Input，用来配合原有保存逻辑 -->
-            <input type="hidden" id="setting-max-memory" value="10">
-            <!-- ============================== -->
-
-            <!-- 设置项列表 -->
-            <div class="settings-card menu-list-style">
-                
-                <!-- 关联世界书 -->
-                <div class="settings-item" id="link-world-book-btn">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-book"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
-                    <div class="item-details"><span class="item-name">关联世界书</span></div>
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-                <!-- API 预设 -->
-<div class="settings-item">
-    <div class="setting-icon-box">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-        </svg>
-    </div>
-    <div class="item-details"><span class="item-name">API 预设</span></div>
-    <select id="setting-chat-api-preset" class="inline-select"></select>
-    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-</div>
-                <!-- 最大记忆轮数 (Prompt触发) -->
-                <div class="settings-item" id="setting-max-memory-item">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-cpu"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg></div>
-                    <div class="item-details"><span class="item-name">最大记忆轮数</span></div>
-                    <span id="setting-max-memory-display" class="item-value">10</span>
-                    <svg class="chevron-icon" style="margin-left: 5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-                                <!-- 时间感知 -->
-<div class="settings-item toggle-setting" style="cursor: default;">
-    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
-    <div class="item-details"><span class="item-name">时间感知加强</span></div>
-    <label class="switch">
-        <input type="checkbox" id="setting-time-perception">
-        <span class="slider round"></span>
-    </label>
-</div>
-                <!-- 聊天气泡外观 -->
-                <div class="settings-item">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-message-circle"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></div>
-                    <div class="item-details"><span class="item-name">聊天气泡外观</span></div>
-                    <select id="setting-theme-color" class="inline-select"></select>
-                    <svg class="chevron-icon" style="margin-left: 5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-                <!-- 双语聊天模式 -->
-                <div class="settings-item toggle-setting" style="cursor: default;">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-type"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg></div>
-                    <div class="item-details"><span class="item-name">双语聊天模式</span></div>
-                    <label class="switch">
-                        <input type="checkbox" id="setting-bilingual-mode">
-                        <span class="slider round"></span>
-                    </label>
-                </div>
-                <!-- 更换聊天背景 -->
-                <label class="settings-item" for="setting-chat-bg-upload" style="margin-bottom:0; cursor:pointer;">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-image"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
-                    <div class="item-details"><span class="item-name">更换聊天背景</span></div>
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </label>                
-                <!-- 清空聊天记录 (移入菜单作为普通选项卡，红字/红图标预警) -->
-                <div class="settings-item" id="clear-chat-history-btn">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></div>
-                    <div class="item-details"><span class="item-name">清空聊天记录</span></div>
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-            </div>
-        </form>
-        <!-- 固定底部保存按钮（form 外） -->
-        <div class="bottom-actions sidebar-fixed-save">
-            <button type="submit" form="chat-settings-form" class="btn btn-primary action-btn-full">保存设置</button>
-        </div>
-    </div>
-</div>
 
 
-<!-- ================== Group Chat Settings (侧边栏) ================== -->
-<div id="group-settings-sidebar" class="settings-sidebar redesigned-sidebar">
-
-    <!-- 上半部分：灰色，群头像居中 + 群名称 -->
-    <div class="sidebar-top-section group-top-section">
-        <div class="group-avatar-center">
-            <img src="" alt="群头像" id="setting-group-avatar-preview" class="group-avatar-large">
-            <input type="file" id="setting-group-avatar-upload" accept="image/*" style="display:none;">
-        </div>
-        <div class="group-name-row">
-            <span id="setting-group-name-display" class="group-name-text">群聊名称</span>
-            <div class="icon-btn-wrapper mini-btn" id="sidebar-group-info-btn" title="群聊详情">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            </div>
-        </div>
-    </div>
-
-    <!-- 下半部分：白色底色，左上圆角，列表菜单 -->
-    <div class="sidebar-bottom-section">
-        <div class="bottom-header"></div>
-
-        <form id="group-settings-form" class="bottom-content-scroll">
-
-            <!-- ====== 隐藏字段（供保存逻辑读取）====== -->
-            <input type="hidden" id="setting-group-name">
-            <img src="" id="setting-group-my-avatar-preview" style="display:none;" alt="">
-            <input type="file" id="setting-group-my-avatar-upload" accept="image/*" style="display:none;">
-            <input type="hidden" id="setting-group-my-realname">
-            <input type="hidden" id="setting-group-my-nickname">
-            <textarea id="setting-group-my-persona" style="display:none;"></textarea>
-            <input type="hidden" id="setting-group-max-memory" value="10">
-            <input type="file" id="setting-group-chat-bg-upload" accept="image/*" style="display:none;">
-            <!-- ======================================= -->
-
-            <div class="settings-card menu-list-style">
-
-                <!-- ① 群成员 -->
-                <div class="settings-item group-members-item">
-                    <div class="setting-icon-box">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
-                    </div>
-                    <div class="item-details"><span class="item-name">群成员</span></div>
-                </div>
-                <!-- 成员头像网格（独立区块，不在 settings-item 内，避免撑坏布局） -->
-                <div class="group-members-grid-wrapper">
-                    <div class="group-members-list" id="group-members-list-container"></div>
-                </div>
-
-                <!-- ② 关联世界书 -->
-                <div class="settings-item" id="link-group-world-book-btn">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg></div>
-                    <div class="item-details"><span class="item-name">关联世界书</span></div>
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-<!-- API 预设 -->
-<div class="settings-item">
-    <div class="setting-icon-box">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-            <line x1="12" y1="22.08" x2="12" y2="12"></line>
-        </svg>
-    </div>
-    <div class="item-details"><span class="item-name">API 预设</span></div>
-    <select id="setting-group-api-preset" class="inline-select"></select>
-    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-</div>
-                <!-- ③ 最大记忆轮数 -->
-                <div class="settings-item" id="setting-group-max-memory-item">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg></div>
-                    <div class="item-details"><span class="item-name">最大记忆轮数</span></div>
-                    <span id="setting-group-max-memory-display" class="item-value">10</span>
-                    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-                
-                <!-- ③-b 时间感知 -->
-<div class="settings-item toggle-setting" style="cursor: default;">
-    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
-    <div class="item-details"><span class="item-name">时间感知加强</span></div>
-    <label class="switch">
-        <input type="checkbox" id="setting-group-time-perception">
-        <span class="slider round"></span>
-    </label>
-</div>
-
-                <!-- ④ 聊天气泡外观 -->
-                <div class="settings-item">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg></div>
-                    <div class="item-details"><span class="item-name">聊天气泡外观</span></div>
-                    <select id="setting-group-theme-color" class="inline-select"></select>
-                    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-
-                <!-- ⑤ 更换聊天背景 -->
-                <label class="settings-item" for="setting-group-chat-bg-upload" style="margin-bottom:0; cursor:pointer;">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></div>
-                    <div class="item-details"><span class="item-name">更换聊天背景</span></div>
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </label>
-
-                <!-- ⑥ 清空聊天记录 -->
-                <div class="settings-item danger-item" id="clear-group-chat-history-btn">
-                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></div>
-                    <div class="item-details"><span class="item-name">清空聊天记录</span></div>
-                    <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-                </div>
-
-            </div>
-        </form>
-
-        <!-- 固定底部保存按钮（在 form 外，用 form 属性关联） -->
-        <div class="bottom-actions sidebar-fixed-save">
-            <button type="submit" form="group-settings-form" class="btn btn-primary action-btn-full">保存设置</button>
-        </div>
-    </div>
-</div>
 
 <!-- 总结页面 -->
 <div id="memory-journal-screen" class="screen">
@@ -3483,6 +3797,75 @@
             </div>
         </div>
     </main>
+<!-- ToDouo主页设置侧边栏 -->
+<div id="study-profile-sidebar" class="settings-sidebar">
+  <div class="header">个性设置</div>
+  <div class="bottom-content-scroll" id="st-sidebar-content">
+
+    <div class="settings-card menu-list-style">
+
+        <!-- 主页昵称 -->
+        <div class="settings-item" id="st-home-name-btn" style="cursor:pointer;">
+          <div class="setting-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              <circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div class="item-details"><span class="item-name">主页昵称</span></div>
+          <span class="item-value st-sidebar-meta-val" id="st-home-name-val"></span>
+          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+
+        <!-- 主页问候语 -->
+        <div class="settings-item" id="st-home-greeting-btn" style="cursor:pointer;">
+          <div class="setting-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </div>
+          <div class="item-details"><span class="item-name">主页问候语</span></div>
+          <span class="item-value st-sidebar-meta-val" id="st-home-greeting-val"></span>
+          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+
+        <!-- 文字 API -->
+        <div class="settings-item">
+          <div class="setting-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <div class="item-details"><span class="item-name">文字api</span></div>
+          <select id="st-api-text-select" class="inline-select"><!-- JS 填充 --></select>
+          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+
+        <!-- 向量 API -->
+        <div class="settings-item">
+          <div class="setting-icon-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="12" cy="12" r="3"/>
+              <circle cx="12" cy="12" r="9"/>
+              <line x1="12" y1="3" x2="12" y2="6"/>
+              <line x1="12" y1="18" x2="12" y2="21"/>
+              <line x1="3" y1="12" x2="6" y2="12"/>
+              <line x1="18" y1="12" x2="21" y2="12"/>
+            </svg>
+          </div>
+          <div class="item-details"><span class="item-name">向量api</span></div>
+          <select id="st-api-embedding-select" class="inline-select"><!-- JS 填充 --></select>
+          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+
+      </div>
+
+  </div>
+</div>
+<!-- 遮罩：点击空白处收起 -->
+<div id="study-profile-overlay" class="reader-toc-overlay"></div>
 </div>
 
 <!-- 独立书架页面 -->
@@ -4676,75 +5059,6 @@
   </div>
 </div>
 
-<!-- ToDouo主页设置侧边栏 -->
-<div id="study-profile-sidebar" class="settings-sidebar">
-  <div class="header">个性设置</div>
-  <div class="bottom-content-scroll" id="st-sidebar-content">
-
-    <div class="settings-card menu-list-style">
-
-        <!-- 主页昵称 -->
-        <div class="settings-item" id="st-home-name-btn" style="cursor:pointer;">
-          <div class="setting-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-              <circle cx="12" cy="7" r="4"/>
-            </svg>
-          </div>
-          <div class="item-details"><span class="item-name">主页昵称</span></div>
-          <span class="item-value st-sidebar-meta-val" id="st-home-name-val"></span>
-          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-
-        <!-- 主页问候语 -->
-        <div class="settings-item" id="st-home-greeting-btn" style="cursor:pointer;">
-          <div class="setting-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-            </svg>
-          </div>
-          <div class="item-details"><span class="item-name">主页问候语</span></div>
-          <span class="item-value st-sidebar-meta-val" id="st-home-greeting-val"></span>
-          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-
-        <!-- 文字 API -->
-        <div class="settings-item">
-          <div class="setting-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
-              <line x1="12" y1="22.08" x2="12" y2="12"/>
-            </svg>
-          </div>
-          <div class="item-details"><span class="item-name">文字api</span></div>
-          <select id="st-api-text-select" class="inline-select"><!-- JS 填充 --></select>
-          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-
-        <!-- 向量 API -->
-        <div class="settings-item">
-          <div class="setting-icon-box">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-              <circle cx="12" cy="12" r="3"/>
-              <circle cx="12" cy="12" r="9"/>
-              <line x1="12" y1="3" x2="12" y2="6"/>
-              <line x1="12" y1="18" x2="12" y2="21"/>
-              <line x1="3" y1="12" x2="6" y2="12"/>
-              <line x1="18" y1="12" x2="21" y2="12"/>
-            </svg>
-          </div>
-          <div class="item-details"><span class="item-name">向量api</span></div>
-          <select id="st-api-embedding-select" class="inline-select"><!-- JS 填充 --></select>
-          <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </div>
-
-      </div>
-
-  </div>
-</div>
-<!-- 遮罩：点击空白处收起 -->
-<div id="study-profile-overlay" class="reader-toc-overlay"></div>
 
 
 
@@ -4776,6 +5090,67 @@
                 </div>
                 <p class="placeholder-text" id="pomodoro-no-tasks-placeholder">还没有专注任务，点击右上角“+”创建一个吧。</p>
             </main>
+        <!-- Pomodoro Settings Sidebar -->
+        <div id="pomodoro-settings-sidebar" class="settings-sidebar">
+            <div class="header">专注设置</div>
+            <div class="content">
+                <form id="pomodoro-settings-form">
+                    <div class="form-group">
+                        <label for="pomodoro-char-select">绑定陪伴角色</label>
+                        <select id="pomodoro-char-select" class="form-group"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-user-persona-select">选择你的设定</label>
+                        <select id="pomodoro-user-persona-select" class="form-group"></select>
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="pomodoro-encouragement-minutes">鼓励机制 (分钟)</label>
+                        <input type="number" id="pomodoro-encouragement-minutes" class="form-group"
+                            placeholder="专注多少分钟后收到鼓励" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-poke-limit">“戳一戳”次数上限</label>
+                        <input type="number" id="pomodoro-poke-limit" class="form-group" placeholder="每次专注允许戳几次"
+                            min="0">
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="pomodoro-focus-bg-url">专注界面背景 URL</label>
+                        <input type="url" id="pomodoro-focus-bg-url" class="form-group" placeholder="粘贴图片URL">
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-focus-bg-upload" class="btn btn-secondary">或从本地上传</label>
+                        <input type="file" id="pomodoro-focus-bg-upload" accept="image/*" style="display:none;">
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="pomodoro-task-card-bg-url">任务卡片背景 URL</label>
+                        <input type="url" id="pomodoro-task-card-bg-url" class="form-group" placeholder="粘贴图片URL">
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-task-card-bg-upload" class="btn btn-secondary">或从本地上传</label>
+                        <input type="file" id="pomodoro-task-card-bg-upload" accept="image/*" style="display:none;">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">保存设置</button>
+                </form>
+            </div>
+        </div>
+        <!-- Pomodoro Global Settings Sidebar -->
+        <div id="pomodoro-global-settings-sidebar" class="settings-sidebar">
+            <div class="header">全局专注设置</div>
+            <div class="content">
+                <form id="pomodoro-global-settings-form">
+                    <div class="form-group">
+                        <button type="button" class="btn btn-secondary"
+                            id="link-global-pomodoro-world-book-btn">关联世界书</button>
+                    </div>
+                    <p style="font-size: 12px; color: #888; margin-top: 15px;">
+                        这里关联的世界书将作为全局上下文，作用于所有番茄钟任务的AI互动。
+                    </p>
+                </form>
+            </div>
+        </div>
         </div>
         <!-- Pomodoro Focus Screen -->
         <div id="pomodoro-focus-screen" class="screen">
@@ -4839,68 +5214,7 @@
             </main>
         </div>
 
-        <!-- Pomodoro Settings Sidebar -->
-        <div id="pomodoro-settings-sidebar" class="settings-sidebar">
-            <div class="header">专注设置</div>
-            <div class="content">
-                <form id="pomodoro-settings-form">
-                    <div class="form-group">
-                        <label for="pomodoro-char-select">绑定陪伴角色</label>
-                        <select id="pomodoro-char-select" class="form-group"></select>
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-user-persona-select">选择你的设定</label>
-                        <select id="pomodoro-user-persona-select" class="form-group"></select>
-                    </div>
-                    <hr>
-                    <div class="form-group">
-                        <label for="pomodoro-encouragement-minutes">鼓励机制 (分钟)</label>
-                        <input type="number" id="pomodoro-encouragement-minutes" class="form-group"
-                            placeholder="专注多少分钟后收到鼓励" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-poke-limit">“戳一戳”次数上限</label>
-                        <input type="number" id="pomodoro-poke-limit" class="form-group" placeholder="每次专注允许戳几次"
-                            min="0">
-                    </div>
-                    <hr>
-                    <div class="form-group">
-                        <label for="pomodoro-focus-bg-url">专注界面背景 URL</label>
-                        <input type="url" id="pomodoro-focus-bg-url" class="form-group" placeholder="粘贴图片URL">
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-focus-bg-upload" class="btn btn-secondary">或从本地上传</label>
-                        <input type="file" id="pomodoro-focus-bg-upload" accept="image/*" style="display:none;">
-                    </div>
-                    <hr>
-                    <div class="form-group">
-                        <label for="pomodoro-task-card-bg-url">任务卡片背景 URL</label>
-                        <input type="url" id="pomodoro-task-card-bg-url" class="form-group" placeholder="粘贴图片URL">
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-task-card-bg-upload" class="btn btn-secondary">或从本地上传</label>
-                        <input type="file" id="pomodoro-task-card-bg-upload" accept="image/*" style="display:none;">
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">保存设置</button>
-                </form>
-            </div>
-        </div>
 
-        <!-- Pomodoro Global Settings Sidebar -->
-        <div id="pomodoro-global-settings-sidebar" class="settings-sidebar">
-            <div class="header">全局专注设置</div>
-            <div class="content">
-                <form id="pomodoro-global-settings-form">
-                    <div class="form-group">
-                        <button type="button" class="btn btn-secondary"
-                            id="link-global-pomodoro-world-book-btn">关联世界书</button>
-                    </div>
-                    <p style="font-size: 12px; color: #888; margin-top: 15px;">
-                        这里关联的世界书将作为全局上下文，作用于所有番茄钟任务的AI互动。
-                    </p>
-                </form>
-            </div>
-        </div>
 
 
 <!-- === 全局通用系统弹窗 (复用现有组件样式) === -->
@@ -6286,6 +6600,7 @@
 <!-- js文件引入开始 -->
 <script src="js/core/globals.js"></script>
 <script src="js/core/database.js"></script>
+<script src="js/core/lazy_load.js"></script>
 <script src="js/core/utils.js"></script>
 
 <!-- 设置页面 -->
@@ -6318,6 +6633,8 @@
     <script src="js/chat/chat_feature_basic.js"></script>
     <script src="js/chat/chat_feature_offline.js"></script>
     <script src="js/chat/chat_feature_proactive.js"></script>
+    <script src="js/chat/notification_center.js"></script>
+    <script src="js/chat/push_node.js"></script>
     <script src="js/chat/chat_feature_call.js"></script>
     <script src="js/chat/chat_ai_service.js"></script>
     <script src="js/chat/chat_bubble_factory.js"></script>
