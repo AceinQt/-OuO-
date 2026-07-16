@@ -475,13 +475,24 @@ function parseAndSavePeekProactiveHitchhiker(char, textBlock) {
 
         let allKeys = Object.keys(existingPeek.content);
         if (allKeys.length > 10) {
-            allKeys.sort((a, b) => (existingPeek.content[a].generatedAt || 0) - (existingPeek.content[b].generatedAt || 0));
-            let keysToKeep = allKeys.slice(-10);
+            // 已移交 CF 但未物化的话题必须保留：其标记若随裁剪丢失，会导致守卫失效→重复排期、推送与物化分叉。
+            // 其余话题按 generatedAt 由旧到新，填满剩余名额。
+            const c = existingPeek.content;
+            const isPinned = k => c[k] && c[k]._cfHandedOff && !c[k]._cfMaterialized;
+            const pinned = allKeys.filter(isPinned);
+            const rest = allKeys.filter(k => !isPinned(k))
+                .sort((a, b) => (c[a].generatedAt || 0) - (c[b].generatedAt || 0));
+            const room = Math.max(0, 10 - pinned.length);
+            const keysToKeep = pinned.concat(rest.slice(-room));
             let newContent = {};
-            keysToKeep.forEach(k => newContent[k] = existingPeek.content[k]);
+            keysToKeep.forEach(k => newContent[k] = c[k]);
             existingPeek.content = newContent;
         }
         console.log(`[话题] 成功提取 ${Object.keys(proactiveOptions).length} 组话题，当前备用池容量: ${Object.keys(existingPeek.content).length}/10`);
+        // 生成完 peek 话题立即移交给 CF 推送节点（未启用则内部跳过）
+        if (window.PushNode && typeof window.PushNode.handoffChat === 'function') {
+            window.PushNode.handoffChat(char.id).catch(() => {});
+        }
     } else {
         console.warn(`[话题] 未抓取到符合格式的话题数据，AI原始文本：\n`, textBlock);
     }
