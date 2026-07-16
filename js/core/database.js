@@ -11,7 +11,11 @@ const globalSettingKeys =[
     'enableScreenAdaptation',
     'enableSwipeBack',
     // ★ 学习模块设置（绑定人设/API预设，存量小放 globalSettings）
-    'studySettings'
+    'studySettings',
+    // ★ 系统消息通知设置（总开关 / 全局后台保活时长）
+    'globalNotifySettings',
+    // ★ 进阶推送节点设置（CF Worker 地址 / VAPID 公钥 / 令牌 / 订阅凭证）
+    'globalPushSettings'
 ];
 
 // 2. 初始化内存数据库对象 (db) -> 唯一来源
@@ -41,6 +45,19 @@ window.db = {
     enableBottomSafeArea: true,
     enableScreenAdaptation: false,
     enableSwipeBack: false,
+
+    // ★ 系统消息通知设置
+    //   enabled: 总开关（是否弹系统通知，含桌面角标）
+    //   keepAliveMinutes: 全局后台保活时长（分钟）——与按聊天保活取较大值
+    //   foldMessages: 同一会话多条消息是否折叠成一条通知
+    //   showSenderName: 通知里是否显示角色/群名
+    //   silent: 静音通知（弹出但不响铃/不振动）
+    globalNotifySettings: { enabled: false, keepAliveMinutes: 30, foldMessages: true, showSenderName: true, silent: false },
+
+    // ★ 进阶推送节点（CF Worker）设置
+    //   enabled: 总开关；workerUrl: Worker 地址；vapidPublicKey/vapidPrivateKey: VAPID 密钥
+    //   clientToken: 与 Worker 的 CLIENT_TOKEN 对应；subscription: 浏览器推送订阅凭证
+    globalPushSettings: { enabled: false, workerUrl: '', vapidPublicKey: '', vapidPrivateKey: '', clientToken: '', subscription: null },
     homeStatusBarColor: '#ffffff',
     homeNavigationBarColor: '#ffffff',
 
@@ -184,6 +201,15 @@ dexieDB.version(12).stores({
     console.log("Upgrading database to version 12 (studyBookSummaries table added)...");
 });
 
+// ★★★ Version 13（懒加载：messages 加复合索引 [chatId+timestamp]）★★★
+// 仅新增一个复合索引，不修改任何消息数据。Dexie 升级时会自动扫一遍现有数据建索引。
+// 用途：让 loadRecentMessages 能"按时间直接取最近 N 条"，而不必把全表读进内存。
+dexieDB.version(13).stores({
+    messages: '&id, chatId, timestamp, [chatId+timestamp]',
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 13 (messages compound index [chatId+timestamp] added)...");
+});
+
 window.loadData = async () => {
     try {
         console.log("📦 正在加载数据...");
@@ -202,7 +228,7 @@ window.loadData = async () => {
             dexieDB.characters.toArray(), dexieDB.groups.toArray(), dexieDB.worldBooks.toArray(),
             dexieDB.myStickers.toArray(), dexieDB.globalSettings.toArray(), dexieDB.userPersonas.toArray(),
             dexieDB.forumPosts.toArray(), dexieDB.rpgProfiles.toArray(), dexieDB.forumMetadata.toArray(),
-            dexieDB.peekData.toArray(), dexieDB.messages.toArray(),
+            dexieDB.peekData.toArray(), (window.LAZY_LOAD ? null : dexieDB.messages.toArray()),
             dexieDB.studyBooks.toArray(), dexieDB.studyQuestions.toArray(), dexieDB.studyRecords.toArray(), dexieDB.studyBanks.toArray(), dexieDB.studyExams.toArray(), dexieDB.studyExamRecords.toArray(), 
             dexieDB.memories.toArray(),
             dexieDB.memoryChunks.toArray(),
@@ -223,10 +249,20 @@ window.loadData = async () => {
         }
 
         const messagesByChatId = {};
-        newMessages.forEach(m => {
-            if (!messagesByChatId[m.chatId]) messagesByChatId[m.chatId] = [];
-            messagesByChatId[m.chatId].push(m);
-        });
+        if (window.LAZY_LOAD) {
+            // ★ Step 2 懒加载：每个 chat 只取最近 LAZY_LOAD_LIMIT 条（按时间，loadRecentMessages 内已用铁律排序）
+            //   只读 limit 条进内存，不全量 toArray —— 这是省内存的核心。
+            const allIds = [...characters.map(c => c.id), ...groups.map(g => g.id)];
+            await Promise.all(allIds.map(async id => {
+                messagesByChatId[id] = await window.loadRecentMessages(id, window.LAZY_LOAD_LIMIT);
+            }));
+            console.log(`📦 [懒加载] 已为 ${allIds.length} 个会话各载入最近 ${window.LAZY_LOAD_LIMIT} 条消息（全量载入已跳过）`);
+        } else {
+            newMessages.forEach(m => {
+                if (!messagesByChatId[m.chatId]) messagesByChatId[m.chatId] = [];
+                messagesByChatId[m.chatId].push(m);
+            });
+        }
 
         // =========================================================
         // 将消息挂载回内存对象，对老代码的逻辑保持完全隐形
@@ -237,6 +273,16 @@ window.loadData = async () => {
 
         characters.forEach(c => { c.history = messagesByChatId[c.id] ||[]; });
         groups.forEach(g => { g.history = messagesByChatId[g.id] ||[]; });
+
+        // ★ Step 2.5：maxMemory 上限 1000。
+        //   内存窗口 N=1500 必须严格大于 maxMemory 上限，否则 slice(-maxMemory) 会取到窗口外的"已驱逐"消息。
+        //   这里对历史/导入数据做防御性 cap；UI 输入端在 chat_settings/group_settings 里也各自 cap。
+        const _capMaxMemory = (obj) => {
+            const m = parseInt(obj.maxMemory, 10);
+            if (!isNaN(m) && m > 1000) obj.maxMemory = 1000;
+        };
+        characters.forEach(_capMaxMemory);
+        groups.forEach(_capMaxMemory);
 
         // =========================================================
         // ★ V7 向量迁移：memoryChunks → memoryChunks 独立表
@@ -466,7 +512,8 @@ window.saveData = async () => {
 
     // 2. 用户档案
     try {
-        if (db.userPersonas && db.userPersonas.length > 0) await dexieDB.userPersonas.bulkPut(JSON.parse(JSON.stringify(db.userPersonas)));
+        // ★ B-4：Dexie bulkPut 内部走结构化克隆序列化，前置深拷贝是重复劳动且占双倍内存
+        if (db.userPersonas && db.userPersonas.length > 0) await dexieDB.userPersonas.bulkPut(db.userPersonas);
         else if (db.userPersonas && db.userPersonas.length === 0) await dexieDB.userPersonas.clear();
     } catch (e) { console.error("❌ 用户档案保存失败:", e); }
 
@@ -477,7 +524,8 @@ window.saveData = async () => {
 
     // 4. RPG 存档
     try {
-        if (db.rpgProfiles && db.rpgProfiles.length > 0) await dexieDB.rpgProfiles.bulkPut(JSON.parse(JSON.stringify(db.rpgProfiles)));
+        // ★ B-4：同上，去掉前置深拷贝
+        if (db.rpgProfiles && db.rpgProfiles.length > 0) await dexieDB.rpgProfiles.bulkPut(db.rpgProfiles);
         else if (db.rpgProfiles && db.rpgProfiles.length === 0) await dexieDB.rpgProfiles.clear();
     } catch (e) { console.error("❌ RPG保存失败:", e); }
 
@@ -496,7 +544,8 @@ window.saveData = async () => {
     try {
         // 将内存中的字典对象转为数组存入数据库
         const peekArray = Object.entries(db.peekData).map(([charId, data]) => ({ charId: charId, data: data }));
-        if(peekArray.length > 0) await dexieDB.peekData.bulkPut(JSON.parse(JSON.stringify(peekArray)));
+        // ★ B-4：peekArray 是新构造的数组，无需再深拷贝
+        if(peekArray.length > 0) await dexieDB.peekData.bulkPut(peekArray);
     } catch (e) { console.error("❌ Peek数据保存失败:", e); }
 
     // 7. 论坛设置
