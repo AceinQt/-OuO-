@@ -229,14 +229,24 @@
     height: 100%;
     background: #fff;
     box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
-    transition: right 0.4s ease-in-out;
+    transition: right 0.4s ease-in-out, visibility 0s linear 0.4s;
     z-index: 101;
     display: flex;
     flex-direction: column;
+    /* 未打开时彻底不可见 / 不可交互：即使容器被输入框聚焦等程序性横向滚动带偏，
+       离屏侧边栏也不会露出或拦截手势（根治“专注侧边栏串页”bug）。
+       visibility 延迟 0.4s 才切回 hidden，保证滑出动画完整播放。 */
+    visibility: hidden;
+    pointer-events: none;
 }
 
-.settings-sidebar.open {
+/* .open（chat/group/pomodoro/reader）与 .active（chat-list/study-profile）两种打开态都恢复可见 */
+.settings-sidebar.open,
+.settings-sidebar.active {
     right: 0;
+    visibility: visible;
+    pointer-events: auto;
+    transition: right 0.4s ease-in-out, visibility 0s linear 0s;
 }
 
 .settings-sidebar .header {
