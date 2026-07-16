@@ -687,7 +687,7 @@ async function checkAndDeliverProactiveMessages() {
 let bgAudioElement = null;
 let bgTimeoutId = null;        
 let generationTimeoutId = null; 
-const keepAliveAudioSrc = "./audio/keepalive.mp3";
+const keepAliveAudioSrc = "./icon/keepalive.mp3";
 
 // ==========================================
 // 【新增修复】：彻底销毁音频和通知栏播放卡片
