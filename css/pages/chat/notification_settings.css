@@ -1,0 +1,153 @@
+#notification-settings-screen {
+    background-color: var(--gray-color);  /* 与存储页面一致的浅灰色背景 */   
+}
+
+#notification-settings-screen .app-header {
+    background-color: var(--gray-color); 
+    border:none;
+}
+
+#notification-settings-screen .content {
+    padding: 0 15px; /* 上下左右留出间距 */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#advanced-notification-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+#notification-settings-screen .settings-group-title {
+    display: flex;
+    align-items: center;
+}
+
+/* 分组说明提示图标 (问号) */
+#notification-settings-screen .settings-group-info-icon {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    color: #aaa;
+}
+
+/* 开关设置项：鼠标指针为默认 */
+#notification-settings-screen .settings-item.toggle-setting {
+    cursor: default;
+}
+
+/* 设置项右侧操作区 (如开关外层容器) */
+#notification-settings-screen .settings-item-action {
+    display: flex;
+    align-items: center;
+}
+
+/* 提示文本 */
+#notification-settings-screen .settings-item-hint {
+    padding: 6px 16px;
+    font-size: 12px;
+    color: #999;
+    line-height: 1.5;
+}
+#notification-settings-screen .settings-item-hint.compact {
+    margin-top: -5px;
+}
+
+/* 纵向排列的设置项 (用于包含输入框的项) */
+#notification-settings-screen .settings-item.column-layout {
+    cursor: default;
+    flex-direction: column;
+    align-items: stretch;
+    padding-bottom: 12px;
+    padding-top: 12px;
+}
+
+/* 纵向排列时的标题头部 */
+#notification-settings-screen .settings-item.column-layout .item-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+/* 设置项内的通用文本输入框 */
+#notification-settings-screen .settings-input-text {
+    margin-left: 47px;
+    width: calc(100% - 47px);
+    padding: 10px;
+    box-sizing: border-box;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    font-size: 14px;
+    background-color: #fafafa;
+    color: #333;
+    outline: none;
+}
+
+/* 设置项内的多行文本区 (用于私钥等长文本) */
+#notification-settings-screen .settings-textarea {
+    margin-left: 47px;
+    width: calc(100% - 47px);
+    padding: 10px;
+    box-sizing: border-box;
+    font-size: 12px;
+    word-break: break-all;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    background-color: #fafafa;
+    outline: none;
+    resize: none;
+}
+
+/* 设置项内的数字输入框 (短款) */
+#notification-settings-screen .settings-input-number {
+    width: 72px;
+    padding: 8px;
+    text-align: center;
+    border: 1px solid #eee;
+    border-radius: 6px;
+    background-color: #fafafa;
+    outline: none;
+}
+
+/* 居中交互按钮项 (如发送测试通知) */
+#notification-settings-screen .settings-item.center-action {
+    justify-content: center;
+    cursor: pointer;
+}
+#notification-settings-screen .settings-item.center-action .item-name {
+    color: var(--accent-color, #07c160);
+}
+
+/* 辅助排版与状态类 */
+#notification-settings-screen .mt-12 { margin-top: 12px; }
+#notification-settings-screen .mt-6-mb-20 { margin-top: 6px; margin-bottom: 20px; }
+#notification-settings-screen .text-warning { color: #e67e22 !important; }
+#notification-settings-screen .d-none { display: none; }
+
+#advanced-notification-settings .btn-test {
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap; /* 防止按钮文字换行 */
+    color: var(--accent-color);
+    background-color: var(--white-color); 
+    border:1px solid var(--accent-color); 
+}
+
+#advanced-notification-settings .btn-test:active {
+    color: var(--gray-color);
+    border:1px solid var(--gray-color); 
+}
+
+#advanced-notification-settings .btn-test:disabled {
+    background: var(--gray-color);
+}

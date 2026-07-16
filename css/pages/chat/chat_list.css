@@ -1,5 +1,52 @@
 /* --- chat_list.css --- */
 
+/* 聊天列表侧边栏（参照 study-profile-sidebar） */
+#chat-list-sidebar {
+  background-color: var(--gray-color);
+  left: auto;
+  right: -100%;
+}
+#chat-list-sidebar.active {
+  right: 0;
+}
+#chat-list-sidebar .header {
+  background-color: var(--gray-color);
+  border: none;
+  color: var(--text-color);
+}
+#chat-list-sidebar .bottom-content-scroll {
+  border-top-left-radius: 32px;
+  background-color: var(--white-color);
+  padding-top: 10px;
+}
+#chat-list-sidebar .settings-card {
+  box-shadow: none;
+}
+
+/* 外观页面 screen 样式 */
+#chat-appearance-screen .app-header {
+  background-color: var(--gray-color);
+  border: none;
+  padding: 8px 20px;
+}
+
+#chat-appearance-screen .app-header .action-btn svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke-width: 2px;
+  stroke: var(--btn-color);
+}
+
+#chat-appearance-screen .content {
+  padding: 0;
+  background-color: var(--gray-color);
+  overflow: hidden;
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 /* 1. 基础布局 */
 #chat-list-screen .app-header {
     background-color: var(--gray-color);
@@ -398,18 +445,21 @@ color: var(--primary-color);
 
 /* 1. 整体容器：Flex布局，保证上下分配合理 */
 #tab-view-bubbles {
-    display: flex;
+    display: none;
     flex-direction: column;
-    min-height: 0;  
+    min-height: 0;
     padding: 0;
     box-sizing: border-box;
     background-color: var(--gray-color);
-    overflow: hidden; /* 防止整个页面滚动，内部滑动 */    
+    overflow: hidden; /* 防止整个页面滚动，内部滑动 */
 }
 
-#chat-list-screen #tab-view-bubbles.active {
+/* 独立外观页面中：撑满 .content 区域 */
+#chat-appearance-screen #tab-view-bubbles {
     display: flex;
+    flex: 1 1 0%;
     flex-direction: column;
+    min-height: 0;
 }
 
 /* 2. 基础卡片样式 */
