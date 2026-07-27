@@ -3,7 +3,7 @@
 //       从而能控制根页面（否则 navigator.serviceWorker.ready 会永久挂起），
 //       并让通知点击、图标等相对路径都从根目录解析。
 
-const CACHE_NAME = 'ouo-cache-Q1.8.7';
+const CACHE_NAME = 'ouo-cache-Q1.9.0';
 // 每次部署新版本时，把上面的版本号往上加
 // SW 会自动清理旧缓存，确保用户拿到最新文件
 
@@ -111,26 +111,51 @@ self.addEventListener('push', (event) => {
         data: { chatId: data.chatId, chatType: data.chatType, fromPush: true }
     };
 
-    event.waitUntil(self.registration.showNotification(title, options));
+    // 同 tag 的新通知本来是「原地替换」，不少安卓 ROM 对替换不重新提醒，
+    // 用户就会觉得"上一条没划掉就收不到新的"。先关掉旧的再弹，让系统当新通知处理。
+    event.waitUntil(
+        (options.tag
+            ? self.registration.getNotifications({ tag: options.tag })
+                .then(list => { list.forEach(n => n.close()); })
+                .catch(() => {})
+            : Promise.resolve()
+        ).then(() => self.registration.showNotification(title, options))
+    );
 });
 
-// 点击系统通知：聚焦已打开的窗口，没有就打开一个
+// 点击系统通知：聚焦已打开的窗口并跳进对应聊天室，没有窗口就带着会话 id 冷启动
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const targetChatId = event.notification.data && event.notification.data.chatId;
+    const nd = event.notification.data || {};
+    const targetChatId = nd.chatId;
+    const targetChatType = nd.chatType;
 
     event.waitUntil(
         self.clients.matchAll({ includeUncontrolled: true, type: 'window' }).then(clients => {
             for (const client of clients) {
                 if ('focus' in client) {
-                    // 顺带把点击的会话 id 投给前台，方便后续跳转（Step 2 用得上）
-                    if (targetChatId) client.postMessage({ type: 'NOTIFICATION_CLICK', chatId: targetChatId });
-                    return client.focus();
+                    // 先聚焦再投消息，保证前台是可见状态下处理跳转
+                    return Promise.resolve(client.focus()).then(c => {
+                        const target = c || client;
+                        if (targetChatId) {
+                            target.postMessage({
+                                type: 'NOTIFICATION_CLICK',
+                                chatId: targetChatId,
+                                chatType: targetChatType
+                            });
+                        }
+                    });
                 }
             }
             if (self.clients.openWindow) {
-                // SW 现在位于根作用域，'./' 即 App 根目录（同时兼容子路径部署）
-                return self.clients.openWindow('./');
+                // 页面已被彻底关掉：把会话 id 挂在 hash 上，冷启动后由前台读出来跳转。
+                // SW 位于根作用域，'./' 即 App 根目录（同时兼容子路径部署）
+                let url = './';
+                if (targetChatId) {
+                    url += '#chat=' + encodeURIComponent(targetChatId);
+                    if (targetChatType) url += '&type=' + encodeURIComponent(targetChatType);
+                }
+                return self.clients.openWindow(url);
             }
         })
     );
