@@ -349,6 +349,9 @@ window.init = async () => {
      if (typeof setupSwipeBackToggle === 'function') {
             setupSwipeBackToggle();
         }
+        if (typeof setupSystemBackToggle === 'function') {
+            setupSystemBackToggle();
+        }
         
 
         // 预设相关
@@ -405,7 +408,9 @@ window.init = async () => {
         }
 
         console.log("✅ 初始化流程执行完毕");
-        
+        // 供"点通知跳转"判断 App 是否已就绪（冷启动时通知点击会早于 init 完成）
+        window.__appInitDone = true;
+
          if (typeof checkAndDeliverProactiveMessages === 'function') {
             // 延迟一点点执行，确保 UI 已经渲染完毕
             setTimeout(checkAndDeliverProactiveMessages, 50);
@@ -532,6 +537,14 @@ if ('serviceWorker' in navigator) {
                     triggerIdleProactiveGeneration();
                 }
             }
+
+            // 用户点了系统通知：直接跳进那条消息所属的聊天室
+            if (event.data && event.data.type === 'NOTIFICATION_CLICK') {
+                console.log('🔔 [通知点击] 跳转到会话:', event.data.chatId, event.data.chatType);
+                if (window.NotifyCenter && typeof NotifyCenter.openChatFromNotification === 'function') {
+                    NotifyCenter.openChatFromNotification(event.data.chatId, event.data.chatType);
+                }
+            }
         });
 
         setTimeout(runDailyBackupCheck, 2000);
@@ -548,6 +561,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
         await AppUI.alert("错误：init 函数未定义，请刷新重试。");
     }
+
+    // App 被彻底关掉时点系统通知，SW 会用 './#chat=<id>&type=<t>' 冷启动页面。
+    // 这里把参数读出来跳转，然后清掉 hash，避免刷新时重复跳。
+    try {
+        const m = (location.hash || '').match(/[#&]chat=([^&]+)(?:&type=([^&]+))?/);
+        if (m) {
+            const chatId = decodeURIComponent(m[1]);
+            const chatType = m[2] ? decodeURIComponent(m[2]) : undefined;
+            history.replaceState(null, '', location.pathname + location.search);
+            if (window.NotifyCenter && typeof NotifyCenter.openChatFromNotification === 'function') {
+                NotifyCenter.openChatFromNotification(chatId, chatType);
+            }
+        }
+    } catch (e) { console.log('通知冷启动跳转解析失败（忽略）:', e); }
 
     // ⭐⭐⭐ C. 【核心】改进的防数据丢失逻辑
     document.addEventListener('visibilitychange', async () => {
