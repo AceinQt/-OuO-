@@ -31,3 +31,26 @@ function getCurrentChatObject() {
         return db.groups.find(g => g.id === currentChatId);
     }
 }
+
+
+// --- 辅助函数：获取短期总结的正文（唯一数据源 = 片段块） ---
+// 有块的总结：从 chatObj.memoryChunks 按 blockIds 实时拼接，天然与块编辑保持同步；
+// 无块的旧总结（整篇一段的 legacy 格式）：回退到 item.content。
+// item.content 对有块总结而言只是生成时的一次性快照，不再被任何读取方依赖。
+function getShortSummaryContent(item, chatObj) {
+    if (!item) return '';
+    if (item.blockIds && item.blockIds.length > 0 && chatObj) {
+        const idSet = new Set(item.blockIds);
+        const parts = (chatObj.memoryChunks || [])
+            .filter(c => idSet.has(c.blockId) && c.detailedContent)
+            .sort((a, b) => a.chunkIndex - b.chunkIndex)
+            .map(b => {
+                const rangeStr = (b.startMsgIndex && b.endMsgIndex)
+                    ? `（消息${b.startMsgIndex}–${b.endMsgIndex}）`
+                    : `（片段${b.chunkIndex + 1}）`;
+                return `${rangeStr}\n${b.detailedContent}`;
+            });
+        if (parts.length > 0) return parts.join('\n\n');
+    }
+    return item.content || '';
+}

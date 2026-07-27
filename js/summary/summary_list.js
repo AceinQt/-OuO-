@@ -694,24 +694,9 @@ function _renderSummaryBlocks(item, container, chat) {
 
 // E. 写入存储并刷新
                 await saveChunksToDB([block]);
-                
-                // ★★★ 修复 Bug：将被修改的片段重新拼接，并同步更新父总结的 content ★★★
-                // 确保长期总结读取到的是修改后的最新文本
-                const detailedParts = blocks
-                    .filter(b => b.detailedContent)
-                    .sort((a, b) => a.chunkIndex - b.chunkIndex)
-                    .map(b => {
-                        const rangeStr = (b.startMsgIndex && b.endMsgIndex)
-                            ? `（消息${b.startMsgIndex}–${b.endMsgIndex}）`
-                            : `（片段${b.chunkIndex + 1}）`;
-                        return `${rangeStr}\n${b.detailedContent}`;
-                    });
-                
-                if (detailedParts.length > 0) {
-                    item.content = detailedParts.join('\n\n');
-                    await saveMemoryItem(item, currentChatId, 'short'); // 保存更新后的父总结
-                }
-                // ★★★ 修复完毕 ★★★
+
+                // 有块总结的正文以 memoryChunks 为唯一数据源（getShortSummaryContent 实时拼接），
+                // 无需再把拼接结果写回 item.content
 
                 renderVectorStats();
                 showToast(needClearEmbedding

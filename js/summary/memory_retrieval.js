@@ -224,7 +224,7 @@ if (diffDays === 0) {
             content = raw || chunk.summary || '';
         } else if (score >= midThres) {
             const parentSummary = (chat?.memorySummaries || []).find(s => s.id === chunk.summaryId);
-            content             = parentSummary?.content || chunk.summary || '';
+            content             = getShortSummaryContent(parentSummary, chat) || chunk.summary || '';
         } else {
             content = chunk.summary || '';
         }

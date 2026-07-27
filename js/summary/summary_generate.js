@@ -336,7 +336,7 @@ const rawChunks = _buildSummaryChunks(rawFiltered, chat.chunkGranularity || 10);
         })
         .map(s => {
             const dateStr = s.occurredAt ? s.occurredAt.split(' ')[0] : '未知日期';
-            return `[短期剧情 ${dateStr}] ${s.title}\n${s.content}`;
+            return `[短期剧情 ${dateStr}] ${s.title}\n${getShortSummaryContent(s, chat)}`;
         })
         .join('\n\n');
         
@@ -817,7 +817,7 @@ async function generateLongTermSummaryContent(startDateStr, endDateStr) {
                     .join('；');
                 if (highlights) annotation = `\n⚑ 非日常亮点：${highlights}`;
             }
-            return `[日期: ${s.occurredAt.split(' ')[0]}] ${s.title}\n${s.content}${annotation}`;
+            return `[日期: ${s.occurredAt.split(' ')[0]}] ${s.title}\n${getShortSummaryContent(s, chat)}${annotation}`;
         }).join('\n\n----------------\n\n');
 
         // 2. 获取此日期之前的长期总结（历史背景）
