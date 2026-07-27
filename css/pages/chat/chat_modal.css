@@ -49,13 +49,11 @@
 }
 
 
-#edit-group-member-modal,
-#create-member-for-group-modal {
+#edit-group-member-modal {
     z-index: 102;
 }
 
-#edit-group-member-modal .avatar-preview,
-#create-member-for-group-modal .avatar-preview {
+#edit-group-member-modal .avatar-preview {
     width: 80px;
     height: 80px;
     border-radius: 50%;
@@ -347,8 +345,9 @@
      margin-top: 0;
 }
 
-#pa-mode-hints {
-    font-size: 12px; 
+#pa-mode-hints,
+#vision-api-hint {
+    font-size: 12px;
     color: #888; 
     margin-bottom: 10px; 
     line-height: 1.5; 
@@ -421,6 +420,7 @@
 
 #world-book-selection-modal,
 #invite-member-modal,
+#remove-member-modal,
 #group-recipient-selection-modal,
 #global-pomodoro-world-book-selection-modal,
 #select-persona-modal {
@@ -429,6 +429,7 @@
 
 #world-book-selection-modal .modal-window,
 #invite-member-modal .modal-window,
+#remove-member-modal .modal-window,
 #group-recipient-selection-modal .modal-window {
     width: 90%;
     max-width: 380px;
@@ -436,6 +437,7 @@
 
 #world-book-selection-list,
 #invite-member-selection-list,
+#remove-member-selection-list,
 #group-recipient-selection-list {
     list-style: none;
     padding: 0;

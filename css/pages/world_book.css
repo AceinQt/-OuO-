@@ -69,8 +69,9 @@
 }
 
 .world-book-category-group.open .world-book-items-list {
-    max-height: 1000px;
-    /* 一个足够大的值 */
+    /* 上限必须大于分类内所有条目的总高度，否则超出部分会被 overflow:hidden 裁掉，
+       表现为"列表划不动/到不了底"。1000px 只够 ~20 条，改为 100000px 兜底 */
+    max-height: 100000px;
     padding-bottom: 10px;
 }
 

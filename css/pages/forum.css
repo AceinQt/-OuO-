@@ -1193,6 +1193,9 @@ fill: var(--primary-color);
     flex: 1;                 /* 自动撑满剩余高度 */
     overflow-y: auto;        /* 内容超出时显示滚动条 */
     min-height: 0;           /* 配合 Flex 的滚动关键属性 */
+    /* 底部导航栏是 absolute 悬浮的，会盖住列表最后几项；
+       留出等高的内边距，保证滚动到底时最后一项完整可见 */
+    padding-bottom: calc(70px + var(--safe-bottom, 0px));
 }
 
 /* --- 修改：世界页面微调 --- */

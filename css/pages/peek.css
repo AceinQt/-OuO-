@@ -200,6 +200,22 @@
     padding: 2px;
 }
 
+/* 日期分割行：占满整行 */
+.album-date-header {
+    grid-column: 1 / -1;
+    padding: 14px 6px 6px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+}
+
+.album-date-sub {
+    margin-left: 8px;
+    font-size: 12px;
+    font-weight: normal;
+    color: #999;
+}
+
 .album-photo {
     position: relative;
     width: 100%;
@@ -289,6 +305,45 @@
 
 #peek-conversation-screen .message-bubble.received {
     background-color: #FFFFFF;
+}
+
+/* 继续推演：生成中的"正在输入"提示（参考聊天室 typing-indicator） */
+.peek-convo-typing {
+    display: none;
+    color: #999;
+    font-style: italic;
+    font-size: 14px;
+    text-align: center;
+    padding: 6px 0 16px;
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+.peek-convo-typing.visible {
+    display: block;
+    animation: peek-typing-pulse 1.4s ease-in-out infinite;
+}
+
+.peek-convo-typing::after { content: '...'; }
+
+@keyframes peek-typing-pulse {
+    0%, 100% { opacity: 0.45; }
+    50%      { opacity: 1; }
+}
+
+/* 生成中：刷新按钮禁用态 */
+#peek-conversation-continue-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+#peek-conversation-continue-btn.is-spinning svg {
+    animation: peek-continue-spin 1s linear infinite;
+}
+
+@keyframes peek-continue-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
 }
 
 /* =========================================

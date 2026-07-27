@@ -192,6 +192,37 @@
     z-index: 9999;
 }
 
+/* 内容过长时：限制弹窗总高度，只让正文区滚动，标题/输入框/按钮固定 */
+#app-global-dialog .modal-window {
+    display: flex;
+    flex-direction: column;
+    /* 预留上下安全区 + 30px 边距，弹窗永远不会超出屏幕 */
+    max-height: calc(100% - var(--safe-top) - var(--safe-bottom) - 60px);
+    box-sizing: border-box;
+}
+
+#app-global-dialog #global-dialog-title,
+#app-global-dialog #global-dialog-input-container,
+#app-global-dialog #global-dialog-actions {
+    flex: 0 0 auto;
+}
+
+#app-global-dialog #global-dialog-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    /* 关键：允许在 flex 容器内收缩，从而触发滚动 */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 仅在真正溢出时才显示分隔线，短文案保持原样 */
+#app-global-dialog #global-dialog-content.is-scrollable {
+    padding: 10px 8px 10px 0;
+    border-top: 1px solid #eee;
+    border-bottom: 1px solid #eee;
+}
+
 
 .context-menu {
     position: fixed;
@@ -813,8 +844,8 @@ input:checked+.slider:before {
 
 /* 当 .collapsible-section 拥有 .open 类时应用的样式 */
 .collapsible-section.open .collapsible-content {
-    max-height: 5000px;
-    /* 一个足够大的值来完全显示内容 */
+    /* 上限必须大于内容总高度，否则超出部分被 overflow:hidden 裁掉，列表"划不动" */
+    max-height: 100000px;
     padding: 0 20px 20px;
     /* 展开时恢复底部内边距 */
 }

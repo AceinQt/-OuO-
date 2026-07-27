@@ -16,6 +16,11 @@
     flex-direction: column;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    
+    /* 初始状态：透明且不可点击 */
+    opacity: 0; 
+    pointer-events: none; /* <--- 新增：彻底穿透点击，防止误触 */
+    transition: opacity 0.3s ease;
 }
 
 /* --- 通用卡片样式 --- */
@@ -258,3 +263,4 @@
     padding: 12px 12px;
     font-size: 14px;
 }
+

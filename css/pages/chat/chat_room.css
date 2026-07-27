@@ -301,6 +301,35 @@
     border-radius: calc(var(--border-radius) - 4px);
 }
 
+/* --- 图片转文字：转化中的等待态 --- */
+.image-bubble.converting {
+    position: relative;
+    pointer-events: none;
+}
+
+.image-bubble.converting img {
+    filter: brightness(0.5);
+}
+
+.image-bubble.converting::after {
+    content: '转化中…';
+    position: absolute;
+    inset: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 13px;
+    letter-spacing: 1px;
+    border-radius: calc(var(--border-radius) - 4px);
+    animation: image-converting-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes image-converting-pulse {
+    0%, 100% { opacity: 0.55; }
+    50%      { opacity: 1; }
+}
+
 /* --- 专属表情包气泡样式 --- */
 .message-wrapper .sticker-bubble {
     background-color: transparent; /* 强制透明背景 */
