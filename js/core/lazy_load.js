@@ -1,16 +1,16 @@
 // ==========================================
-// lazy_load.js — 懒加载改造专用文件（Step 0 + 1 + 2）
+// lazy_load.js — 懒加载专用文件
 // ------------------------------------------
-// Step 2 起，loadData 会读取下面的开关。开关默认【关】，应用行为与改造前完全一致。
-// 要启用懒加载：控制台跑 window.LAZY_LOAD = true 然后刷新；或在下面这行直接改成 true。
-// 要回滚：改回 false 刷新即可，数据无损。
+// 【已转正】聊天消息懒加载（LAZY_LOAD）与论坛懒加载（LAZY_FORUM）均默认开启。
+// 紧急刹车（遇到问题时的临时回滚，数据无损）：
+//   关闭聊天懒加载：localStorage.setItem('LAZY_LOAD','0')    然后刷新
+//   关闭论坛懒加载：localStorage.setItem('LAZY_FORUM','0')   然后刷新
+//   恢复默认（开）：localStorage.removeItem('LAZY_LOAD') / removeItem('LAZY_FORUM') 然后刷新
 // ==========================================
 
 // ★★★ 总开关 + 窗口大小。窗口必须 > maxMemory 上限（已定 maxMemory 上限 1000、窗口 1500）。
-//   开关从 localStorage 读，方便控制台切换：
-//     开启：localStorage.setItem('LAZY_LOAD','1')   然后刷新
-//     关闭：localStorage.setItem('LAZY_LOAD','0')   然后刷新
-window.LAZY_LOAD = true;
+//   【转正】默认开；只有显式设 '0' 才关（紧急刹车）。
+window.LAZY_LOAD = localStorage.getItem('LAZY_LOAD') !== '0';
 window.LAZY_LOAD_LIMIT = 1500;
 
 // ★★★ 铁律：本文件内任何从 DB 取消息的函数，排序只能用下面这一行（原样抄自 database.js:235），
@@ -343,4 +343,152 @@ window.getMessagesByGlobalRange = async function (chatId, start, end) {
     return rows;
 };
 
-console.log('lazy_load.js 已加载（Step 0+1+S1）。可用：window.auditMessageOrder() / window.loadRecentMessages(chatId,1500) / window.verifyLazyLoad(chatId,1500) / window.getMessageCount(chatId) / window.getMessagesByTsRange(chatId,tsLo,tsHi) / window.getMessagesByGlobalRange(chatId,start,end)');
+// ==========================================
+// 论坛懒加载（F 系列步骤）
+// ------------------------------------------
+// 【已转正】默认开，独立于聊天的 LAZY_LOAD。紧急刹车：
+//   关闭：localStorage.setItem('LAZY_FORUM','0')   然后刷新（数据无损）
+//   恢复：localStorage.removeItem('LAZY_FORUM')    然后刷新
+// 内存窗口 = 最新 LAZY_FORUM_LIMIT 条 + 全部收藏帖 + 全部在看帖。
+// 在看帖必须整帖进内存：getWatchingPostsContext() 是同步函数，被聊天 prompt
+// 拼装（private_prompt/group_prompt/char_info）直接调用，没法现查 DB。
+// ==========================================
+window.LAZY_FORUM = localStorage.getItem('LAZY_FORUM') !== '0';
+window.LAZY_FORUM_LIMIT = 100;
+
+// ★★★ 帖子排序铁律：只按这一行排（原样抄自 database.js loadData，倒序=最新在前），
+//     绝不按 id/标题/评论数排。与消息的升序铁律方向相反，这是论坛本来的约定。
+function _sortPostsDesc(a, b) {
+    return (b.timestamp || 0) - (a.timestamp || 0);
+}
+
+// ──────────────────────────────────────────
+// F3：启动窗口装载 —— 最新 latestLimit 条 + 按 id 补齐收藏/在看，去重后倒序返回。
+//   同时设置连续前缀游标 window._forumOldestContiguousTs：
+//     窗口里 timestamp >= 游标 的部分是"连续"的（和 DB 里最新一段完全一致）；
+//     比游标更旧的只有收藏/在看散点，和连续段之间有缝隙，
+//     滚动翻页时必须先用 fetchOlderForumPosts 把缝补齐（forum.js F5 负责）。
+//     游标为 -Infinity 表示全库都已在内存（DB 到底）。
+// ──────────────────────────────────────────
+window.loadForumWindow = async function (latestLimit, favIds, watchIds) {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+    // 最新 N 条：走 timestamp 索引倒序，只读 N 条进内存（省内存的核心）
+    const latest = await window.dexieDB.forumPosts
+        .orderBy('timestamp').reverse().limit(latestLimit).toArray();
+    window._forumOldestContiguousTs = (latest.length < latestLimit)
+        ? Number.NEGATIVE_INFINITY
+        : (latest[latest.length - 1].timestamp || 0);
+
+    // 收藏 + 在看：主键精准补齐（不在最新 N 里的才取）
+    const seen = new Set(latest.map(p => p.id));
+    const extraIds = [...new Set([...(favIds || []), ...(watchIds || [])])]
+        .filter(id => id != null && !seen.has(id));
+    const extras = [];
+    if (extraIds.length) {
+        const got = await window.dexieDB.forumPosts.bulkGet(extraIds);
+        const misses = [];
+        got.forEach((p, i) => { p ? extras.push(p) : misses.push(extraIds[i]); });
+        // 兜底：极老数据收藏过数字 id 而表主键是字符串（renderFavoritesList 里就是 String() 对比）
+        if (misses.length) {
+            const asStr = await window.dexieDB.forumPosts.bulkGet(misses.map(String));
+            asStr.forEach(p => { if (p && !seen.has(p.id)) extras.push(p); });
+        }
+    }
+    const all = [...latest, ...extras];
+    all.sort(_sortPostsDesc);
+    return all;
+};
+
+// ──────────────────────────────────────────
+// F5：滚动翻页 —— 取"比 oldestTimestamp 更旧"的下一批（不含已在内存的 id），倒序返回。
+//   与 fetchOlderMessages 同一套路：含边界取一段缓冲吃掉等时间戳问题，再按 id 去重。
+//   一批里可能大部分是已在内存的收藏/在看帖（被去重掉），不足一页就自动往更旧翻，
+//   直到凑够 limit 条或 DB 到底。
+// ──────────────────────────────────────────
+window.fetchOlderForumPosts = async function (oldestTimestamp, inMemoryIds, limit) {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+    const fresh = [];
+    const freshIds = new Set();
+    let cursorTs = oldestTimestamp;
+    for (let guard = 0; guard < 20 && fresh.length < limit; guard++) {
+        const buf = await window.dexieDB.forumPosts
+            .where('timestamp').belowOrEqual(cursorTs)
+            .reverse()
+            .limit(limit + 100)
+            .toArray();
+        for (const p of buf) {
+            if (!inMemoryIds.has(p.id) && !freshIds.has(p.id)) {
+                fresh.push(p);
+                freshIds.add(p.id);
+            }
+        }
+        if (buf.length < limit + 100) break; // DB 到底了
+        const lastTs = buf[buf.length - 1].timestamp || 0;
+        if (lastTs >= cursorTs) break;       // 同一时间戳大量堆积，防死循环
+        cursorTs = lastTs;
+    }
+    fresh.sort(_sortPostsDesc);
+    return fresh.slice(0, limit);
+};
+
+// F5：论坛帖子总数（不读帖子体，很快）
+window.getForumPostCount = async function () {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+    return await window.dexieDB.forumPosts.count();
+};
+
+// F5："我的发帖"统计 —— 流式扫表 count，不把帖子装进内存（只在打开"我的"页时跑）
+window.countMyForumPosts = async function (nickname) {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+    let n = 0;
+    await window.dexieDB.forumPosts.toCollection().each(p => {
+        if (p.isUser || p.username === nickname) n++;
+    });
+    return n;
+};
+
+// ──────────────────────────────────────────
+// F3 验收工具：对照老路径（全量 toArray + 倒序）与新路径（loadForumWindow）
+//   窗口必须 = 最新 N 条 ∪ 收藏 ∪ 在看，且严格倒序。只读，不改任何数据。
+//   现在就能跑（开关没开也行）。
+// ──────────────────────────────────────────
+window.verifyForumLazy = async function (limit = window.LAZY_FORUM_LIMIT) {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+    // 老路径：全量 + 倒序铁律
+    const all = await window.dexieDB.forumPosts.toArray();
+    all.sort(_sortPostsDesc);
+    const favIds = (window.db && window.db.favoritePostIds) || [];
+    const watchIds = (window.db && window.db.watchingPostIds) || [];
+    // 应该在窗口里的 id 集合
+    const expectIds = new Set(all.slice(0, limit).map(p => p.id));
+    [...favIds, ...watchIds].forEach(id => {
+        const hit = all.find(p => String(p.id) === String(id));
+        if (hit) expectIds.add(hit.id);
+    });
+    // 新路径
+    const win = await window.loadForumWindow(limit, favIds, watchIds);
+    const winIds = new Set(win.map(p => p.id));
+    const missing = [...expectIds].filter(id => !winIds.has(id));
+    const surplus = [...winIds].filter(id => !expectIds.has(id));
+    // 顺序检查：必须严格倒序（timestamp 不递增）
+    let orderOk = true;
+    for (let i = 1; i < win.length; i++) {
+        if ((win[i - 1].timestamp || 0) < (win[i].timestamp || 0)) { orderOk = false; break; }
+    }
+    // 没有 timestamp 的帖子会从索引里消失，v14 应已回填——这里体检确认
+    const noTs = all.filter(p => p.timestamp === undefined || p.timestamp === null).length;
+    const summary = {
+        dbTotal: all.length, windowSize: win.length, expected: expectIds.size,
+        favCount: favIds.length, watchCount: watchIds.length,
+        missing, surplus, orderOk, postsWithoutTimestamp: noTs,
+        contiguousTs: window._forumOldestContiguousTs,
+    };
+    if (!missing.length && !surplus.length && orderOk && noTs === 0) {
+        console.log(`✅ [verifyForumLazy] 窗口等价通过：全库 ${all.length} 帖，窗口 ${win.length} 帖（最新${limit}+收藏${favIds.length}+在看${watchIds.length}），顺序正确。`, summary);
+    } else {
+        console.error('❌ [verifyForumLazy] 不一致！', summary);
+    }
+    return summary;
+};
+
+console.log('lazy_load.js 已加载（Step 0+1+S1 + 论坛F3）。可用：window.auditMessageOrder() / window.loadRecentMessages(chatId,1500) / window.verifyLazyLoad(chatId,1500) / window.getMessageCount(chatId) / window.getMessagesByTsRange(chatId,tsLo,tsHi) / window.getMessagesByGlobalRange(chatId,start,end) / window.verifyForumLazy() ｜ 论坛懒加载开关 LAZY_FORUM=' + (window.LAZY_FORUM ? '开' : '关'));

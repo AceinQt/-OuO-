@@ -420,6 +420,15 @@ const AppUI = {
 
             // 4. 显示弹窗 (复用 visible 类触发动画)
             overlay.classList.add('visible');
+
+            // 5. 长文案时给正文区加分隔线（高度限制与滚动由 CSS 负责）
+            contentEl.classList.remove('is-scrollable');
+            contentEl.scrollTop = 0;
+            requestAnimationFrame(() => {
+                if (contentEl.scrollHeight > contentEl.clientHeight + 1) {
+                    contentEl.classList.add('is-scrollable');
+                }
+            });
         });
     },
 
@@ -454,6 +463,7 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
 
             titleEl.innerText   = title;
             contentEl.innerText = '';
+            contentEl.classList.remove('is-scrollable');
             actionsEl.innerHTML = '';
 
             // 把 input-container 里的 input 临时替换成 select
@@ -492,8 +502,121 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
 
             overlay.classList.add('visible');
         });
+    },
+
+    /**
+     * 先弹窗、后填内容的确认框：点下去立刻有反馈，正文先显示"计算中"且确定按钮禁用，
+     * 等异步任务出结果再替换正文并启用确定。避免统计耗时让用户以为没点到而反复点
+     * @param {string}   loadingText 计算期间的占位正文
+     * @param {Function} task        async 函数，返回最终正文字符串；返回 null 表示无事可做（弹窗自动关闭）
+     * @returns {Promise<boolean|null>} 确定=true，取消=false，task 返回 null 时=null
+     */
+    confirmPending(loadingText, task, { title = '确认操作', confirmText = '确定', cancelText = '取消' } = {}) {
+        return new Promise((resolve, reject) => {
+            const overlay        = document.getElementById('app-global-dialog');
+            const titleEl        = document.getElementById('global-dialog-title');
+            const contentEl      = document.getElementById('global-dialog-content');
+            const actionsEl      = document.getElementById('global-dialog-actions');
+            const inputContainer = document.getElementById('global-dialog-input-container');
+            if (!overlay) return resolve(false);
+
+            let settled = false;
+
+            titleEl.innerText   = title;
+            contentEl.innerText = loadingText;
+            contentEl.classList.remove('is-scrollable');
+            actionsEl.innerHTML = '';
+            if (inputContainer) inputContainer.style.display = 'none';
+
+            const close = () => { settled = true; overlay.classList.remove('visible'); };
+
+            const createBtn = (text, cls, onClick) => {
+                const btn = document.createElement('button');
+                btn.className     = `btn ${cls}`;
+                btn.style.flex    = '1';
+                btn.style.padding = '10px';
+                btn.innerText     = text;
+                btn.onclick = (e) => { e.stopPropagation(); close(); onClick(); };
+                return btn;
+            };
+
+            const confirmBtn = createBtn(confirmText, 'btn-primary', () => resolve(true));
+            const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(false));
+
+            // 计算完成前禁用确定，只能取消
+            // 禁用时用灰色（和取消按钮一致），别让它看起来还能点
+            confirmBtn.disabled = true;
+            confirmBtn.className = 'btn btn-neutral';
+
+            actionsEl.appendChild(confirmBtn);
+            actionsEl.appendChild(cancelBtn);
+            overlay.classList.add('visible');
+
+            Promise.resolve()
+                .then(task)
+                .then(text => {
+                    if (settled) return;                     // 用户已经点了取消
+                    if (text === null || text === undefined) { close(); resolve(null); return; }
+                    contentEl.innerText = text;
+                    confirmBtn.disabled = false;
+                    confirmBtn.className = 'btn btn-primary';   // 可用了才亮起主色
+                    requestAnimationFrame(() => {
+                        if (contentEl.scrollHeight > contentEl.clientHeight + 1) {
+                            contentEl.classList.add('is-scrollable');
+                        }
+                    });
+                })
+                .catch(err => { if (!settled) close(); reject(err); });
+        });
+    },
+
+    /**
+     * 进度弹窗：复用同一个全局弹窗，正文可实时更新，底部只有一个「停止」按钮
+     * 不返回 Promise，直接返回控制句柄，由调用方在循环里驱动
+     * @returns {{ update:(text:string)=>void, isStopped:()=>boolean, close:()=>void }}
+     */
+    progress(content = '处理中…', { title = '请稍候', stopText = '停止' } = {}) {
+        const overlay        = document.getElementById('app-global-dialog');
+        const titleEl        = document.getElementById('global-dialog-title');
+        const contentEl      = document.getElementById('global-dialog-content');
+        const actionsEl      = document.getElementById('global-dialog-actions');
+        const inputContainer = document.getElementById('global-dialog-input-container');
+
+        let stopped = false;
+        if (!overlay) return { update() {}, isStopped: () => stopped, close() {} };
+
+        titleEl.innerText   = title;
+        contentEl.innerText = content;
+        contentEl.classList.remove('is-scrollable');
+        actionsEl.innerHTML = '';
+        if (inputContainer) inputContainer.style.display = 'none';
+
+        const btn = document.createElement('button');
+        btn.className     = 'btn btn-neutral';
+        btn.style.flex    = '1';
+        btn.style.padding = '10px';
+        btn.innerText     = stopText;
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            stopped = true;
+            btn.innerText = '正在停止…';
+            btn.disabled  = true;
+        };
+        actionsEl.appendChild(btn);
+
+        overlay.classList.add('visible');
+
+        return {
+            update: (text) => { contentEl.innerText = text; },
+            // 弹窗被别的方式关掉（比如系统返回键）也视为停止，避免任务在后台闷头跑
+            isStopped: () => stopped || !overlay.classList.contains('visible'),
+            close: () => {
+                overlay.classList.remove('visible');
+                actionsEl.innerHTML = '';
+            }
+        };
     }
-    
+
 };
 
 // ================================================================
@@ -506,3 +629,16 @@ function historyToPlainText(history) {
         .map(m => m.content)
         .join('\n');
 }
+
+// ================================================================
+// === findGroupMemberById: 按 senderId 找群成员，退群的从归档里找 ===
+//   被移出群聊的成员会从 group.members 挪到 group.removedMembers，
+//   但他们留下的历史消息仍要显示原来的头像和群昵称，所以渲染侧统一走这里。
+// ================================================================
+function findGroupMemberById(group, senderId) {
+    if (!group || !senderId) return null;
+    return (group.members || []).find(m => m.id === senderId)
+        || (group.removedMembers || []).find(m => m.id === senderId)
+        || null;
+}
+window.findGroupMemberById = findGroupMemberById;

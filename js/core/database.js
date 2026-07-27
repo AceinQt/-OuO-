@@ -10,12 +10,15 @@ const globalSettingKeys =[
     'enableTopSafeArea', 'enableBottomSafeArea', 
     'enableScreenAdaptation',
     'enableSwipeBack',
+    'enableSystemBack',
     // ★ 学习模块设置（绑定人设/API预设，存量小放 globalSettings）
     'studySettings',
     // ★ 系统消息通知设置（总开关 / 全局后台保活时长）
     'globalNotifySettings',
     // ★ 进阶推送节点设置（CF Worker 地址 / VAPID 公钥 / 令牌 / 订阅凭证）
-    'globalPushSettings'
+    'globalPushSettings',
+    // ★ 识图 API 设置（图片转文字描述专用；空 = 跟随各聊天自己的 API）
+    'globalVisionSettings'
 ];
 
 // 2. 初始化内存数据库对象 (db) -> 唯一来源
@@ -35,8 +38,8 @@ window.db = {
     peekData: {}, 
 
     // --- 论坛元数据 ---
-    forumUserIdentity: { nickname: '新用户', avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', persona: '', realName: '', anonCode: '0311', customDetailCss: '' },
-    forumBindings: { worldBookIds:[], charIds: [], userPersonaIds:[], useChatHistory: false, historyLimit: 50 },
+    forumUserIdentity: { nickname: '新用户', avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg', persona: '', realName: '', anonCode: '0311', customDetailCss: '', boundPersonaId: null },
+    forumBindings: { worldBookIds:[], charIds: [], groupIds: [], userPersonaIds:[], useChatHistory: false, historyLimit: 50 },
     watchingPostIds: [],
     favoritePostIds:[],
     currentViewingPostId: null, // 当前查看的帖子ID (从globals合并)
@@ -45,6 +48,7 @@ window.db = {
     enableBottomSafeArea: true,
     enableScreenAdaptation: false,
     enableSwipeBack: false,
+    enableSystemBack: false,
 
     // ★ 系统消息通知设置
     //   enabled: 总开关（是否弹系统通知，含桌面角标）
@@ -58,6 +62,11 @@ window.db = {
     //   enabled: 总开关；workerUrl: Worker 地址；vapidPublicKey/vapidPrivateKey: VAPID 密钥
     //   clientToken: 与 Worker 的 CLIENT_TOKEN 对应；subscription: 浏览器推送订阅凭证
     globalPushSettings: { enabled: false, workerUrl: '', vapidPublicKey: '', vapidPrivateKey: '', clientToken: '', subscription: null },
+
+    // ★ 识图 API 设置（长按图片"转化为文字"时使用）
+    //   apiPreset: 预设名；空字符串 = 同聊天API（跟随每个聊天自己的 chatApiPreset）
+    //   一旦指定预设，所有聊天的图片转化都走它
+    globalVisionSettings: { apiPreset: '' },
     homeStatusBarColor: '#ffffff',
     homeNavigationBarColor: '#ffffff',
 
@@ -210,6 +219,19 @@ dexieDB.version(13).stores({
     console.log("Upgrading database to version 13 (messages compound index [chatId+timestamp] added)...");
 });
 
+// ★★★ Version 14（论坛懒加载 F2：forumPosts 加 timestamp 索引）★★★
+// 用途：让 loadForumWindow 能"按时间直接取最新 N 条帖子"，而不必把全表读进内存。
+// 注意：IndexedDB 索引不收录缺失该字段的记录——不回填的话，没有 timestamp 的老帖
+// 会从懒加载路径里彻底消失。upgrade 里把缺失的补成 0，与现有排序 (b.timestamp||0) 语义完全一致。
+dexieDB.version(14).stores({
+    forumPosts: '&id, timestamp',
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 14 (forumPosts timestamp index added)...");
+    await tx.table('forumPosts').toCollection().modify(post => {
+        if (post.timestamp === undefined || post.timestamp === null) post.timestamp = 0;
+    });
+});
+
 window.loadData = async () => {
     try {
         console.log("📦 正在加载数据...");
@@ -227,7 +249,7 @@ window.loadData = async () => {
         ] = await Promise.all([
             dexieDB.characters.toArray(), dexieDB.groups.toArray(), dexieDB.worldBooks.toArray(),
             dexieDB.myStickers.toArray(), dexieDB.globalSettings.toArray(), dexieDB.userPersonas.toArray(),
-            dexieDB.forumPosts.toArray(), dexieDB.rpgProfiles.toArray(), dexieDB.forumMetadata.toArray(),
+            (window.LAZY_FORUM ? [] : dexieDB.forumPosts.toArray()), dexieDB.rpgProfiles.toArray(), dexieDB.forumMetadata.toArray(),
             dexieDB.peekData.toArray(), (window.LAZY_LOAD ? null : dexieDB.messages.toArray()),
             dexieDB.studyBooks.toArray(), dexieDB.studyQuestions.toArray(), dexieDB.studyRecords.toArray(), dexieDB.studyBanks.toArray(), dexieDB.studyExams.toArray(), dexieDB.studyExamRecords.toArray(), 
             dexieDB.memories.toArray(),
@@ -389,7 +411,29 @@ window.loadData = async () => {
         }
 
         // 3. 论坛帖子迁移 (包含ID修复逻辑)
-        if (newForumPosts.length > 0) {
+        if (window.LAZY_FORUM) {
+            // ★ [论坛懒加载 F4] 不全量装载，只取窗口：最新 LAZY_FORUM_LIMIT 条 + 收藏 + 在看。
+            //   收藏/在看 id 从 forumMetadata 读（forumMeta 上面已就绪，settings 兜底极老数据）。
+            //   连续前缀游标 window._forumOldestContiguousTs 由 loadForumWindow 设置，供滚动翻页用。
+            const lazyPostCount = await dexieDB.forumPosts.count();
+            if (lazyPostCount === 0 && settings['forumPosts']) {
+                // 极老数据还在 globalSettings：照原迁移路径搬进独立表（这一轮全量在内存，下次启动才走窗口）
+                console.log("📦 迁移论坛帖子到独立表...");
+                db.forumPosts = settings['forumPosts'];
+                db.forumPosts.forEach(post => {
+                    if (!post.id) post.id = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    if (post.timestamp === undefined || post.timestamp === null) post.timestamp = 0; // timestamp 索引要求
+                });
+                await dexieDB.forumPosts.bulkPut(db.forumPosts);
+                await dexieDB.globalSettings.delete('forumPosts');
+                window._forumOldestContiguousTs = Number.NEGATIVE_INFINITY; // 全量已在内存
+            } else {
+                const lazyFavIds = (forumMeta['favoritePostIds'] !== undefined ? forumMeta['favoritePostIds'] : settings['favoritePostIds']) || [];
+                const lazyWatchIds = (forumMeta['watchingPostIds'] !== undefined ? forumMeta['watchingPostIds'] : settings['watchingPostIds']) || [];
+                db.forumPosts = await window.loadForumWindow(window.LAZY_FORUM_LIMIT, lazyFavIds, lazyWatchIds);
+                console.log(`📦 [论坛懒加载] 全库 ${lazyPostCount} 帖，窗口装载 ${db.forumPosts.length} 帖（最新${window.LAZY_FORUM_LIMIT}+收藏${lazyFavIds.length}+在看${lazyWatchIds.length}），全量装载已跳过`);
+            }
+        } else if (newForumPosts.length > 0) {
             db.forumPosts = newForumPosts;
         } else if (settings['forumPosts']) {
             console.log("📦 迁移论坛帖子到独立表...");
@@ -535,7 +579,9 @@ window.saveData = async () => {
             // ★★★ 保存前先排序，确保数据库中也是倒序 ★★★
             db.forumPosts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
             await dexieDB.forumPosts.bulkPut(db.forumPosts);
-        } else if (db.forumPosts && db.forumPosts.length === 0) {
+        } else if (db.forumPosts && db.forumPosts.length === 0 && !window.LAZY_FORUM) {
+            // ★ [论坛懒加载 F4] 懒加载下内存只是窗口，窗口空 ≠ 全库空，绝不能 clear 整张表。
+            //   （全量导入/恢复路径都会自己显式 forumPosts.clear()，不依赖这里。）
             await dexieDB.forumPosts.clear();
         }
     } catch (e) { console.error("❌ 论坛帖子保存失败:", e); }
