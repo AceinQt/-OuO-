@@ -190,8 +190,8 @@ function openGroupInfoScreen(group, source = '') {
     let meAvatar = me.avatar || '';
     let meRealName = me.realName || '—';
     let meNickname = me.nickname || me.realName || '—';
-    if (group.boundPersonaId) {
-        const p = db.userPersonas && db.userPersonas.find(up => up.id === group.boundPersonaId);
+    if (me.boundPersonaId) {
+        const p = db.userPersonas && db.userPersonas.find(up => up.id === me.boundPersonaId);
         if (p) { meRealName = p.realName; meNickname = p.nickname; meAvatar = p.avatar || meAvatar; }
     }
     if (ownerAvatar)   ownerAvatar.src          = meAvatar;
@@ -206,18 +206,48 @@ if (ownerAvatarEl) {
     ownerAvatarEl.parentNode.replaceChild(newOwnerAvatar, ownerAvatarEl);
     newOwnerAvatar.src = meAvatar;  // 重新赋值（克隆后数据已在）
 
-    // 找到绑定的 persona 对象
-    const boundId = group.me && group.me.boundPersonaId;
-    const persona = boundId && db.userPersonas && db.userPersonas.find(p => p.id === boundId);
+    newOwnerAvatar.style.cursor = 'pointer';
+    newOwnerAvatar.addEventListener('click', async () => {
+        // 点击时实时查找，避免持有渲染时的旧引用
+        const boundId = group.me && group.me.boundPersonaId;
+        let persona = boundId ? (db.userPersonas || []).find(p => p.id === boundId) : null;
 
-    if (persona) {
-        newOwnerAvatar.style.cursor = 'pointer';
-        newOwnerAvatar.addEventListener('click', () => {
-            if (typeof openUserPersonaScreen === 'function') {
-                openUserPersonaScreen(persona, 'group-info');
-            }
-        });
-    }
+        // 存量群聊未绑定（或绑定的档案已不存在）：询问是否用群内身份信息新建档案并绑定
+        if (!persona) {
+            const ok = await AppUI.confirm(
+                '当前群聊还没有绑定身份档案。\n是否用本群中的身份信息新建一个档案并自动绑定？',
+                '未绑定档案', '新建并绑定', '取消'
+            );
+            if (!ok) return;
+
+            if (!group.me) group.me = {};
+            const oldNick = group.me.nickname || group.me.realName || '我';
+            persona = {
+                id: Date.now().toString() + Math.random().toString().slice(2, 6),
+                realName: oldNick,
+                nickname: oldNick,
+                persona: group.me.persona || '',
+                status: '在线',
+                avatar: group.me.avatar || 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg'
+            };
+            if (!db.userPersonas) db.userPersonas = [];
+            db.userPersonas.push(persona);
+            group.me.boundPersonaId = persona.id;
+            // 回写群内身份，保持与新档案一致（昵称字段 user_info 的保存同步不覆盖，这里补齐）
+            group.me.realName = persona.realName;
+            group.me.nickname = persona.nickname;
+            if (!group.me.avatar) group.me.avatar = persona.avatar;
+
+            if (typeof saveUserPersonaTable === 'function') await saveUserPersonaTable();
+            await saveSingleChat(group.id, 'group');
+            if (typeof renderContacts === 'function') renderContacts();
+            showToast(`已新建档案"${persona.nickname}"并绑定`);
+        }
+
+        if (typeof openUserPersonaScreen === 'function') {
+            openUserPersonaScreen(persona, 'group-info');
+        }
+    });
 }
     
     // 成员列表
@@ -252,19 +282,81 @@ function _renderGroupInfoMembers(group) {
             <span class="group-info-member-nick">${realName}</span>
         `;
 
-        // 有关联原始角色的，可点击跳转 char_info
-        if (member.originalCharId) {
-            item.style.cursor = 'pointer';
-            item.addEventListener('click', () => {
-                const origChar = db.characters && db.characters.find(c => c.id === member.originalCharId);
-                if (origChar && typeof openCharacterScreen === 'function') {
-                    openCharacterScreen(origChar, 'group-info');
-                }
-            });
-        }
+        // 点击头像：已绑定的直接进 char_info；存量未绑定的先问要不要新建档案
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', async () => {
+            // 点击时实时查找，避免持有渲染时的旧引用
+            let origChar = member.originalCharId
+                ? (db.characters || []).find(c => c.id === member.originalCharId)
+                : null;
+
+            if (!origChar) {
+                origChar = await _createAndBindMemberPersona(group, member);
+                if (!origChar) return;
+            }
+            if (typeof openCharacterScreen === 'function') {
+                openCharacterScreen(origChar, 'group-info');
+            }
+        });
 
         container.appendChild(item);
     });
+}
+
+/**
+ * 存量群成员没有绑定私聊档案（或绑定的角色已被删除）时，
+ * 用群内的成员信息新建一个角色档案并回绑，这样人设才能编辑、私聊也能接上。
+ * @returns {Promise<Object|null>} 新建好的角色，取消则返回 null
+ */
+async function _createAndBindMemberPersona(group, member) {
+    const displayName = member.groupNickname || member.realName || '该成员';
+    const ok = await AppUI.confirm(
+        `"${displayName}"还没有绑定角色档案，无法编辑人设。\n是否用本群中的成员信息新建一个档案并自动绑定？`,
+        '未绑定档案', '新建并绑定', '取消'
+    );
+    if (!ok) return null;
+
+    const me = group.me || {};
+    const newChar = {
+        id: `char_${Date.now()}`,
+        realName: member.realName || displayName,
+        remarkName: member.groupNickname || member.realName || displayName,
+        persona: member.persona || '',
+        avatar: member.avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+
+        // 我方身份沿用群里已有的设定，省得再配一遍
+        myName: me.realName || '',
+        myNickname: me.nickname || '',
+        myPersona: me.persona || '',
+        myAvatar: me.avatar || 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
+        boundPersonaId: me.boundPersonaId || null,
+
+        theme: 'white_blue',
+        maxMemory: 10,
+        chatBg: '',
+        history: [],
+        isPinned: false,
+        status: '在线',
+        worldBookIds: [],
+        useCustomBubbleCss: false,
+        customBubbleCss: '',
+        unreadCount: 0,
+        memoryJournals: [],
+        journalWorldBookIds: [],
+        peekScreenSettings: { wallpaper: '', customIcons: {}, unlockAvatar: '' },
+        lastUserMessageTimestamp: null,
+    };
+
+    if (!db.characters) db.characters = [];
+    db.characters.push(newChar);
+    member.originalCharId = newChar.id;
+
+    await saveSingleChat(newChar.id, 'private');
+    await saveSingleChat(group.id, 'group');
+    if (typeof renderChatList === 'function') renderChatList();
+    if (typeof renderContacts === 'function') renderContacts();
+    showToast(`已新建档案"${newChar.remarkName}"并绑定`);
+    return newChar;
 }
 
 // ============================================================
@@ -320,7 +412,7 @@ async function _renderGroupTokenStatsInner(group, statsPanel, _hideLoading) {
 
     // ── 记忆 Memory（收藏的长期 + 短期总结，对应 prompt 的"已总结剧情"块）
     const longFavs  = (group.longTermSummaries  || []).filter(s => s.isFavorited).map(s => s.content).join('');
-    const shortFavs = (group.memorySummaries || []).filter(s => s.isFavorited).map(s => s.content).join('');
+    const shortFavs = (group.memorySummaries || []).filter(s => s.isFavorited).map(s => getShortSummaryContent(s, group)).join('');
     const memoryTokens = _gEst(longFavs + shortFavs);
 
     // ── 论坛 Forum（getWatchingPostsContext，与 char_info 相同调用）──
@@ -336,8 +428,8 @@ async function _renderGroupTokenStatsInner(group, statsPanel, _hideLoading) {
     const me = group.me || {};
     let meRealName = me.realName || me.nickname || '';
     let mePersona  = me.persona  || '';
-    if (group.boundPersonaId) {
-        const p = db.userPersonas && db.userPersonas.find(up => up.id === group.boundPersonaId);
+    if (me.boundPersonaId) {
+        const p = db.userPersonas && db.userPersonas.find(up => up.id === me.boundPersonaId);
         if (p) { meRealName = p.realName; mePersona = p.persona || ''; }
     }
     let membersStr = meRealName + '\n' + mePersona + '\n';

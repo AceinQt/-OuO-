@@ -50,15 +50,6 @@ function createMessageBubbleElement(message) {
 
         wrapper.appendChild(bubble);
 
-        wrapper.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            if (!isInMultiSelectMode) {
-                if (typeof createContextMenu === 'function') {
-                    createContextMenu([{ label: '删除', action: () => enterMultiSelectMode(id) }], e.clientX, e.clientY);
-                }
-            }
-        });
-
         return wrapper;
     }
 
@@ -161,20 +152,23 @@ function createMessageBubbleElement(message) {
     // 3. 处理其他可见的系统通知
     const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
     const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
+    const removeRegex = /\[(.*?)将(.*?)移出了群聊\]/;
     const renameRegex = /\[(.*?)修改群名为：(.*?)\]/;
     const memberRenameRegex = /\[(.*?)修改(.*?)的群昵称为：(.*?)\]/;
     const selfRenameRegex = /\[(.*?)将自己的群昵称修改为：(.*?)\]/;
     const timeSkipMatch = content.match(timeSkipRegex);
     const inviteMatch = content.match(inviteRegex);
+    const removeMatch = content.match(removeRegex);
     const renameMatch = content.match(renameRegex);
     const memberRenameMatch = content.match(memberRenameRegex);
     const selfRenameMatch = content.match(selfRenameRegex);
 
-    if (timeSkipMatch || inviteMatch || renameMatch || memberRenameMatch || selfRenameMatch) {
+    if (timeSkipMatch || inviteMatch || removeMatch || renameMatch || memberRenameMatch || selfRenameMatch) {
         wrapper.className = 'message-wrapper system-notification';
         let bubbleText = '';
         if (timeSkipMatch) bubbleText = timeSkipMatch[1];
         if (inviteMatch) bubbleText = `${inviteMatch[1]}邀请${inviteMatch[2]}加入了群聊`;
+        if (removeMatch) bubbleText = `${removeMatch[1]}将${removeMatch[2]}移出了群聊`;
         if (renameMatch) bubbleText = `${renameMatch[1]}修改群名为"${renameMatch[2]}"`;
         if (memberRenameMatch) bubbleText = `${memberRenameMatch[1]}将${memberRenameMatch[2]}的群昵称修改为"${memberRenameMatch[3]}"`;
         if (selfRenameMatch) bubbleText = `${selfRenameMatch[1]}将自己的群昵称修改为"${selfRenameMatch[2]}"`;
@@ -195,7 +189,7 @@ function createMessageBubbleElement(message) {
         if (currentChatType === 'private') {
             avatarUrl = chat.avatar;
         } else {
-            const sender = chat.members.find(m => m.id === senderId);
+            const sender = findGroupMemberById(chat, senderId);
             if (sender) {
                 avatarUrl = sender.avatar;
                 senderNickname = sender.groupNickname;
@@ -468,7 +462,7 @@ function createMessageBubbleElement(message) {
                 if (currentChatType === 'private') {
                     quotedSenderName = chat.remarkName;
                 } else {
-                    const sender = chat.members.find(m => m.id === quote.senderId);
+                    const sender = findGroupMemberById(chat, quote.senderId);
                     quotedSenderName = sender ? sender.groupNickname : '未知成员';
                 }
             }

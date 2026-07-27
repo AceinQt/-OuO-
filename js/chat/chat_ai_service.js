@@ -565,6 +565,18 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             clearCallUserArea();
         }
         
+        // 用户不在这个会话里（后台回复 / timer 回复）时累加未读数。
+        // 之前这里完全没加，导致后台弹了通知，会话红点和桌面角标却是 0，
+        // 用户看完消息也就无从"清零"。
+        if (typeof currentChatId === 'undefined' || currentChatId !== targetChatId) {
+            const unreadDelta = newMessagesForDB.filter(m => {
+                if (!m || m.role !== 'assistant') return false;
+                const t = typeof m.content === 'string' ? m.content : '';
+                return !(t.startsWith('[system') || t.includes('[time-divider]') || t.includes('system-display'));
+            }).length;
+            if (unreadDelta > 0) chat.unreadCount = (chat.unreadCount || 0) + unreadDelta;
+        }
+
         await saveMessagesToDB(newMessagesForDB, targetChatId, targetChatType);
         await saveSingleChat(targetChatId, targetChatType);
         renderChatList();

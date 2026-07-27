@@ -84,6 +84,7 @@ function setupChatRoom() {
         chatExpansionPanel.classList.toggle('visible');
     });
     
+// 1. 手机端触摸发送 (保留原有，e.preventDefault()会阻止移动端再触发click，防止发两次)
     sendMessageBtn.addEventListener('touchend', (e) => {
         e.preventDefault();
         sendMessage();
@@ -91,8 +92,21 @@ function setupChatRoom() {
             messageInput.focus();
         }, 50);
     });
+    
+    // 2. 电脑端鼠标点击发送 (新增这个监听器)
+    sendMessageBtn.addEventListener('click', (e) => {
+        e.preventDefault(); // 防止默认提交等行为
+        sendMessage();
+        // 电脑端发送后保持输入框焦点，方便继续打字
+        messageInput.focus(); 
+    });
+
+    // 3. 键盘回车发送 (保留原有)
     messageInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !isGenerating) sendMessage();
+        if (e.key === 'Enter' && !isGenerating) {
+            e.preventDefault();
+            sendMessage();
+        }
     });
     getReplyBtn.addEventListener('click', async () => {
         if (isGenerating) return;
@@ -260,26 +274,50 @@ function setupChatRoom() {
         }
     });
 
+let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
+
     messageArea.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        // 注意：这里移除了 id === 'load-more-btn' 的判断，因为按钮已经没了
+        e.preventDefault(); // 阻止浏览器自带的右键菜单
         if (isInMultiSelectMode) return;
+        
+        if (isTouchLongPress) {
+            // 注意：这里不要重置 isTouchLongPress，留给下一次触摸去重置
+            // 拦截系统自带的 contextmenu，防止弹两次
+            return;
+        }
+
         const messageWrapper = e.target.closest('.message-wrapper');
         if (!messageWrapper) return;
         handleMessageLongPress(messageWrapper, e.clientX, e.clientY);
     });
 
     messageArea.addEventListener('touchstart', (e) => {
-        // 同样移除了 load-more-btn 的判断
+        isTouchLongPress = false; // 每次手指落下时重置
         const messageWrapper = e.target.closest('.message-wrapper');
         if (!messageWrapper) return;
+        
         longPressTimer = setTimeout(() => {
+            isTouchLongPress = true; // 标记为：已经成功触发了长按
             const touch = e.touches[0];
             handleMessageLongPress(messageWrapper, touch.clientX, touch.clientY);
         }, 400);
     });
-    messageArea.addEventListener('touchend', () => clearTimeout(longPressTimer));
-    messageArea.addEventListener('touchmove', () => clearTimeout(longPressTimer));
+
+    messageArea.addEventListener('touchmove', () => {
+        clearTimeout(longPressTimer); // 手指滑动时取消长按判定
+    });
+
+    messageArea.addEventListener('touchend', (e) => {
+        clearTimeout(longPressTimer);
+        
+        // 核心修复：如果长按菜单已经弹出了，就阻止默认行为！
+        // 这会掐断浏览器在抬手时自动生成的 click 事件，完美解决“概率性消失”
+        if (isTouchLongPress) {
+            if (e.cancelable) {
+                e.preventDefault();
+            }
+        }
+    });
 
     const messageEditForm = document.getElementById('message-edit-form');
     if (messageEditForm) {
@@ -321,11 +359,17 @@ if (chat.unreadCount && chat.unreadCount > 0) {
     
     // 延迟更新列表，让进入聊天室的切换动画更顺滑
     setTimeout(() => {
-        if (typeof renderChatList === 'function') renderChatList(); 
+        if (typeof renderChatList === 'function') renderChatList();
     }, 50);
 }
 
-      if (typeof hideCallCollapseBtn === 'function') hideCallCollapseBtn();          
+// 进了聊天室就算已读：把该会话残留在通知栏里的系统通知清掉
+// （用户不点通知、直接点 App 图标进来看消息时，通知栏本来会一直挂着）
+if (window.NotifyCenter && typeof NotifyCenter.clearChatNotifications === 'function') {
+    NotifyCenter.clearChatNotifications(chatId);
+}
+
+      if (typeof hideCallCollapseBtn === 'function') hideCallCollapseBtn();
                 exitMultiSelectMode();
                 cancelMessageEdit();
                 switchScreen('chat-room-screen');
@@ -1026,7 +1070,7 @@ if (!invisibleRegex.test(message.content)) {
                             senderName = senderChat.remarkName;
                             senderAvatar = senderChat.avatar;
                         } else { // Group chat
-                            const sender = senderChat.members.find(m => m.id === message.senderId);
+                            const sender = findGroupMemberById(senderChat, message.senderId);
                             if (sender) {
                                 senderName = sender.groupNickname;
                                 senderAvatar = sender.avatar;

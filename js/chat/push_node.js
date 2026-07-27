@@ -10,6 +10,10 @@
 (function () {
     'use strict';
 
+    // 调试日志开关：与通知中枢共用一个（NotifyCenter.setDebug(true/false)）。
+    // 每次现读，改完不用刷新。关着时只打成功/失败，不打过程行。
+    function debugOn() { try { return localStorage.getItem('ouoNotifyDebug') === '1'; } catch (_) { return false; } }
+
     // ── 配置读写（存在 db.globalPushSettings，带默认值兜底）───────────
     function getSettings() {
         const defaults = {
@@ -251,6 +255,9 @@ async function subscribe() {
     }
 
     // 清除 peek 池上的 _cfHandedOff 标记（Wave B 用；Wave A 下 peek 池一般没有标记，无副作用）
+    // 【修复·重复推送】已物化(_cfMaterialized)的话题跳过、标记原样保留：
+    // 新逻辑下物化即删、正常不会走到这，但老库数据可能还留着已送达话题，
+    // 抹掉它的标记会让它被 schedulePeek 重新排期 → 同一话题次日重复推送+重复写历史。
     function clearPeekHandoff(chat) {
         const q = chat && chat.proactiveMessageQueue;
         if (!Array.isArray(q)) return;
@@ -258,7 +265,7 @@ async function subscribe() {
         if (peek && peek.content) {
             for (const k of Object.keys(peek.content)) {
                 const topic = peek.content[k];
-                if (topic) { delete topic._cfHandedOff; delete topic._cfScheduledAt; delete topic._cfMaterialized; }
+                if (topic && !topic._cfMaterialized) { delete topic._cfHandedOff; delete topic._cfScheduledAt; }
             }
         }
     }
@@ -284,8 +291,10 @@ async function subscribe() {
     // 改写 draft(只留赢家、锁 probability=100，其余删掉)。
     // 返回 { deliverAt, payload } 表示需要在未来时刻推送；返回 null 表示无需 CF
     // (无可定点槽 / 睡过头 / 赢家在过去 → 交给本地投递)。
-    function preRollDraft(chat, type, draft) {
-        if (!draft || !draft.content) return null;
+    // out 是可选的出参对象，失败时把原因写进 out.reason，供诊断展示。
+    function preRollDraft(chat, type, draft, out) {
+        const bail = (r) => { if (out) out.reason = r; return null; };
+        if (!draft || !draft.content) return bail('草稿没有内容');
         const now = Date.now();
         const slots = [];
         for (const slotId of Object.keys(draft.content)) {
@@ -297,7 +306,7 @@ async function subscribe() {
             if (prob === null || prob === undefined || isNaN(prob)) prob = 90;
             slots.push({ slotId, deliverAt: Math.min.apply(null, times), prob, slot });
         }
-        if (!slots.length) return null; // 该 draft 没有可定点的槽，完全交给本地
+        if (!slots.length) return bail('草稿里没有带 scheduledAt 的槽位，只能交给本地投递'); // 完全交给本地
 
         slots.sort((a, b) => a.deliverAt - b.deliverAt);
         let winner = null;
@@ -314,14 +323,17 @@ async function subscribe() {
         } else {
             // 睡过头：删掉参与预掷的定时槽（无定时槽保留给本地）
             for (const s of slots) delete draft.content[s.slotId];
-            return null;
+            return bail(`预掷全部没中(共 ${slots.length} 组，按概率“睡过头”)，本轮不发`);
         }
 
-        if (winner.deliverAt <= now) return null; // 赢家已过点 → 本地迟到补投，无需 CF
+        // 赢家已过点 → 本地迟到补投，无需 CF
+        if (winner.deliverAt <= now) {
+            return bail(`赢家的发送时刻已经过了 ${Math.round((now - winner.deliverAt) / 60000)} 分钟，交给本地补投`);
+        }
 
         const notifMsgs = winner.slot.messages.map(m => ({ role: 'assistant', content: draftMsgToContent(chat, type, m) }));
         const payload = window.NotifyCenter ? window.NotifyCenter.buildPushPayload(chat, type, notifMsgs) : null;
-        if (!payload) return null;
+        if (!payload) return bail('消息内容算不出通知文案(可能都是系统/视觉类消息)');
         payload.chatId = chat.id;
         payload.chatType = type;
         return { deliverAt: winner.deliverAt, payload };
@@ -395,40 +407,57 @@ async function subscribe() {
 
     // 把一个 peek 话题排成未来 N 天的定点推送(同 groupId，首发即撤其余天)。
     // 一次只推一组(池里已有 _cfHandedOff 的话题则跳过，用持久标记而非内存)；离线不推 peek。
-    async function schedulePeek(chat, type) {
-        if (type === 'private' && chat.offlineModeEnabled) return;
+    async function schedulePeek(chat, type, say) {
+        say = say || (() => {});
+        if (type === 'private' && chat.offlineModeEnabled) return say('peek: 处于离线模式，不移交');
         const q = chat.proactiveMessageQueue;
-        if (!Array.isArray(q)) return;
+        if (!Array.isArray(q)) return say('peek: 没有消息池');
         const peek = q.find(m => m.type === 'time_window_peek');
-        if (!peek || !peek.content) return;
+        if (!peek || !peek.content) return say('peek: 备用池是空的（还没生成过话题）');
 
         const keys = Object.keys(peek.content);
-        // 已有在飞的话题（持久标记）→ 一次只保持一组
-        if (keys.some(k => peek.content[k] && peek.content[k]._cfHandedOff)) return;
+        // 已有在飞的话题（持久标记）→ 一次只保持一组；已物化的不算在飞(老库残留不该卡住新移交)
+        if (keys.some(k => peek.content[k] && peek.content[k]._cfHandedOff && !peek.content[k]._cfMaterialized)) {
+            return say('peek: 已有一组在飞，一次只保持一组');
+        }
 
         const now = Date.now();
 
         // 最近一条真实聊天(排除主动/视觉消息)——peek 送达至少晚于它 1 小时
         let lastInteract = 0;
+        let lastRealIdx = -1;
         if (Array.isArray(chat.history)) {
             for (let i = chat.history.length - 1; i >= 0; i--) {
                 const m = chat.history[i];
                 if (m && m.id && !m.id.includes('msg_proactive_') && !m.id.includes('msg_visual_')) {
-                    lastInteract = m.timestamp || 0; break;
+                    lastInteract = m.timestamp || 0; lastRealIdx = i; break;
                 }
             }
         }
+
+        // 【不连投】最后一条真实消息之后若已存在 msg_proactive_(用户还没回复上一条主动消息)→ 不再移交新 peek。
+        // 与本地投递路径的 hasSentProactiveSinceLastReal 守卫一致：CF 路径当初漏了这条,才导致 peek 连续投递。
+        // (在飞未物化的 peek 由上方 _cfHandedOff 守卫拦；本条负责“已物化但未获回复”的场景。)
+        if (Array.isArray(chat.history)) {
+            const start = lastRealIdx === -1 ? 0 : lastRealIdx + 1;
+            for (let i = start; i < chat.history.length; i++) {
+                if (chat.history[i] && chat.history[i].id && chat.history[i].id.includes('msg_proactive_')) {
+                    return say('peek: 上一条主动消息你还没回复，按「不连投」规则不排新的');
+                }
+            }
+        }
+
         const target = Math.max(now, lastInteract + 60 * 60 * 1000); // 送达下限:上次聊天+1h
 
-        // 候选:未移交、有消息、未过期(generatedAt+72h)的话题
+        // 候选:未移交、未物化(已送达的老库残留不重排)、有消息、未过期(generatedAt+72h)的话题
         const entries = keys
             .map(k => ({ k, topic: peek.content[k] }))
-            .filter(e => e.topic && !e.topic._cfHandedOff && Array.isArray(e.topic.messages) && e.topic.messages.length)
+            .filter(e => e.topic && !e.topic._cfHandedOff && !e.topic._cfMaterialized && Array.isArray(e.topic.messages) && e.topic.messages.length)
             .filter(e => {
                 const exp = e.topic.expireAt || ((e.topic.generatedAt || now) + 72 * 60 * 60 * 1000);
                 return exp > now;
             });
-        if (!entries.length) return;
+        if (!entries.length) return say(`peek: ${keys.length} 组话题全部已移交/已送达/已过期，没有可排的`);
 
         // 每组按自己的钟点排未来定点(下限 target、上限 min(now+72h, 该组 generatedAt+72h))；
         // 选“首个送达时刻”离 target 最近的一组，与本地选题标准一致。
@@ -439,14 +468,14 @@ async function subscribe() {
             e.times = futureDailyTimes(clk, target, until);
         }
         const valid = entries.filter(e => e.times && e.times.length);
-        if (!valid.length) return;
+        if (!valid.length) return say('peek: 候选话题的钟点都排不进「上次聊天+1h ~ 3天内」这个窗口');
         valid.sort((a, b) => a.times[0] - b.times[0]);
         const pick = valid[0];
         const times = pick.times;
 
         const notifMsgs = pick.topic.messages.map(m => ({ role: 'assistant', content: draftMsgToContent(chat, type, m) }));
         const payload = window.NotifyCenter ? window.NotifyCenter.buildPushPayload(chat, type, notifMsgs) : null;
-        if (!payload) return;
+        if (!payload) return say('peek: 话题内容算不出通知文案');
         payload.chatId = chat.id;
         payload.chatType = type;
         payload.kind = 'peek';
@@ -461,34 +490,73 @@ async function subscribe() {
         if (added) {
             pick.topic._cfHandedOff = true;   // 持久标记：本地动态 peek 路径跳过它、也不再重复移交
             pick.topic._cfScheduledAt = times[0]; // 最近一次发送时刻：供本地“到点静默写入历史”用
+            say(`✅ peek 已移交 ${times.length} 个时点，最近一次在 ${new Date(times[0]).toLocaleString()}`);
+        } else {
+            say('❌ peek 的 add-task 全部失败（网络/Worker 地址/token 检查一下）');
         }
     }
 
     // 移交单个会话（幂等，靠持久标记去重）：
     //   · summary/idle：没移交过(无 _cfHandedOff)才预掷+移交，标 _cfHandedOff；已移交则跳过，绝不重复。
     //   · peek：无 summary/idle 占位时才排(与本地优先级一致)。
-    async function reconcileChat(chat, type) {
-        if (!chatEligible(chat)) return;
-        const q = chat.proactiveMessageQueue;
-        if (!Array.isArray(q) || !q.length) return;
+    async function reconcileChat(chat, type, report) {
+        const who = (chat && (chat.remarkName || chat.realName || chat.name)) || (chat && chat.id) || '?';
+        // 日志策略：链路已验证，日常只打「真的做了事」的行（✅ 移交成功 / ❌ 失败），
+        // 各种「跳过/不符合条件」的过程行默认静音——它们仍然完整进 report，
+        // 「诊断:立即移交并检查」按钮照旧看得到全部。要在控制台看全量：NotifyCenter.setDebug(true)。
+        const say = (r) => {
+            if (report) report.push(who + '：' + r);
+            if (debugOn() || /^[✅❌]/.test(r)) console.log(`[推送节点] ${who}: ${r}`);
+            return r;
+        };
 
-        const draft = q.find(m => m.type === 'time_window_summary') || q.find(m => m.type === 'time_window_idle');
+        if (!isReady()) return say('推送节点未配置好(isReady=false)，跳过');
+        if (!notifyEnabled()) return say('「消息通知」主开关没开，跳过');
+        if (chat.proactiveMode === 'dnd' || chat.proactiveMode === 'timer') {
+            return say('主动模式是 ' + chat.proactiveMode + '，按设计不移交');
+        }
+        const q = chat.proactiveMessageQueue;
+        if (!Array.isArray(q) || !q.length) return say('消息池是空的，没东西可移交');
+
+        // ★【修复】原来写的是 q.find(summary) || q.find(idle)，只要队列里有 summary 这条记录
+        //   就永远选它——哪怕它早就过期、内容已被投递清空、且带着 _cfHandedOff 标记。
+        //   结果：新生成的 idle 草稿根本没机会被看到，CF 那边永远 0 个任务。
+        //   现在只认「没过期 && 还有内容」的草稿，summary 优先，其次 idle。
+        const now = Date.now();
+        const isLive = m => m && m.content && Object.keys(m.content).length > 0
+            && (!m.expireAt || m.expireAt > now);
+        const draft = q.find(m => m.type === 'time_window_summary' && isLive(m))
+            || q.find(m => m.type === 'time_window_idle' && isLive(m));
+
         let siActive = false;
         if (draft) {
             if (!draft._cfHandedOff) {
                 // 先清掉该会话可能残留的旧 si 任务(如重新生成场景)，再移交新的
                 await cfCancelChat(chat, 'si');
-                const decision = preRollDraft(chat, type, draft);
+                const out = {};
+                const decision = preRollDraft(chat, type, draft, out);
                 if (decision) {
                     const taskId = 'cf_' + chat.id + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
                     decision.payload.kind = 'si';
                     const ok = await addTask({ taskId, deliverAt: decision.deliverAt, payload: decision.payload });
-                    if (ok) draft._cfTaskId = taskId;
+                    if (ok) {
+                        draft._cfTaskId = taskId;
+                        const mins = Math.round((decision.deliverAt - now) / 60000);
+                        say(`✅ ${draft.type === 'time_window_summary' ? 'summary' : 'idle'} 已移交，约 ${mins} 分钟后推送`);
+                    } else {
+                        say('❌ add-task 请求失败（网络/Worker 地址/token 检查一下）');
+                    }
+                } else {
+                    say('未产生任务：' + (out.reason || '未知'));
                 }
                 draft._cfHandedOff = true; // 无论掷中与否都标记：已决策，不再重复预掷/移交
                 if (typeof saveSingleChat === 'function') { try { await saveSingleChat(chat.id, type); } catch (_) {} }
+            } else {
+                say('summary/idle 之前已决策过(_cfHandedOff)，本次跳过');
             }
             siActive = !!(draft.content && Object.keys(draft.content).length > 0);
+        } else {
+            say('没有「未过期且有内容」的 summary/idle 草稿，转 peek');
         }
 
         // peek：仅在没有 summary/idle 占位时移交；有占位则撤掉在飞 peek(保证 si 优先)
@@ -496,7 +564,7 @@ async function subscribe() {
             await cancelPendingPeek(chat);
             if (typeof saveSingleChat === 'function') { try { await saveSingleChat(chat.id, type); } catch (_) {} }
         } else {
-            await schedulePeek(chat, type);
+            await schedulePeek(chat, type, say);
             if (typeof saveSingleChat === 'function') { try { await saveSingleChat(chat.id, type); } catch (_) {} }
         }
     }
@@ -516,7 +584,7 @@ async function subscribe() {
 
     // reconcile 全部会话（进入后台时触发，作为生成后立即移交的兜底）
     let _reconciling = false;
-    async function reconcile() {
+    async function reconcile(report) {
         if (!isReady() || !notifyEnabled()) return;
         if (_reconciling) return; // 防重入
         _reconciling = true;
@@ -526,11 +594,24 @@ async function subscribe() {
                 ...(((window.db && db.groups) || []).map(g => ({ chat: g, type: 'group' })))
             ];
             for (const { chat, type } of list) {
-                try { await reconcileChat(chat, type); }
+                try { await reconcileChat(chat, type, report); }
                 catch (e) { console.warn('[推送节点] reconcile 会话失败:', chat && chat.id, e); }
             }
         } finally {
             _reconciling = false;
+        }
+    }
+
+    // 问 Worker 现在到底存着几个待发任务（/list 是 GET，无需 token）
+    async function fetchTaskList() {
+        const s = getSettings();
+        if (!s.workerUrl) return null;
+        try {
+            const res = await fetch(apiUrl('/list'), { headers: apiHeaders() });
+            if (!res.ok) return { error: 'HTTP ' + res.status };
+            return await res.json();
+        } catch (e) {
+            return { error: (e && e.message) ? e.message : String(e) };
         }
     }
 
@@ -553,7 +634,7 @@ async function subscribe() {
             ...(((window.db && db.characters) || []).map(c => ({ chat: c, type: 'private' }))),
             ...(((window.db && db.groups) || []).map(g => ({ chat: g, type: 'group' })))
         ];
-        let eligible = 0, withDraft = 0, withPeek = 0, handed = 0;
+        let eligible = 0, withDraft = 0, withPeek = 0;
         for (const { chat } of all) {
             if (!chatEligible(chat)) continue;
             eligible++;
@@ -561,23 +642,42 @@ async function subscribe() {
             if (q.find(m => m.type === 'time_window_summary' || m.type === 'time_window_idle')) withDraft++;
             if (q.find(m => m.type === 'time_window_peek')) withPeek++;
         }
+        lines.push('');
+        lines.push('符合条件会话: ' + eligible + '（含summary/idle: ' + withDraft + '，含peek池: ' + withPeek + '）');
 
-        // 真正跑一次移交
-        await reconcile();
+        // CF 上原有多少任务
+        const before = await fetchTaskList();
 
-        for (const { chat } of all) {
-            const q = chat.proactiveMessageQueue || [];
-            const siHanded = q.some(m => (m.type === 'time_window_summary' || m.type === 'time_window_idle') && m._cfHandedOff);
-            const peek = q.find(m => m.type === 'time_window_peek');
-            const peekHanded = peek && peek.content && Object.keys(peek.content).some(k => peek.content[k] && peek.content[k]._cfHandedOff);
-            if (siHanded || peekHanded) handed++;
+        // 真正跑一次移交，逐会话记录卡在哪一步
+        const report = [];
+        await reconcile(report);
+
+        lines.push('');
+        lines.push('── 逐会话结论 ──');
+        if (!report.length) lines.push('（没有任何会话被处理）');
+        else lines.push(report.join('\n'));
+
+        // 移交完 CF 上有多少任务 —— 这才是"到底进没进 CF"的唯一真相
+        const after = await fetchTaskList();
+        lines.push('');
+        lines.push('── Worker 上的待发任务 ──');
+        if (!after) {
+            lines.push('没填 Worker 地址，查不了');
+        } else if (after.error) {
+            lines.push('查询失败: ' + after.error + '（Worker 地址对不对？部署了没？）');
+        } else {
+            const b = (before && typeof before.count === 'number') ? before.count : '?';
+            lines.push(`移交前 ${b} 个 → 现在 ${after.count} 个`);
+            (after.tasks || []).slice(0, 6).forEach(t => {
+                const mins = typeof t.dueInSec === 'number' ? Math.round(t.dueInSec / 60) : '?';
+                lines.push(`· ${t.title || '(无标题)'} — ${mins} 分钟后`);
+            });
+            if ((after.tasks || []).length > 6) lines.push(`… 还有 ${after.tasks.length - 6} 个`);
+            if (after.count === 0) {
+                lines.push('');
+                lines.push('CF 上是 0 个任务，看上面「逐会话结论」就知道卡在哪一步了。');
+            }
         }
-        lines.push('');
-        lines.push('符合条件会话: ' + eligible);
-        lines.push('含summary/idle: ' + withDraft + '，含peek池: ' + withPeek);
-        lines.push('本次移交出任务的会话: ' + handed);
-        lines.push('');
-        lines.push('移交完成。可打开 Worker 的 /list 查看具体任务。');
         await uiAlert(lines.join('\n'));
     }
 
@@ -750,7 +850,19 @@ async function onGenVapid() {
         const testBtn = document.getElementById('push-test-task-btn');
         if (testBtn) testBtn.onclick = sendTestTask;
         const diagBtn = document.getElementById('push-diagnose-btn');
-        if (diagBtn) diagBtn.onclick = diagnoseHandoff;
+        if (diagBtn) {
+            // 诊断会真的跑一遍移交 + 查两次 /list，慢，期间禁止重复点（<botton> 不是真按钮，
+            // :disabled 不生效，所以用标志位 + 改文案来表示忙）
+            let diagBusy = false;
+            diagBtn.onclick = async () => {
+                if (diagBusy) return;
+                diagBusy = true;
+                const old = diagBtn.textContent;
+                diagBtn.textContent = '检查中';
+                try { await diagnoseHandoff(); }
+                finally { diagBusy = false; diagBtn.textContent = old; }
+            };
+        }
 
         if (!s.workerUrl) setHint('可选功能：部署一个专属 Cloudflare Worker，即可在被杀后台时也准点收到消息。');
         else if (s.enabled) setHint('已开启。');
@@ -775,6 +887,9 @@ async function onGenVapid() {
         cancelChat,
         cancelSi,
         cancelAllDevice,
-        diagnoseHandoff
+        diagnoseHandoff,
+        fetchTaskList,
+        // 控制台开关：PushNode.setDebug(true) 打开全量移交日志（与 NotifyCenter 共用同一开关）
+        setDebug: (on) => { if (window.NotifyCenter && NotifyCenter.setDebug) NotifyCenter.setDebug(on); }
     };
 })();

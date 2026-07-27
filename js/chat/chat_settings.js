@@ -97,19 +97,43 @@ function setupChatSettings() {
     // 1. 编辑我的用户身份档案
     const editUserPersonaBtn = document.getElementById('edit-user-persona-btn');
     if (editUserPersonaBtn) {
-        editUserPersonaBtn.addEventListener('click', () => {
+        editUserPersonaBtn.addEventListener('click', async () => {
             const char = db.characters.find(c => c.id === currentChatId);
-            if (char && char.boundPersonaId) {
-                const persona = db.userPersonas.find(p => p.id === char.boundPersonaId);
-                if (persona) {
-                    document.getElementById('chat-settings-sidebar').classList.remove('open'); // 关闭侧边栏
-                    if (typeof openUserPersonaScreen === 'function') openUserPersonaScreen(persona, 'chat-room');
-                } else {
-                    showToast('未找到绑定的身份档案，请重新绑定');
-                }
-            } else {
-                showToast('请先绑定一个身份档案');
+            if (!char) return;
+
+            let persona = char.boundPersonaId
+                ? (db.userPersonas || []).find(p => p.id === char.boundPersonaId)
+                : null;
+
+            // 存量聊天未绑定（或绑定的档案已不存在）：询问是否用聊天内的身份信息新建档案并绑定
+            if (!persona) {
+                const ok = await AppUI.confirm(
+                    '当前聊天还没有绑定身份档案。\n是否用本聊天中的身份信息新建一个档案并自动绑定？',
+                    '未绑定档案', '新建并绑定', '取消'
+                );
+                if (!ok) return;
+
+                const oldNick = char.myNickname || char.myName || '我';
+                persona = {
+                    id: Date.now().toString() + Math.random().toString().slice(2, 6),
+                    realName: oldNick,
+                    nickname: oldNick,
+                    persona: char.myPersona || '',
+                    status: '在线',
+                    avatar: char.myAvatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'
+                };
+                if (!db.userPersonas) db.userPersonas = [];
+                db.userPersonas.push(persona);
+                char.boundPersonaId = persona.id;
+
+                if (typeof saveUserPersonaTable === 'function') await saveUserPersonaTable();
+                await saveSingleChat(currentChatId, 'private');
+                if (typeof renderContacts === 'function') renderContacts();
+                showToast(`已新建档案"${persona.nickname}"并绑定`);
             }
+
+            document.getElementById('chat-settings-sidebar').classList.remove('open'); // 关闭侧边栏
+            if (typeof openUserPersonaScreen === 'function') openUserPersonaScreen(persona, 'chat-room');
         });
     }
 
@@ -180,6 +204,37 @@ function setupChatSettings() {
         });
     }
     
+    // 回复条数：点击菜单唤起输入弹窗，格式“最低数-最高数”，留空为默认
+    const replyRangeItem = document.getElementById('setting-reply-range-item');
+    if (replyRangeItem) {
+        replyRangeItem.addEventListener('click', async () => {
+            const currentVal = document.getElementById('setting-reply-range').value || '';
+            const result = await AppUI.prompt('请输入回复条数范围，格式“最低数-最高数”（如 3-8）；留空恢复默认', currentVal, '回复条数', '确定', '取消');
+            if (result === null) return; // 取消
+            const trimmed = result.trim();
+            if (trimmed === '') {
+                document.getElementById('setting-reply-range').value = '';
+                document.getElementById('setting-reply-range-display').textContent = '默认';
+                return;
+            }
+            const m = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+            if (!m) { showToast('格式不正确，请输入如 3-8'); return; }
+            const lo = parseInt(m[1], 10), hi = parseInt(m[2], 10);
+            if (lo <= 0 || hi < lo) { showToast('请确保最低数≥1且不大于最高数'); return; }
+            const normalized = `${lo}-${hi}`;
+            document.getElementById('setting-reply-range').value = normalized;
+            document.getElementById('setting-reply-range-display').textContent = normalized;
+        });
+    }
+
+    // 清理图片：批量把本聊天的图片转成文字描述
+    const cleanupImagesBtn = document.getElementById('cleanup-images-btn');
+    if (cleanupImagesBtn) {
+        cleanupImagesBtn.addEventListener('click', () => {
+            if (typeof cleanupChatImages === 'function') cleanupChatImages();
+        });
+    }
+
     const clearChatHistoryBtn = document.getElementById('clear-chat-history-btn');
     if (clearChatHistoryBtn) {
         clearChatHistoryBtn.addEventListener('click', async () => {
@@ -274,6 +329,12 @@ function loadSettingsToSidebar() {
         if (maxMemDisplay) {
             maxMemDisplay.textContent = e.maxMemory || 10;
         }
+
+        document.getElementById('setting-reply-range').value = e.replyRange || '';
+        const replyRangeDisplay = document.getElementById('setting-reply-range-display');
+        if (replyRangeDisplay) {
+            replyRangeDisplay.textContent = e.replyRange || '默认';
+        }
         
         document.getElementById('setting-bilingual-mode').checked = e.bilingualModeEnabled || false;
         const timePEl = document.getElementById('setting-time-perception');
@@ -326,6 +387,7 @@ async function saveSettingsFromSidebar() {
         }
         
         e.maxMemory = document.getElementById('setting-max-memory').value;
+        e.replyRange = document.getElementById('setting-reply-range').value || '';
         e.bilingualModeEnabled = document.getElementById('setting-bilingual-mode').checked;
         const timePEl = document.getElementById('setting-time-perception');
         if (timePEl) e.timePerceptionEnabled = timePEl.checked;

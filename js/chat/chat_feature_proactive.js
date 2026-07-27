@@ -273,7 +273,7 @@ async function checkAndDeliverProactiveMessages() {
                 const topic = peek.content[key];
                 if (!topic || !topic._cfHandedOff || topic._cfMaterialized) continue;
                 if (typeof topic._cfScheduledAt !== 'number' || topic._cfScheduledAt > tNow) continue;
-                if (!Array.isArray(topic.messages) || !topic.messages.length) { topic._cfMaterialized = true; continue; }
+                if (!Array.isArray(topic.messages) || !topic.messages.length) { delete peek.content[key]; materialized = true; continue; }
 
                 let baseTs = Math.min(topic._cfScheduledAt, tNow - topic.messages.length * 1000);
                 const putMsgs = [];
@@ -338,7 +338,10 @@ async function checkAndDeliverProactiveMessages() {
                         addMessageBubble(newMsg, chat.id, type);
                     }
                 }
-                topic._cfMaterialized = true;
+                // 【修复·重复推送】物化完成即从池中删除(与本地投递“发完即删”对齐)。
+                // 以前只标 _cfMaterialized 留在池里等 72h 过期，一旦用户发言触发
+                // clearPeekHandoff 抹掉标记，话题就“复活”被重新排期 → 次日同一时刻重复推送+重复写历史。
+                delete peek.content[key];
                 materialized = true;
                 if (putMsgs.length) {
                     await saveMessagesToDB(putMsgs, chat.id, type);

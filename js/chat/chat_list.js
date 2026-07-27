@@ -144,6 +144,47 @@ function setupChatListScreen() {
             });
         }
 
+        // ====== 识图API按钮：打开设置弹窗 ======
+        const visionBtn = document.getElementById('chat-sidebar-vision-btn');
+        const visionModal = document.getElementById('vision-api-modal');
+        const visionForm = document.getElementById('vision-api-form');
+        const visionSelect = document.getElementById('vision-api-preset-select');
+
+        if (visionBtn && visionModal && visionForm && visionSelect) {
+            visionBtn.addEventListener('click', () => {
+                sidebar.classList.remove('active');       // 收起侧边栏
+                sidebarOverlay?.classList.remove('visible');
+
+                // 填充预设下拉框（只取聊天类预设）
+                visionSelect.innerHTML = '<option value="">同聊天API</option>';
+                (db.apiPresets || [])
+                    .filter(p => !p.type || p.type === 'chat')
+                    .forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.name;
+                        opt.textContent = p.name;
+                        visionSelect.appendChild(opt);
+                    });
+                visionSelect.value = (db.globalVisionSettings || {}).apiPreset || '';
+
+                visionModal.classList.add('visible');
+            });
+
+            visionForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                db.globalVisionSettings = { ...(db.globalVisionSettings || {}), apiPreset: visionSelect.value };
+                await saveGlobalKeys(['globalVisionSettings']);
+                visionModal.classList.remove('visible');
+                showToast('识图API已保存');
+            });
+
+            const visionCancelBtn = document.getElementById('vision-api-cancel-btn');
+            visionCancelBtn?.addEventListener('click', () => visionModal.classList.remove('visible'));
+            visionModal.addEventListener('click', (e) => {
+                if (e.target === visionModal) visionModal.classList.remove('visible');
+            });
+        }
+
     chatListContainer.addEventListener('click', (e) => {
         const chatItem = e.target.closest('.chat-item');
         if (chatItem) {
@@ -483,7 +524,7 @@ function goBackToContacts() {
                 sortedChats.forEach(chat => {
                     let lastMessageText = '开始聊天吧...';
                     if (chat.history && chat.history.length > 0) {
-                        const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
+                        const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?将.*?移出了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
                         const visibleHistory = chat.history.filter(msg => !invisibleRegex.test(msg.content));
                         if (visibleHistory.length > 0) {
                             const lastMsg = visibleHistory[visibleHistory.length - 1];
@@ -547,6 +588,7 @@ function goBackToContacts() {
                         } else {
                             const lastEverMsg = chat.history[chat.history.length - 1];
                             const inviteRegex = /\[(.*?)邀请(.*?)加入了群聊\]/;
+                            const removeRegex = /\[.*?将.*?移出了群聊\]/;
                             const renameRegex = /\[.*?修改群名为：.*?\]/;
                             const timeSkipRegex = /\[system-display:([\s\S]+?)\]/;
                             const timeSkipMatch = lastEverMsg.content.match(timeSkipRegex);
@@ -555,6 +597,8 @@ function goBackToContacts() {
                                 lastMessageText = timeSkipMatch[1];
                             } else if (inviteRegex.test(lastEverMsg.content)) {
                                 lastMessageText = '新成员加入了群聊';
+                            } else if (removeRegex.test(lastEverMsg.content)) {
+                                lastMessageText = '有成员被移出群聊';
                             } else if (renameRegex.test(lastEverMsg.content)) {
                                 lastMessageText = '群聊名称已修改';
                             } else {

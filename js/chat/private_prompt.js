@@ -33,7 +33,7 @@
             const dateStr = s.occurredAt ? s.occurredAt.split(' ')[0] : '未知日期';
             const daysAgo = getDaysAgo(s.occurredAt);
             // 【关键修改】显式标注“昨天/几天前”，强制 AI 理解这是过去式
-            return `[回忆：${dateStr} ${daysAgo}] ${s.title}\n${s.content}`;
+            return `[回忆：${dateStr} ${daysAgo}] ${s.title}\n${getShortSummaryContent(s, character)}`;
         });
 
     // 2. 获取收藏的长期总结
@@ -91,7 +91,7 @@ if (watchingContext) {
           `[${character.realName}的消息：喂？]\n` +
           `[${character.realName}的消息：听得到吗？]\n`;
     prompt += `6. **挂断通话**：如果对话需要自然结束，你可以主动挂断，单起一行输出：[${character.realName}挂断了通话]。\n`; 
-    prompt += `7. 现在是 ${currentTime}。`;
+    if (character.timePerceptionEnabled) prompt += `7. 现在是 ${currentTime}。`;
 
     return prompt;
 }
@@ -134,7 +134,9 @@ if (watchingContext) {
 
                     // 记忆
                     if (allFavs) {
-                        prompt += `**重要记忆**：现在是 ${currentTime}，这是需要铭记的历史互动：\n${allFavs}\n\n`;
+                        prompt += character.timePerceptionEnabled
+                            ? `**重要记忆**：现在是 ${currentTime}，这是需要铭记的历史互动：\n${allFavs}\n\n`
+                            : `**重要记忆**：这是需要铭记的历史互动：\n${allFavs}\n\n`;
                         prompt += `*这些记忆会影响${character.realName}的反应，但不要刻意提及"我记得..."，让它自然地影响情绪和判断。*\n\n`;
                     }
                     
@@ -246,8 +248,17 @@ if (watchingContext) {
                     prompt += `✨双语模式特别指令✨：当你的角色的母语为中文以外的语言时，你的消息回复必须严格遵循双语模式下的普通消息格式：[${character.realName}的消息：{外语原文}（中文翻译）],例如: [${character.realName}的消息：Of course, I'd love to.（当然，我很乐意。）],中文翻译文本视为系统自翻译，不视为角色的原话;当你的角色想要说中文时，需要根据你的角色设定自行判断对于中文的熟悉程度来造句，并使用普通消息的标准格式: [${character.realName}的消息：{中文消息内容}] 。这条规则的优先级非常高，请务必遵守。\n`;
                     prompt += `**注意：括号内中文翻译为纯文本翻译，原句中的颜文字、表情等内容禁止翻译！如："なので、メッセージを頂けて、めちゃくちゃ嬉しいです！(ฅ́˘ฅ̀)♡（笑） （所以，能收到你的消息，我超级开心的！）"此句，颜文字和"（笑）"禁止出现在中文翻译中**`;
                 }
-                prompt += `15. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少3-8条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
-                prompt += `16. 现在是 ${currentTime}。你应知晓当前时间，但不要主动提及或评论时间（例如，不要催促我睡觉），不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
+                // 回复条数：优先使用用户自定义 replyRange（格式“最低-最高”），否则默认 3-8
+                let replyLo = 3, replyHi = 8;
+                const _rr = (character.replyRange || '').match(/^(\d+)\s*-\s*(\d+)$/);
+                if (_rr) {
+                    const _lo = parseInt(_rr[1], 10), _hi = parseInt(_rr[2], 10);
+                    if (_lo > 0 && _hi >= _lo) { replyLo = _lo; replyHi = _hi; }
+                }
+                prompt += `15. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少${replyLo}-${replyHi}条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
+                prompt += character.timePerceptionEnabled
+                    ? `16. 现在是 ${currentTime}。你应知晓当前时间，但不要主动提及或评论时间（例如，不要催促我睡觉），不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`
+                    : `16. 不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
 
                 return prompt;
             }

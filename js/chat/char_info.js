@@ -259,7 +259,7 @@ async function renderTokenStats(charId) {
     const wbTokens = estimateTokens(wbBefore + wbAfter + wbWriting);
 
     // 【记忆 Memory】
-    const shortFavs = (char.memorySummaries || []).filter(s => s.isFavorited).map(s => s.content).join('');
+    const shortFavs = (char.memorySummaries || []).filter(s => s.isFavorited).map(s => getShortSummaryContent(s, char)).join('');
     const longFavs  = (char.longTermSummaries || []).filter(s => s.isFavorited).map(s => s.content).join('');
     const memoryTokens = estimateTokens(shortFavs + longFavs);
 
@@ -420,6 +420,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const source = document.getElementById('peek-screen').dataset.source;
             if (source === 'chat-room') {
                 switchScreen('chat-room-screen');
+                // 从 peek 返回聊天室时，期间可能已投递新消息到 chat.history，
+                // 但 peek 期间 #message-area 不可见（气泡没真正显示/迟到补投未画），
+                // 这里补一次重渲染，与 openChatRoom 末尾一致，确保新消息可见。
+                if (typeof renderMessages === 'function') renderMessages(false, false);
             } else {
                 switchScreen('character-edit-screen');
             }

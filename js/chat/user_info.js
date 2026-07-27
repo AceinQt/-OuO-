@@ -23,7 +23,7 @@ if (backBtn) {
         if (source === 'chat-room') {
             switchScreen('chat-room-screen');
         } else if (source === 'group-info') {
-            switchScreen('group-info-screen');
+            _returnToGroupInfoScreen();
         } else {
             goBackToContacts();
         }
@@ -101,6 +101,14 @@ if (backBtn) {
                             }
                         });
                     }
+                    // 同步论坛身份：论坛"我"页面绑定了该档案时，姓名/人设跟随变动
+                    if (db.forumUserIdentity && db.forumUserIdentity.boundPersonaId === existingPersona.id) {
+                        db.forumUserIdentity.realName = realName;
+                        db.forumUserIdentity.persona  = persona;
+                        if (typeof saveForumMeta === 'function') {
+                            await saveForumMeta();
+                        }
+                    }
 
                     // 状态有变更时向所有涉及该档案的聊天推送通知
                     if (status !== oldStatus) {
@@ -145,7 +153,7 @@ if (source === 'chat-room') {
     switchScreen('chat-room-screen');
     if (typeof loadSettingsToSidebar === 'function') loadSettingsToSidebar();
 } else if (source === 'group-info') {
-    switchScreen('group-info-screen');  // ← 补上
+    _returnToGroupInfoScreen();  // ← 重新渲染，避免群主信息显示旧值
 } else {
     goBackToContacts();
 }
@@ -172,6 +180,11 @@ if (source === 'chat-room') {
                     await dexieDB.userPersonas.delete(p.id);
                 }
                 db.userPersonas = db.userPersonas.filter(x => x.id !== p.id);
+                // 论坛身份若绑定了该档案，解除绑定（内容保留）
+                if (db.forumUserIdentity && db.forumUserIdentity.boundPersonaId === p.id) {
+                    db.forumUserIdentity.boundPersonaId = null;
+                    if (typeof saveForumMeta === 'function') await saveForumMeta();
+                }
                 if (typeof renderContacts === 'function') renderContacts();
                 showToast('档案已删除');
                 goBackToContacts();
@@ -192,6 +205,19 @@ if (source === 'chat-room') {
             const panel = personaScreen.querySelector(`.char-info-tab-panel[data-panel="${tab}"]`);
             if (panel) panel.classList.add('active');
         });
+    }
+}
+
+// 返回群信息页时重新渲染（群主名片可能刚绑定/编辑过档案），仅切屏会显示旧值
+function _returnToGroupInfoScreen() {
+    const infoScreen = document.getElementById('group-info-screen');
+    const group = infoScreen && db.groups
+        ? db.groups.find(g => g.id === infoScreen.dataset.groupId)
+        : null;
+    if (group && typeof openGroupInfoScreen === 'function') {
+        openGroupInfoScreen(group, infoScreen.dataset.source || '');
+    } else {
+        switchScreen('group-info-screen');
     }
 }
 

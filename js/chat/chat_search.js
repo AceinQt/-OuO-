@@ -227,7 +227,7 @@ function createSearchResultItem(msg) {
          if (currentChatType === 'private') {
              senderName = chat.remarkName || chat.name;
          } else {
-             const member = chat.members.find(m => m.id === msg.senderId);
+             const member = findGroupMemberById(chat, msg.senderId);
              senderName = member ? member.groupNickname : '群成员';
          }
     } else if (msg.content.includes('system-narration') || msg.content.includes('剧情旁白')) {

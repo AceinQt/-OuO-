@@ -9,14 +9,12 @@ const createGroupBtn = document.getElementById('create-group-btn'),
     editGroupMemberModal = document.getElementById('edit-group-member-modal'),
     editGroupMemberForm = document.getElementById('edit-group-member-form');
 
-const addMemberActionSheet = document.getElementById('add-member-actionsheet'),
-    inviteExistingMemberBtn = document.getElementById('invite-existing-member-btn'),
-    createNewMemberBtn = document.getElementById('create-new-member-btn'),
-    inviteMemberModal = document.getElementById('invite-member-modal'),
+const inviteMemberModal = document.getElementById('invite-member-modal'),
     inviteMemberSelectionList = document.getElementById('invite-member-selection-list'),
     confirmInviteBtn = document.getElementById('confirm-invite-btn'),
-    createMemberForGroupModal = document.getElementById('create-member-for-group-modal'),
-    createMemberForGroupForm = document.getElementById('create-member-for-group-form');
+    removeMemberModal = document.getElementById('remove-member-modal'),
+    removeMemberSelectionList = document.getElementById('remove-member-selection-list'),
+    confirmRemoveMemberBtn = document.getElementById('confirm-remove-member-btn');
 
 const groupRecipientSelectionModal = document.getElementById('group-recipient-selection-modal'),
     groupRecipientSelectionList = document.getElementById('group-recipient-selection-list'),
@@ -199,6 +197,14 @@ function setupGroupChatSystem() {
         }
     });
 
+    // 清理图片：批量把本群聊的图片转成文字描述
+    const cleanupGroupImagesBtn = document.getElementById('cleanup-group-images-btn');
+    if (cleanupGroupImagesBtn) {
+        cleanupGroupImagesBtn.addEventListener('click', () => {
+            if (typeof cleanupChatImages === 'function') cleanupChatImages();
+        });
+    }
+
     // 8. 清空记录
     document.getElementById('clear-group-chat-history-btn').addEventListener('click', async () => {
         const group = db.groups.find(g => g.id === currentChatId);
@@ -219,10 +225,16 @@ function setupGroupChatSystem() {
     groupMembersListContainer.addEventListener('click', e => {
         const memberDiv = e.target.closest('.group-member:not(.group-member-me)');
         const addBtn = e.target.closest('.add-member-btn');
+        const removeBtn = e.target.closest('.remove-member-btn');
         if (memberDiv) {
             openGroupMemberEditModal(memberDiv.dataset.id);
         } else if (addBtn) {
-            addMemberActionSheet.classList.add('visible');
+            // 只保留"邀请现有人设"这一条路径，直接弹出邀请框
+            renderInviteSelectionList();
+            inviteMemberModal.classList.add('visible');
+        } else if (removeBtn) {
+            renderRemoveSelectionList();
+            removeMemberModal.classList.add('visible');
         }
     });
 
@@ -283,32 +295,7 @@ function setupGroupChatSystem() {
         editGroupMemberModal.classList.remove('visible');
     });
 
-    // 12. 邀请/新建成员逻辑
-    inviteExistingMemberBtn.addEventListener('click', () => {
-        renderInviteSelectionList();
-        inviteMemberModal.classList.add('visible');
-        addMemberActionSheet.classList.remove('visible');
-    });
-    createNewMemberBtn.addEventListener('click', () => {
-        createMemberForGroupForm.reset();
-        document.getElementById('create-group-member-avatar-preview').src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
-        createMemberForGroupModal.classList.add('visible');
-        addMemberActionSheet.classList.remove('visible');
-    });
-    document.getElementById('create-group-member-avatar-preview').addEventListener('click', () => {
-        document.getElementById('create-group-member-avatar-upload').click();
-    });
-    document.getElementById('create-group-member-avatar-upload').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            try {
-                const compressedUrl = await compressImage(file, { quality: 0.8, maxWidth: 400, maxHeight: 400 });
-                document.getElementById('create-group-member-avatar-preview').src = compressedUrl;
-            } catch (error) {
-                showToast('新成员头像压缩失败，请重试');
-            }
-        }
-    });
+    // 12. 邀请成员逻辑（只支持邀请现有人设）
     confirmInviteBtn.addEventListener('click', async () => {
         const group = db.groups.find(g => g.id === currentChatId);
         if (!group) return;
@@ -332,6 +319,10 @@ function setupGroupChatSystem() {
                     avatar: char.avatar
                 };
                 group.members.push(newMember);
+                // 之前被移出过的，重新入群后从归档里清掉
+                if (group.removedMembers) {
+                    group.removedMembers = group.removedMembers.filter(m => m.id !== newMember.id);
+                }
                 sendInviteNotification(group, newMember.realName);
             }
         });
@@ -343,26 +334,43 @@ function setupGroupChatSystem() {
         }
         inviteMemberModal.classList.remove('visible');
     });
-    createMemberForGroupForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
+    // 12b. 移除成员逻辑
+    confirmRemoveMemberBtn.addEventListener('click', async () => {
         const group = db.groups.find(g => g.id === currentChatId);
         if (!group) return;
+
+        const selectedMemberIds = Array.from(removeMemberSelectionList.querySelectorAll('input:checked')).map(input => input.value);
+        if (selectedMemberIds.length === 0) {
+            return showToast('请至少选择一个要移除的成员。');
+        }
+
+        const targets = group.members.filter(m => selectedMemberIds.includes(m.id));
+        const names = targets.map(m => m.groupNickname || m.realName).join('、');
+        const ok = await AppUI.confirm(
+            `确定把 ${names} 移出群聊"${group.name}"吗？\n聊天记录会保留，但他们不会再参与后续对话。`,
+            '移除群成员', '确认移除', '取消'
+        );
+        if (!ok) return;
+
+        // 真正移除了人才触发时间跳过
         await processTimePerception(group, currentChatId, 'group');
-        const newMember = {
-            id: `member_group_only_${Date.now()}`,
-            originalCharId: null,
-            realName: document.getElementById('create-group-member-realname').value,
-            groupNickname: document.getElementById('create-group-member-nickname').value,
-            persona: document.getElementById('create-group-member-persona').value,
-            avatar: document.getElementById('create-group-member-avatar-preview').src,
-        };
-        group.members.push(newMember);
-        sendInviteNotification(group, newMember.realName);
+
+        // 归档到 removedMembers：历史气泡还要靠它取头像和群昵称
+        if (!group.removedMembers) group.removedMembers = [];
+        for (const member of targets) {
+            if (!group.removedMembers.some(m => m.id === member.id)) {
+                group.removedMembers.push({ ...member });
+            }
+            group.members = group.members.filter(m => m.id !== member.id);
+            await sendRemoveNotification(group, member.realName);
+        }
+
         await saveSingleChat(currentChatId, 'group');
         renderGroupMembersInSettings(group);
         renderMessages(false, true);
-        showToast(`新成员 ${newMember.realName} 已加入`);
-        createMemberForGroupModal.classList.remove('visible');
+        renderChatList();
+        showToast(`已将 ${names} 移出群聊`);
+        removeMemberModal.classList.remove('visible');
     });
 
     // 13. 设置：我的头像上传（隐藏 input，供保存逻辑读取）
@@ -428,6 +436,29 @@ function setupGroupChatSystem() {
             }
         });
     }
+
+    // 回复条数：格式“最低数-最高数”，留空为默认（按群成员数计算）
+    const groupReplyRangeItem = document.getElementById('setting-group-reply-range-item');
+    if (groupReplyRangeItem) {
+        groupReplyRangeItem.addEventListener('click', async () => {
+            const currentVal = document.getElementById('setting-group-reply-range').value || '';
+            const result = await AppUI.prompt('请输入回复条数范围，格式“最低数-最高数”（如 6-15）；留空按群成员数自动计算', currentVal, '回复条数', '确定', '取消');
+            if (result === null) return; // 取消
+            const trimmed = result.trim();
+            if (trimmed === '') {
+                document.getElementById('setting-group-reply-range').value = '';
+                document.getElementById('setting-group-reply-range-display').textContent = '默认';
+                return;
+            }
+            const m = trimmed.match(/^(\d+)\s*-\s*(\d+)$/);
+            if (!m) { showToast('格式不正确，请输入如 6-15'); return; }
+            const lo = parseInt(m[1], 10), hi = parseInt(m[2], 10);
+            if (lo <= 0 || hi < lo) { showToast('请确保最低数≥1且不大于最高数'); return; }
+            const normalized = `${lo}-${hi}`;
+            document.getElementById('setting-group-reply-range').value = normalized;
+            document.getElementById('setting-group-reply-range-display').textContent = normalized;
+        });
+    }
 }
 
 // --- 辅助函数 ---
@@ -483,6 +514,10 @@ function loadGroupSettingsToSidebar() {
     document.getElementById('setting-group-max-memory').value = group.maxMemory || 10;
     const maxMemDisplay = document.getElementById('setting-group-max-memory-display');
     if (maxMemDisplay) maxMemDisplay.textContent = group.maxMemory || 10;
+
+    document.getElementById('setting-group-reply-range').value = group.replyRange || '';
+    const groupReplyRangeDisplay = document.getElementById('setting-group-reply-range-display');
+    if (groupReplyRangeDisplay) groupReplyRangeDisplay.textContent = group.replyRange || '默认';
     const groupTimePEl = document.getElementById('setting-group-time-perception');
 if (groupTimePEl) groupTimePEl.checked = group.timePerceptionEnabled || false;
 
@@ -560,6 +595,14 @@ function renderGroupMembersInSettings(group) {
     addBtn.className = 'add-member-btn';
     addBtn.innerHTML = `<div class="add-icon">+</div><span>添加</span>`;
     groupMembersListContainer.appendChild(addBtn);
+
+    // ── 移除按钮（紧跟添加按钮）───────────────────────────
+    if (group.members.length > 0) {
+        const removeBtn = document.createElement('div');
+        removeBtn.className = 'remove-member-btn';
+        removeBtn.innerHTML = `<div class="remove-icon">−</div><span>移除</span>`;
+        groupMembersListContainer.appendChild(removeBtn);
+    }
 }
 
 function renderGroupRecipientSelectionList(actionText) {
@@ -625,6 +668,7 @@ async function saveGroupSettingsFromSidebar() {
     }
 
     group.maxMemory = document.getElementById('setting-group-max-memory').value;
+    group.replyRange = document.getElementById('setting-group-reply-range').value || '';
     const groupTimePEl = document.getElementById('setting-group-time-perception');
 if (groupTimePEl) group.timePerceptionEnabled = groupTimePEl.checked;
 
@@ -743,10 +787,44 @@ function renderInviteSelectionList() {
     });
 }
 
+function renderRemoveSelectionList() {
+    removeMemberSelectionList.innerHTML = '';
+    const group = db.groups.find(g => g.id === currentChatId);
+    if (!group) return;
+    const members = group.members || [];
+    if (members.length === 0) {
+        removeMemberSelectionList.innerHTML = '<li style="color:#aaa; text-align:center; padding: 10px 0;">群里没有可移除的成员了。</li>';
+        confirmRemoveMemberBtn.disabled = true;
+        return;
+    }
+    confirmRemoveMemberBtn.disabled = false;
+    members.forEach(member => {
+        const li = document.createElement('li');
+        li.className = 'invite-member-select-item';
+        const label = member.groupNickname || member.realName;
+        li.innerHTML = `<input type="checkbox" id="remove-select-${member.id}" value="${member.id}"><label for="remove-select-${member.id}"><img src="${member.avatar}" alt="${label}"><span>${label}</span></label>`;
+        removeMemberSelectionList.appendChild(li);
+    });
+}
+
 async function sendInviteNotification(group, newMemberRealName) {
     const messageContent = `[${group.me.realName}邀请${newMemberRealName}加入了群聊]`;
     const message = {
         id: `msg_${Date.now()}`,
+        role: 'user',
+        content: messageContent,
+        parts: [{ type: 'text', text: messageContent }],
+        timestamp: Date.now(),
+        senderId: 'user_me'
+    };
+    group.history.push(message);
+    await saveMessageToDB(message, group.id, 'group');
+}
+
+async function sendRemoveNotification(group, removedMemberRealName) {
+    const messageContent = `[${group.me.realName}将${removedMemberRealName}移出了群聊]`;
+    const message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
         role: 'user',
         content: messageContent,
         parts: [{ type: 'text', text: messageContent }],

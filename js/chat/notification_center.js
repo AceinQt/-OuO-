@@ -10,6 +10,17 @@
     const KEEPALIVE_MIN = 1;
     const KEEPALIVE_MAX = 1440;
 
+    // ── 调试日志开关 ────────────────────────────────────────────
+    // 链路已验证，日常不再刷屏：逐步骤日志默认关闭，只保留 console.warn 的异常。
+    // 要排查时在控制台执行 NotifyCenter.setDebug(true)（即时生效，刷新后仍有效）。
+    let DEBUG = (() => { try { return localStorage.getItem('ouoNotifyDebug') === '1'; } catch (_) { return false; } })();
+    function setDebug(on) {
+        DEBUG = !!on;
+        try { on ? localStorage.setItem('ouoNotifyDebug', '1') : localStorage.removeItem('ouoNotifyDebug'); } catch (_) {}
+        console.log('[通知] 调试日志已' + (DEBUG ? '开启' : '关闭') + '（推送节点日志同步生效）');
+    }
+    function dlog(...a) { if (DEBUG) console.log(...a); }
+
     // 读取全局通知设置（带默认值兜底，兼容旧库——旧库缺的新字段在这里补齐）
     function getSettings() {
         const defaults = { enabled: false, keepAliveEnabled: true, keepAliveMinutes: 30, foldMessages: true, showSenderName: true, silent: false, badgeEnabled: true };
@@ -88,7 +99,7 @@
             console.warn('[通知] 拿不到可用的 Service Worker registration，无法弹通知。reg=', reg);
             return false;
         }
-        console.log('[通知] 使用 registration:', reg.scope, 'active=', !!reg.active);
+        dlog('[通知] 使用 registration:', reg.scope, 'active=', !!reg.active);
 
         try {
             await reg.showNotification(title || '新消息', {
@@ -105,6 +116,93 @@
             console.warn('[通知] showNotification 抛错:', e);
             return false;
         }
+    }
+
+    // ── 通知栏清理 & 点击跳转 ────────────────────────────────
+    // 在 db 里按 id 找会话，顺带把 chatType 推断出来（通知 data 里没带时用）
+    function findChat(chatId, chatType) {
+        if (!chatId || !window.db) return null;
+        if (chatType !== 'group') {
+            const c = (db.characters || []).find(x => x.id === chatId);
+            if (c) return { chat: c, type: 'private' };
+        }
+        const g = (db.groups || []).find(x => x.id === chatId);
+        if (g) return { chat: g, type: 'group' };
+        const c2 = (db.characters || []).find(x => x.id === chatId);
+        if (c2) return { chat: c2, type: 'private' };
+        return null;
+    }
+
+    // 清掉某个会话在通知栏里残留的所有通知（折叠 tag 'chat-<id>' 与分开模式 'msg-<mid>' 都覆盖）。
+    // 用户看完消息后调用——不管他是点通知进来的，还是直接点图标进来的。
+    async function clearChatNotifications(chatId) {
+        if (!chatId) return;
+        try {
+            const reg = await getActiveReg();
+            if (!reg || typeof reg.getNotifications !== 'function') return;
+            const list = await reg.getNotifications();
+            let n = 0;
+            for (const item of list) {
+                if (!item) continue;
+                if (item.tag === 'notify-test' || item.tag === 'push-test') continue;
+                const belongs = (item.data && item.data.chatId === chatId)
+                    || item.tag === 'chat-' + chatId;
+                if (belongs) { item.close(); n++; }
+            }
+            dlog(`[通知] 清理「${chatId}」：通知栏共 ${list.length} 条，关掉 ${n} 条`
+                + (list.length && !n ? '（tag/chatId 都对不上，检查一下）' : ''));
+        } catch (e) {
+            console.warn('[通知] 清理通知栏失败:', e);
+        }
+    }
+
+    // 回到前台时：如果此刻正停在某个聊天室里，那这个会话的消息就是"看到了"，
+    // 把它残留在通知栏的提示清掉。
+    // ★ 关键场景：用户切后台前就在聊天室里，回来时页面还是那一屏，
+    //   openChatRoom 根本不会重新执行，只靠它清通知会漏掉。
+    function clearNotificationsForVisibleChat() {
+        try {
+            const room = document.getElementById('chat-room-screen');
+            if (!room || !room.classList.contains('active')) return;
+            if (!window.currentChatId) return;
+            clearChatNotifications(window.currentChatId);
+        } catch (_) {}
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') clearNotificationsForVisibleChat();
+    });
+    // 部分安卓 WebView/PWA 从后台恢复时 visibilitychange 不稳，focus 再兜一道
+    window.addEventListener('focus', clearNotificationsForVisibleChat);
+
+    // 点系统通知后，跳进对应聊天室。
+    // 冷启动时 db / openChatRoom 可能还没就绪，所以带轮询等待（最多 15 秒）。
+    async function openChatFromNotification(chatId, chatType) {
+        if (!chatId) return;
+        const deadline = Date.now() + 15000;
+        while (Date.now() < deadline) {
+            if (window.__appInitDone && typeof openChatRoom === 'function') break;
+            await new Promise(r => setTimeout(r, 200));
+        }
+        if (typeof openChatRoom !== 'function') {
+            console.warn('[通知] 跳转失败：openChatRoom 未就绪');
+            return;
+        }
+        const found = findChat(chatId, chatType);
+        if (!found) {
+            console.warn('[通知] 跳转失败：找不到会话', chatId);
+            return;
+        }
+        window.currentChatId = chatId;
+        window.currentChatType = found.type;
+        try {
+            openChatRoom(chatId, found.type);
+        } catch (e) {
+            console.warn('[通知] openChatRoom 抛错:', e);
+            return;
+        }
+        // 进了聊天室 = 已读，把该会话残留的通知一并清掉
+        clearChatNotifications(chatId);
     }
 
     // ── 消息内容 → 通知文案 提取 ──────────────────────────────
@@ -154,8 +252,8 @@
 
     function senderName(chat, chatType, message) {
         if (chatType !== 'group') return chatDisplayName(chat, chatType);
-        if (message && message.senderId && Array.isArray(chat.members)) {
-            const m = chat.members.find(x => x.id === message.senderId);
+        if (message && message.senderId) {
+            const m = findGroupMemberById(chat, message.senderId);
             if (m) return m.groupNickname || m.realName || m.name || '成员';
         }
         const t = contentOf(message);
@@ -188,35 +286,61 @@
             const vis = document.visibilityState;
             const perm = ('Notification' in window) ? Notification.permission : 'n/a';
             const cnt = Array.isArray(messages) ? messages.length : 0;
-            console.log(`[通知] notifyMessages: enabled=${s.enabled} vis=${vis} perm=${perm} fold=${s.foldMessages} showName=${s.showSenderName} chat=${chat && chat.id} msgs=${cnt}`);
+            dlog(`[通知] notifyMessages: enabled=${s.enabled} vis=${vis} perm=${perm} fold=${s.foldMessages} showName=${s.showSenderName} chat=${chat && chat.id} msgs=${cnt}`);
 
-            if (!s.enabled) { console.log('[通知] 跳过：总开关未开'); return; }
-            if (vis !== 'hidden') { console.log('[通知] 跳过：前台可见（仅后台弹）'); return; }
-            if (!chat || !cnt) { console.log('[通知] 跳过：无 chat 或无消息'); return; }
+            if (!s.enabled) { dlog('[通知] 跳过：总开关未开'); return; }
+            if (vis !== 'hidden') { dlog('[通知] 跳过：前台可见（仅后台弹）'); return; }
+            if (!chat || !cnt) { dlog('[通知] 跳过：无 chat 或无消息'); return; }
 
             const notifiable = messages.filter(m => m && m.role === 'assistant' && previewOf(m));
-            if (!notifiable.length) { console.log('[通知] 跳过：无可通知消息（都是系统/视觉类）'); return; }
+            if (!notifiable.length) { dlog('[通知] 跳过：无可通知消息（都是系统/视觉类）'); return; }
 
             const showName = s.showSenderName !== false;
             const silent = s.silent === true;
             const data = { chatId: chat.id, chatType: chatType };
 
             if (s.foldMessages !== false) {
-                // 折叠：同一会话只弹一条，tag 固定，后到的替换先到的
+                // 折叠：同一会话只弹一条，tag 固定。
+                // 注意：同 tag 的新通知默认是「原地替换」，不少安卓 ROM 对替换不重新提醒，
+                // 用户会觉得"上一条没划掉就收不到新的"。所以这里先把旧的关掉再弹新的，
+                // 并把未读条数累计进 data.count，正文能真实反映"一共几条没看"。
+                const tag = 'chat-' + chat.id;
+                let prevCount = 0;
+                try {
+                    const reg = await getActiveReg();
+                    if (reg && typeof reg.getNotifications === 'function') {
+                        const olds = await reg.getNotifications({ tag });
+                        for (const o of olds) {
+                            prevCount = Math.max(prevCount, (o.data && o.data.count) || 1);
+                            o.close();
+                        }
+                        // 给系统一点时间真正撤下旧通知，避免它把新的又当成替换
+                        if (olds.length) await new Promise(r => setTimeout(r, 80));
+                    }
+                } catch (e) {
+                    console.warn('[通知] 清旧折叠通知失败（忽略）:', e);
+                }
+
+                const total = prevCount + notifiable.length;
                 const last = notifiable[notifiable.length - 1];
                 let { title, body } = buildTitleBody(chat, chatType, last, showName);
-                if (notifiable.length > 1) body = `[${notifiable.length}条] ` + body;
-                console.log(`[通知] 折叠弹出: title="${title}" body="${body}" silent=${silent}`);
-                const ok = await fire(title, body, { tag: 'chat-' + chat.id, renotify: true, silent, data });
-                console.log('[通知] fire 返回:', ok);
+                if (total > 1) body = `[${total}条] ` + body;
+                dlog(`[通知] 折叠弹出: title="${title}" body="${body}" silent=${silent} 累计=${total}(旧${prevCount})`);
+                const ok = await fire(title, body, {
+                    tag,
+                    renotify: true,
+                    silent,
+                    data: { ...data, count: total }
+                });
+                dlog('[通知] fire 返回:', ok);
             } else {
                 // 分开：每条一个通知，tag 各不相同
                 for (const m of notifiable) {
                     const { title, body } = buildTitleBody(chat, chatType, m, showName);
                     const tag = 'msg-' + (m.id || (chat.id + '-' + (m.timestamp || '')));
-                    console.log(`[通知] 分开弹出: title="${title}" body="${body}" silent=${silent}`);
+                    dlog(`[通知] 分开弹出: title="${title}" body="${body}" silent=${silent}`);
                     const ok = await fire(title, body, { tag, renotify: false, silent, data });
-                    console.log('[通知] fire 返回:', ok);
+                    dlog('[通知] fire 返回:', ok);
                 }
             }
         } catch (e) {
@@ -489,7 +613,12 @@ function updateHint() {
         fire,
         notifyMessages,
         buildPushPayload,
+        findChat,
+        clearChatNotifications,
+        clearNotificationsForVisibleChat,
+        openChatFromNotification,
         requestPermission,
-        initSettingsUI
+        initSettingsUI,
+        setDebug   // 控制台开关：NotifyCenter.setDebug(true) 打开逐步骤日志
     };
 })();

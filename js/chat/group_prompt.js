@@ -26,7 +26,7 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
         
         .map(s => {
             const dateStr = s.occurredAt ? s.occurredAt.split(' ')[0] : '未知日期';
-            return `[短期剧情 ${dateStr}] ${s.title}\n${s.content}`;
+            return `[短期剧情 ${dateStr}] ${s.title}\n${getShortSummaryContent(s, group)}`;
         })
         .join('\n\n');
         
@@ -36,9 +36,10 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
     let myRealName = group.me.realName || group.me.nickname; // 兜底：没真名就用昵称
     let myPersona = group.me.persona;
 
-    // 如果绑定了档案，强制读取最新档案数据
-    if (group.boundPersonaId) {
-        const p = db.userPersonas.find(up => up.id === group.boundPersonaId);
+    // 如果绑定了档案，强制读取最新档案数据（注意 id 存在 group.me 下，不在顶层）
+    // 只覆盖真名和人设：群内昵称允许每个群单独定制，始终用 group.me.nickname
+    if (group.me.boundPersonaId) {
+        const p = db.userPersonas.find(up => up.id === group.me.boundPersonaId);
         if (p) {            
             myRealName = p.realName;
             myPersona = p.persona;
@@ -117,7 +118,8 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
     - [${myRealName}的表情包：...], [${myRealName}的语音：...], [${myRealName}发来的照片/视频：...]：我发送了特殊类型的消息，群成员可以对此发表评论。
     - [${myRealName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。
     - [${myRealName}撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据ai成员们的人设和当前群聊的氛围对此作出自然的反应。
-    - [system: ...], [...邀请...加入了群聊], [...修改群名为...]: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。\n\n`;
+    - [system: ...], [...邀请...加入了群聊], [...将...移出了群聊], [...修改群名为...]: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。
+    - [${myRealName}将{某人}移出了群聊]：这个人已经被我踢出群聊。从此刻起你 **绝对不能** 再扮演或输出他的任何消息；仍在群里的成员可以对这件事表示惊讶、议论或站队。\n\n`;
 
     let outputFormats = `
   - **普通消息**: [{成员真名}的消息：{消息内容}]
@@ -137,8 +139,14 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
 
     prompt += `5. **模拟群聊氛围**: 为了让群聊看起来真实、活跃且混乱，你的每一次回复都必须遵循以下随机性要求：\n`;
     const numMembers = group.members.length;
-    const minMessages = numMembers * 3;
-    const maxMessages = numMembers * 5;
+    // 回复条数：优先使用用户自定义 replyRange（格式“最低-最高”），否则按成员数自动计算
+    let minMessages = numMembers * 3;
+    let maxMessages = numMembers * 5;
+    const _grr = (group.replyRange || '').match(/^(\d+)\s*-\s*(\d+)$/);
+    if (_grr) {
+        const _lo = parseInt(_grr[1], 10), _hi = parseInt(_grr[2], 10);
+        if (_lo > 0 && _hi >= _lo) { minMessages = _lo; maxMessages = _hi; }
+    }
     prompt += `   - **消息数量**: 你的回复需要包含 **${minMessages}到${maxMessages}条** 消息。确保有足够多的互动。\n`;
     prompt += `   - **发言者与顺序随机**: 发言顺序随机，一个成员可以连续发送多条消息。\n`;
     prompt += `   - **内容多样性**: 你的回复应以普通文本消息为主，但可以 **偶尔、选择性地** 让某个成员发送一条特殊消息（成员拥有的表情包、语音、照片/视频），以增加真实感。不要滥用特殊消息。\n`;
@@ -149,6 +157,15 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
     prompt += `   - 严格扮演每个角色的人设，不同角色之间应有明显的性格和语气差异。\n`;
     prompt += `   - 你的回复中只能包含第4点列出的合法格式的消息。绝对不能包含任何其他内容，如 \`[场景描述]\`, \`(心理活动)\`, \`*动作*\` 或任何格式之外的解释性文字。\n`;
     prompt += `   - 保持对话的持续性，不要主动结束对话。\n\n`;
+    // 时间感知：仅在该群开启时注入当前时间（与私聊、processTimePerception 用同一个开关）
+    if (group.timePerceptionEnabled) {
+        const now = new Date();
+        const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+        const currentWeekDay = weekDays[now.getDay()];
+        const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${currentWeekDay} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        prompt += `7. **当前时间**: 现在是 ${currentTime}。群成员应知晓当前时间，但不要主动提及或评论时间。\n\n`;
+    }
+
     prompt += `现在，请根据以上设定，开始扮演群聊中的所有角色。`;
 
     return prompt;

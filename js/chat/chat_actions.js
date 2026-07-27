@@ -1,57 +1,54 @@
    // 长按功能
 function createContextMenu(items, x, y) {
-                removeContextMenu();
-                const menu = document.createElement('div');
-                menu.className = 'context-menu';
+    removeContextMenu(); // 移除旧菜单
+    
+    const menu = document.createElement('div');
+    menu.className = 'context-menu';
+    
+    // 生成菜单项
+    items.forEach(item => {
+        const menuItem = document.createElement('div');
+        menuItem.className = 'context-menu-item';
+        if (item.danger) menuItem.classList.add('danger');
+        menuItem.textContent = item.label;
+        menuItem.onclick = (e) => {
+            e.stopPropagation(); // 阻止冒泡
+            item.action();
+            removeContextMenu();
+        };
+        menu.appendChild(menuItem);
+    });
 
-                // 先添加到 DOM 以便计算高度，但暂时隐藏
-                menu.style.visibility = 'hidden';
-                document.body.appendChild(menu);
+    // 核心修复：直接添加到 DOM 中（不需要 visibility: hidden）
+    // 浏览器在当前 JS 代码块执行完之前，不会把半成品画到屏幕上
+    document.body.appendChild(menu);
 
-                items.forEach(item => {
-                    const menuItem = document.createElement('div');
-                    menuItem.className = 'context-menu-item';
-                    if (item.danger) menuItem.classList.add('danger');
-                    menuItem.textContent = item.label;
-                    menuItem.onclick = () => {
-                        item.action();
-                        removeContextMenu();
-                    };
-                    menu.appendChild(menuItem);
-                });
+    // 获取尺寸
+    const menuRect = menu.getBoundingClientRect();
+    const windowHeight = window.innerHeight;
+    const windowWidth = window.innerWidth;
 
-                // 获取菜单尺寸和窗口尺寸
-                const menuRect = menu.getBoundingClientRect();
-                const windowHeight = window.innerHeight;
-                const windowWidth = window.innerWidth;
+    // --- 智能定位逻辑 ---
+    if (y + menuRect.height > windowHeight - 10) { 
+        menu.style.top = `${y - menuRect.height}px`;
+        menu.style.transformOrigin = 'bottom left';
+    } else {
+        menu.style.top = `${y}px`;
+        menu.style.transformOrigin = 'top left';
+    }
 
-                // --- 智能定位逻辑 ---
-                // 1. 垂直方向：如果底部空间不足，且上方空间充足，则向上显示
-                if (y + menuRect.height > windowHeight - 10) { // 留10px边距
-                    menu.style.top = `${y - menuRect.height}px`;
-                    // 稍微做一个动画优化的处理：设置 transform-origin
-                    menu.style.transformOrigin = 'bottom left';
-                } else {
-                    menu.style.top = `${y}px`;
-                    menu.style.transformOrigin = 'top left';
-                }
+    if (x + menuRect.width > windowWidth) {
+        menu.style.left = `${windowWidth - menuRect.width - 10}px`;
+    } else {
+        menu.style.left = `${x}px`;
+    }
 
-                // 2. 水平方向：防止右侧溢出（虽然通常不会，但保险起见）
-                if (x + menuRect.width > windowWidth) {
-                    menu.style.left = `${windowWidth - menuRect.width - 10}px`;
-                } else {
-                    menu.style.left = `${x}px`;
-                }
-
-                // 恢复可见性
-                menu.style.visibility = 'visible';
-
-                // 绑定一次性点击关闭事件
-                // 使用 setTimeout 0 确保当前的点击事件冒泡不会立即触发关闭
-                setTimeout(() => {
-                    document.addEventListener('click', removeContextMenu, { once: true });
-                }, 0);
-            }
+    // 核心修复：稍微延迟一点再绑定全局点击关闭事件
+    // 移动端长按抬手时会触发 touchend -> click，延迟 100ms 可完美避开这个抬手误触
+    setTimeout(() => {
+        document.addEventListener('click', removeContextMenu, { once: true });
+    }, 0);
+}
 
             function removeContextMenu() {
                 const menu = document.querySelector('.context-menu');
@@ -130,7 +127,7 @@ function createContextMenu(items, x, y) {
                 const isPhotoVideoMessage = /\[.*?发来的照片\/视频：.*?\]/.test(message.content);
                 const isTransferMessage = /\[.*?给你转账：.*?\]|\[.*?的转账：.*?\]|\[.*?向.*?转账：.*?\]/.test(message.content);
                 const isGiftMessage = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/.test(message.content);
-                const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?修改群名为：.*?\]|\[.*?修改.*?的群昵称为：.*?\]/.test(message.content);
+                const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?将.*?移出了群聊\]|\[.*?修改群名为：.*?\]|\[.*?修改.*?的群昵称为：.*?\]/.test(message.content);
 
                 if (!isWithdrawn) {
                     if (!isImageRecognitionMsg && !isVoiceMessage && !isStickerMessage && !isPhotoVideoMessage && !isTransferMessage && !isGiftMessage && !isInvisibleMessage) {
@@ -158,6 +155,18 @@ function createContextMenu(items, x, y) {
                     menuItems.push({label: '撤回', action: () => withdrawMessage(messageId)});
                 }
                     }
+
+                    // 图片消息：转文字描述（省 token）
+                    if (isImageRecognitionMsg) {
+                        const isConverting = (typeof isImageConverting === 'function') && isImageConverting(messageId);
+                        menuItems.push({
+                            label: isConverting ? '转化中…' : '转文字',
+                            action: () => {
+                                if (isConverting) { showToast('该图片正在转化中'); return; }
+                                convertImageMessageToText(messageId);
+                            }
+                        });
+                    }
                 }
                 menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
             }
@@ -183,7 +192,7 @@ function createContextMenu(items, x, y) {
                         senderName = chat.remarkName;
                         senderId = chat.id;
                     } else {
-                        const sender = chat.members.find(m => m.id === message.senderId);
+                        const sender = findGroupMemberById(chat, message.senderId);
                         senderName = sender ? sender.groupNickname : '未知成员';
                         senderId = sender ? sender.id : 'unknown';
                     }
@@ -333,7 +342,7 @@ async function saveMessageEdit() {
             if (currentChatType === 'private') {
                 senderName = chat.realName || chat.name;
             } else {
-                const sender = chat.members.find(m => m.id === message.senderId);
+                const sender = findGroupMemberById(chat, message.senderId);
                 senderName = sender ? sender.groupNickname : (chat.name || '未知成员');
             }
         }
