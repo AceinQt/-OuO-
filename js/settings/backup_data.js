@@ -160,7 +160,14 @@ window.exportPartialData = async function(categoryKey) {
             case 'worldBooks': partialData.worldBooks = db.worldBooks || []; break;
             case 'rpg': partialData.rpgProfiles = db.rpgProfiles || []; break;
             case 'forum':
-                partialData.forumPosts = db.forumPosts || [];
+                // ★ [论坛懒加载 F1] 从 DB 全量读（懒加载下内存只有窗口，直接用会丢窗口外的帖子）
+                try {
+                    partialData.forumPosts = await dexieDB.forumPosts.toArray();
+                    partialData.forumPosts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+                } catch (e) {
+                    console.error('❌ 论坛帖子从 DB 读取失败，回退内存导出:', e);
+                    partialData.forumPosts = db.forumPosts || [];
+                }
                 partialData.forumBindings = db.forumBindings || {};
                 partialData.forumUserIdentity = db.forumUserIdentity || {}; 
                 partialData.watchingPostIds = db.watchingPostIds || [];
@@ -380,6 +387,7 @@ async function* createFullBackupStream() {
         enableScreenAdaptation: db.enableScreenAdaptation,
         enableSwipeBack:        db.enableSwipeBack,
         studySettings:          db.studySettings,
+        globalVisionSettings:   db.globalVisionSettings,
         studyBanks:             db.studyBanks              || [],
         studyExams:             db.studyExams              || [],
         studyExamRecords:       db.studyExamRecords        || [],
@@ -436,9 +444,22 @@ async function* createFullBackupStream() {
     }
 
     // ── 6. 论坛帖子：每 50 条一行（帖子含楼层可能较大）──
-    const posts = db.forumPosts || [];
-    for (let i = 0; i < posts.length; i += 50) {
-        yield JSON.stringify({ _type: 'forumPosts', items: posts.slice(i, i + 50) }) + '\n';
+    // ★ [论坛懒加载 F1] 一律从 Dexie 表分批读，不再用内存 db.forumPosts。
+    //   懒加载下内存只是窗口（最新100+收藏+在看），从内存导出会静默丢掉窗口外的全部帖子。
+    //   表在两种模式下都是全量权威数据（发帖 saveSinglePost、删帖先删表、saveData bulkPut 均为 upsert）。
+    //   先取主键再 bulkGet，避免全量帖子同时驻留内存（照抄下面书籍正文的做法）。
+    try {
+        const postKeys = await dexieDB.forumPosts.toCollection().primaryKeys();
+        for (let i = 0; i < postKeys.length; i += 50) {
+            const batch = (await dexieDB.forumPosts.bulkGet(postKeys.slice(i, i + 50))).filter(Boolean);
+            if (batch.length) yield JSON.stringify({ _type: 'forumPosts', items: batch }) + '\n';
+        }
+    } catch (e) {
+        console.error('❌ [Backup] 论坛帖子从 DB 读取失败，回退内存导出:', e);
+        const posts = db.forumPosts || [];
+        for (let i = 0; i < posts.length; i += 50) {
+            yield JSON.stringify({ _type: 'forumPosts', items: posts.slice(i, i + 50) }) + '\n';
+        }
     }
 
     // ── 7. 学习模块大表 ──

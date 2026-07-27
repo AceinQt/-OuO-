@@ -591,9 +591,17 @@ async function fetchModels(tabType) {
     if (!url || !key) return showToast('请先填写 API 地址和密钥！');
     if (url.endsWith('/')) url = url.slice(0, -1);
 
-    const endpoint = provider === 'gemini'
-        ? `${url}/v1beta/models?key=${getRandomValue(key)}`
-        : `${url}/v1/models`;
+    let endpoint;
+    if (provider === 'gemini') {
+        endpoint = `${url}/v1beta/models?key=${getRandomValue(key)}`;
+    } else {
+        // 智能判断：如果 url 已经以 /v1, /v2, /v3 等结尾，则直接追加 /models
+        if (/\/v\d+$/.test(url)) {
+            endpoint = `${url}/models`; 
+        } else {
+            endpoint = `${url}/v1/models`;
+        }
+    }
     const headers = provider === 'gemini' ? {} : { Authorization: `Bearer ${key}` };
 
     btn.classList.add('loading'); 

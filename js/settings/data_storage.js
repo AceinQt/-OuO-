@@ -6,6 +6,7 @@ const dataStorage = {
         worldBooks:      '#05519F',
         characters:      '#0462C2',
         memory:          '#1080E6',
+        peek:            '#2590EE',
         study:           '#3A9EF6',
         forum:           '#7EBEFB',
         rpg:             '#BADBFC',
@@ -16,6 +17,7 @@ const dataStorage = {
         characters:      '角色与聊天',
         worldBooks:      '世界书',
         memory:          '记忆与向量',
+        peek:            '角色手机数据',
         study:           '学习',
         forum:           '喵坛',
         rpg:             '游戏',
@@ -42,6 +44,7 @@ const dataStorage = {
             characters: 0,
             worldBooks: 0,
             memory: 0,
+            peek: 0,
             study: 0,
             forum: 0,
             rpg: 0,
@@ -64,7 +67,7 @@ const dataStorage = {
                 } catch (e) { console.warn('[storage] 消息体积统计失败:', e); }
             }
 
-            // 1. 角色与聊天 (包含 PeekData，不含已剥离的记忆/向量字段)
+            // 1. 角色与聊天 (不含 PeekData 与已剥离的记忆/向量字段，PeekData 单独统计)
             (db.characters || []).forEach(char => {
                 const safeChar = { ...char };
                 delete safeChar.memorySummaries;
@@ -93,7 +96,8 @@ const dataStorage = {
                     categorizedSizes.characters += stringify(safeGroup);
                 }
             });
-            categorizedSizes.characters += stringify(db.peekData);
+            // ★ 1.5 偷看手机数据（单独统计，随角色导出，不提供独立导出）
+            categorizedSizes.peek += stringify(db.peekData);
 
             // 2. 世界书
             categorizedSizes.worldBooks += stringify(db.worldBooks);
@@ -111,7 +115,17 @@ const dataStorage = {
             }
 
             // 4. 论坛
-            categorizedSizes.forum += stringify(db.forumPosts);
+            // ★ [论坛懒加载 F6] 懒加载下内存 db.forumPosts 只有窗口，直接 stringify 会严重低估。
+            //   改从 DB 流式累加每帖体积（与上面消息的做法一致）。关掉懒加载时走原路径。
+            if (window.LAZY_FORUM && typeof dexieDB !== 'undefined') {
+                try {
+                    await dexieDB.forumPosts.toCollection().each(post => {
+                        try { categorizedSizes.forum += JSON.stringify(post).length; } catch (e) {}
+                    });
+                } catch (e) { console.warn('[storage] 论坛体积统计失败:', e); }
+            } else {
+                categorizedSizes.forum += stringify(db.forumPosts);
+            }
             categorizedSizes.forum += stringify(db.forumBindings);
             categorizedSizes.forum += stringify(db.forumUserIdentity);
             categorizedSizes.forum += stringify(db.watchingPostIds);
@@ -313,7 +327,7 @@ function renderStorageDetails(container, info) {
     container.classList.add('storage-details-container');
 
     // 定义类别的显示顺序（与顶部定义的顺序一致）
-    const categoryOrder = ['settings', 'worldBooks', 'characters', 'memory', 'study', 'forum', 'rpg', 'personalization'];
+    const categoryOrder = ['settings', 'worldBooks', 'characters', 'memory', 'peek', 'study', 'forum', 'rpg', 'personalization'];
 
     // 按照预定义的顺序排序
     const sortedData = categoryOrder
@@ -337,7 +351,7 @@ function renderStorageDetails(container, info) {
             </div>
             <div class="storage-item-right">
                 <span class="storage-detail-size">${formatBytes(item.value)}</span>
-                ${item.key !== 'memory' ? `<button class="btn-export-sm">导出</button>` : '<span style="font-size:11px;color:#aaa;">随角色导出</span>'}
+                ${(item.key !== 'memory' && item.key !== 'peek') ? `<button class="btn-export-sm">导出</button>` : '<span style="font-size:11px;color:#aaa;">随角色导出</span>'}
             </div>
         `;
 
@@ -416,29 +430,63 @@ function setupStorageAnalysisScreen() {
 
             hideLoading();
 
+            // 3.5 扫描短期总结旧快照：正文已由片段块实时拼接（getShortSummaryContent），
+            //     有"带正文的存活块"的总结，其 item.content 只是生成时的冗余快照，可安全清空。
+            //     无块的旧式整篇总结仍依赖 content 兜底，跳过不动。
+            const snapshotTargets = [];
+            let snapshotBytes = 0;
+            const allChats = [...(db.characters || []), ...(db.groups || [])];
+            for (const chat of allChats) {
+                for (const s of (chat.memorySummaries || [])) {
+                    if (!s.content || !s.blockIds || s.blockIds.length === 0) continue;
+                    const idSet = new Set(s.blockIds);
+                    const hasLiveBlock = (chat.memoryChunks || []).some(c => idSet.has(c.blockId) && c.detailedContent);
+                    if (hasLiveBlock) {
+                        snapshotTargets.push({ item: s, chatId: chat.id });
+                        snapshotBytes += s.content.length * 2; // UTF-16 估算
+                    }
+                }
+            }
+
             // 4. 结果汇报与清理
-            if (toDelete.length > 0) {
+            if (toDelete.length > 0 || snapshotTargets.length > 0) {
+                const foundParts = [];
+                if (toDelete.length > 0) foundParts.push(`${toDelete.length} 条重复消息`);
+                if (snapshotTargets.length > 0) foundParts.push(`${snapshotTargets.length} 篇短期总结的冗余正文快照（约 ${formatBytes(snapshotBytes)}，正文已由片段块实时提供，清理不影响任何功能）`);
+
                 const confirmed = await AppUI.confirm(
-                    `扫描完成！发现了 ${toDelete.length} 条由于系统异常产生的重复消息。\n\n是否立刻清理以释放存储空间？`,
-                    "发现垃圾数据", 
-                    "一键清理", 
+                    `扫描完成！发现：\n· ${foundParts.join('\n· ')}\n\n是否立刻清理以释放存储空间？`,
+                    "发现垃圾数据",
+                    "一键清理",
                     "取消"
                 );
-                
+
                 if (confirmed) {
                     const hideDeleting = typeof showLoadingToast === 'function' ? showLoadingToast("正在执行清理...") : () => {};
-                    await dexieDB.messages.bulkDelete(toDelete); // 从数据库抹除
+                    if (toDelete.length > 0) {
+                        await dexieDB.messages.bulkDelete(toDelete); // 从数据库抹除
+                    }
+                    if (snapshotTargets.length > 0) {
+                        // 同步清空内存对象与 memories 表（挂载对象与表记录是两份，须都更新）
+                        snapshotTargets.forEach(t => { t.item.content = ''; });
+                        await dexieDB.memories.bulkPut(
+                            snapshotTargets.map(t => ({ ...t.item, chatId: t.chatId, memType: 'short' }))
+                        );
+                    }
                     hideDeleting();
-                    
-                    await AppUI.alert(`✅ 清理成功！共删除了 ${toDelete.length} 条重复消息。\n您的设备空间已得到释放。`, "瘦身完成");
-                    
+
+                    const doneParts = [];
+                    if (toDelete.length > 0) doneParts.push(`删除了 ${toDelete.length} 条重复消息`);
+                    if (snapshotTargets.length > 0) doneParts.push(`清空了 ${snapshotTargets.length} 篇总结快照（约 ${formatBytes(snapshotBytes)}）`);
+                    await AppUI.alert(`✅ 清理成功！共${doneParts.join('，')}。\n您的设备空间已得到释放。`, "瘦身完成");
+
                     // 清理完立刻刷新图表和容量统计
                     if (typeof refreshStorageScreen === 'function') {
                         refreshStorageScreen();
                     }
                 }
             } else {
-                await AppUI.alert("🎉 您的数据库非常健康，没有发现重复的垃圾消息。", "扫描完成");
+                await AppUI.alert("🎉 您的数据库非常健康，没有发现可清理的垃圾数据。", "扫描完成");
             }
 
         } catch (err) {
