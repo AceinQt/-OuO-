@@ -145,6 +145,39 @@ function renderMemoDetail(memo) {
     }
 }
 
+// ==========================================
+// 解析备忘录标签文本 → 备忘录数组（批量生成复用）
+// ==========================================
+function parsePeekMemosContent(memosRawText) {
+    const rawItems = (memosRawText || '').split('===SEP===');
+    const parsedMemos = [];
+
+    rawItems.forEach((rawText) => {
+        if (!rawText.trim()) return;
+        const titleMatch = rawText.match(/#TITLE#\s*([\s\S]*?)(?=#CONTENT#|$)/);
+        const contentMatch = rawText.match(/#CONTENT#\s*([\s\S]*?)(?=(?:===SEP===|$))/);
+
+        if (titleMatch && contentMatch) {
+            parsedMemos.push({
+                id: `memo_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                title: titleMatch[1].trim(),
+                content: contentMatch[1].trim(),
+                isNew: true
+            });
+        }
+    });
+
+    return parsedMemos;
+}
+
+// 把解析好的备忘录并入缓存（批量生成复用）
+function applyPeekMemosContent(parsedMemos) {
+    if (!parsedMemos || parsedMemos.length === 0) return 0;
+    if (!peekContentCache['memos']) peekContentCache['memos'] = { memos: [] };
+    peekContentCache['memos'].memos = [...parsedMemos, ...peekContentCache['memos'].memos];
+    return parsedMemos.length;
+}
+
 async function generateAndRenderPeekMemos(options = {}) {
     const appType = 'memos';
     const { forceRefresh = false } = options;
@@ -207,27 +240,10 @@ memo_2
         const memosRawText = parts[0] || '';
         const hitchhikerRawText = parts.length > 1 ? parts[1] : '';
 
-        const rawItems = memosRawText.split('===SEP===');
-        const parsedMemos = [];
-
-        rawItems.forEach((rawText) => {
-            if (!rawText.trim()) return;
-            const titleMatch = rawText.match(/#TITLE#\s*([\s\S]*?)(?=#CONTENT#|$)/);
-            const contentMatch = rawText.match(/#CONTENT#\s*([\s\S]*?)(?=(?:===SEP===|$))/);
-
-            if (titleMatch && contentMatch) {
-                parsedMemos.push({
-                    id: `memo_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    title: titleMatch[1].trim(),
-                    content: contentMatch[1].trim(),
-                    isNew: true
-                });
-            }
-        });
+        const parsedMemos = parsePeekMemosContent(memosRawText);
 
         if (parsedMemos.length > 0) {
-            if (!peekContentCache['memos']) peekContentCache['memos'] = { memos: [] };
-            peekContentCache['memos'].memos = [...parsedMemos, ...peekContentCache['memos'].memos];
+            applyPeekMemosContent(parsedMemos);
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
             
             // 重新生成完毕后，刷新并重置页码

@@ -3,8 +3,40 @@
 // 购物车渲染、购物车生成
 // ==========================================
 
-function renderPeekCart(items) {
+// 单条商品的 HTML（分页渲染复用）
+function _buildCartItemHtml(item, isEdit) {
+    if (!item.id) item.id = 'cart_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const isSelected = isEdit && PeekDeleteManager.selectedIds.has(item.id);
+    return `
+        <li class="cart-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${item.id}">
+            <img src="https://i.postimg.cc/wMbSMvR9/export202509181930036600.png" class="cart-item-image" alt="${item.title}">
+            <div class="cart-item-details">
+                <h3 class="cart-item-title">${item.title} ${item.isNew ? '<span class="new-badge">new!</span>' : ''}</h3>
+                <p class="cart-item-spec">规格：${item.spec}</p>
+                <p class="cart-item-price">¥${item.price}</p>
+            </div>
+        </li>
+    `;
+}
+
+function renderPeekCart(items, isAppend = false, resetPage = false) {
+    if (resetPage) PeekPager.reset('cart');
+
     const screen = document.getElementById('peek-cart-screen');
+
+    // ── 追加模式：只往现有列表尾部补一页，不重建整个屏幕 ──
+    if (isAppend) {
+        const listEl = screen.querySelector('.cart-item-list');
+        if (!listEl || !items) return;
+        const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'cart';
+        const dataToRender = PeekPager.slice('cart', items, true);
+        let html = '';
+        dataToRender.forEach(item => { html += _buildCartItemHtml(item, isEdit); });
+        listEl.insertAdjacentHTML('beforeend', html);
+        PeekPager.updateTip(screen.querySelector('main.content'), 'cart', items.length, 'cart-loading-tip');
+        return;
+    }
+
     let itemsHtml = '';
     let totalPrice = 0;
 
@@ -13,20 +45,11 @@ function renderPeekCart(items) {
     if (!items || items.length === 0) {
         itemsHtml = '<p class="placeholder-text">正在生成购物车内容...</p>';
     } else {
-        items.forEach(item => {
-            if (!item.id) item.id = 'cart_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-            const isSelected = isEdit && PeekDeleteManager.selectedIds.has(item.id);
-            itemsHtml += `
-                <li class="cart-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-                    <img src="https://i.postimg.cc/wMbSMvR9/export202509181930036600.png" class="cart-item-image" alt="${item.title}">
-                    <div class="cart-item-details">
-                        <h3 class="cart-item-title">${item.title} ${item.isNew ? '<span class="new-badge">new!</span>' : ''}</h3>
-                        <p class="cart-item-spec">规格：${item.spec}</p>
-                        <p class="cart-item-price">¥${item.price}</p>
-                    </div>
-                </li>
-            `;
-            totalPrice += parseFloat(item.price);
+        // 合计金额按全部商品计算（与分页渲染无关）
+        items.forEach(item => { totalPrice += parseFloat(item.price) || 0; });
+        // 分页：只渲染第0页到当前页
+        PeekPager.slice('cart', items, false).forEach(item => {
+            itemsHtml += _buildCartItemHtml(item, isEdit);
         });
     }
 
@@ -50,6 +73,18 @@ function renderPeekCart(items) {
     screen.querySelector('.checkout-btn').addEventListener('click', () => showToast('功能开发中'));
     screen.querySelector('.action-btn').addEventListener('click', () => generateAndRenderPeekCart({ forceRefresh: true }));
 
+    // 滚动分页：屏幕被 innerHTML 重建，滚动容器是新的，需重新绑定
+    const scrollContainer = screen.querySelector('main.content');
+    PeekPager.bindScroll(
+        scrollContainer,
+        'cart',
+        () => (peekContentCache?.cart?.items || []).length,
+        () => renderPeekCart(peekContentCache.cart.items, true)
+    );
+    if (items && items.length > 0) {
+        PeekPager.updateTip(scrollContainer, 'cart', items.length, 'cart-loading-tip');
+    }
+
     let hasNewCart = false;
     if (items) {
         items.forEach(item => {
@@ -59,6 +94,42 @@ function renderPeekCart(items) {
     }
 }
 
+// ==========================================
+// 解析购物车标签文本 → 商品数组（批量生成复用）
+// ==========================================
+function parsePeekCartContent(cartRawText) {
+    const rawItems = (cartRawText || '').split('===SEP===');
+    const parsedItems = [];
+
+    rawItems.forEach((rawText) => {
+        if (!rawText.trim()) return;
+        const titleMatch = rawText.match(/#TITLE#\s*([\s\S]*?)(?=#SPEC#|$)/);
+        const specMatch = rawText.match(/#SPEC#\s*([\s\S]*?)(?=#PRICE#|$)/);
+        const priceMatch = rawText.match(/#PRICE#\s*([\s\S]*?)(?=(?:===SEP===|$))/);
+
+        if (titleMatch && specMatch && priceMatch) {
+            let cleanPrice = priceMatch[1].replace(/[^\d.]/g, '').trim();
+            parsedItems.push({
+                id: `cart_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                title: titleMatch[1].trim(),
+                spec: specMatch[1].trim(),
+                price: cleanPrice || "0.00",
+                isNew: true
+            });
+        }
+    });
+
+    return parsedItems;
+}
+
+// 把解析好的商品并入缓存（批量生成复用）
+function applyPeekCartContent(parsedItems) {
+    if (!parsedItems || parsedItems.length === 0) return 0;
+    if (!peekContentCache['cart']) peekContentCache['cart'] = { items: [] };
+    peekContentCache['cart'].items = [...parsedItems, ...peekContentCache['cart'].items];
+    return parsedItems.length;
+}
+
 async function generateAndRenderPeekCart(options = {}) {
     const appType = 'cart';
     const { forceRefresh = false } = options;
@@ -66,7 +137,7 @@ async function generateAndRenderPeekCart(options = {}) {
     if (generatingPeekApps.has(appType)) { showToast('购物车内容正在生成中，请稍候...'); return; }
 
     if (!forceRefresh && peekContentCache[appType]) {
-        renderPeekCart(peekContentCache[appType].items);
+        renderPeekCart(peekContentCache[appType].items, false, true);
         switchScreen('peek-cart-screen');
         return;
     }
@@ -127,32 +198,12 @@ async function generateAndRenderPeekCart(options = {}) {
         const cartRawText = parts[0] || '';
         const hitchhikerRawText = parts.length > 1 ? parts[1] : '';
 
-        const rawItems = cartRawText.split('===SEP===');
-        const parsedItems = [];
-
-        rawItems.forEach((rawText) => {
-            if (!rawText.trim()) return;
-            const titleMatch = rawText.match(/#TITLE#\s*([\s\S]*?)(?=#SPEC#|$)/);
-            const specMatch = rawText.match(/#SPEC#\s*([\s\S]*?)(?=#PRICE#|$)/);
-            const priceMatch = rawText.match(/#PRICE#\s*([\s\S]*?)(?=(?:===SEP===|$))/);
-
-            if (titleMatch && specMatch && priceMatch) {
-                let cleanPrice = priceMatch[1].replace(/[^\d.]/g, '').trim();
-                parsedItems.push({
-                    id: `cart_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    title: titleMatch[1].trim(),
-                    spec: specMatch[1].trim(),
-                    price: cleanPrice || "0.00",
-                    isNew: true
-                });
-            }
-        });
+        const parsedItems = parsePeekCartContent(cartRawText);
 
         if (parsedItems.length > 0) {
-            if (!peekContentCache['cart']) peekContentCache['cart'] = { items: [] };
-            peekContentCache['cart'].items = [...parsedItems, ...peekContentCache['cart'].items];
+            applyPeekCartContent(parsedItems);
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
-            renderPeekCart(peekContentCache['cart'].items);
+            renderPeekCart(peekContentCache['cart'].items, false, true);
         } else {
             throw new Error("解析购物车内容失败，未找到对应标签。");
         }
@@ -166,7 +217,7 @@ async function generateAndRenderPeekCart(options = {}) {
         console.error(error);
         showApiError(error);
         if (peekContentCache['cart']?.items?.length > 0) {
-            renderPeekCart(peekContentCache['cart'].items);
+            renderPeekCart(peekContentCache['cart'].items, false, true);
             if (typeof showToast === 'function') showToast('刷新失败: ' + error.message);
         } else {
             const screen = document.getElementById('peek-cart-screen');

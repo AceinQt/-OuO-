@@ -44,9 +44,12 @@ function _migrateDraftsCacheIfNeeded() {
 
 // ==========================================
 //  列表页渲染 (替换原函数)
+//  分页：每页 PeekPager.PAGE_SIZE 条，滚动触底追加下一页
 // ==========================================
-function renderPeekDraftsList() {
+function renderPeekDraftsList(isAppend = false, resetPage = false) {
     _migrateDraftsCacheIfNeeded();
+
+    if (resetPage) PeekPager.reset('drafts');
 
     const items       = peekContentCache['drafts'].items;
     const list        = document.getElementById('peek-drafts-list');
@@ -56,24 +59,30 @@ function renderPeekDraftsList() {
     // 获取当前是否处于删除多选模式
     const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'drafts';
 
-    if (!items || items.length === 0) {
-        placeholder.classList.add('visible');
-        list.style.display = 'none';
-        return;
+    if (!isAppend) {
+        list.innerHTML = '';
+        if (!items || items.length === 0) {
+            placeholder.classList.add('visible');
+            list.style.display = 'none';
+            const tip = document.getElementById('draft-loading-tip');
+            if (tip) tip.remove();
+            return;
+        }
+        placeholder.classList.remove('visible');
+        list.style.display = 'flex';
     }
-
-    placeholder.classList.remove('visible');
-    list.style.display = 'flex';
-    list.innerHTML = '';
 
     const iconSvg = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M8.96173 18.9109L9.42605 18.3219L8.96173 18.9109ZM12 5.50063L11.4596 6.02073C11.601 6.16763 11.7961 6.25063 12 6.25063C12.2039 6.25063 12.399 6.16763 12.5404 6.02073L12 5.50063ZM15.0383 18.9109L15.5026 19.4999L15.0383 18.9109ZM9.42605 18.3219C7.91039 17.1271 6.25307 15.9603 4.93829 14.4798C3.64922 13.0282 2.75 11.3345 2.75 9.1371H1.25C1.25 11.8026 2.3605 13.8361 3.81672 15.4758C5.24723 17.0866 7.07077 18.3752 8.49742 19.4999L9.42605 18.3219ZM2.75 9.1371C2.75 6.98623 3.96537 5.18252 5.62436 4.42419C7.23607 3.68748 9.40166 3.88258 11.4596 6.02073L12.5404 4.98053C10.0985 2.44352 7.26409 2.02539 5.00076 3.05996C2.78471 4.07292 1.25 6.42503 1.25 9.1371H2.75ZM8.49742 19.4999C9.00965 19.9037 9.55954 20.3343 10.1168 20.6599C10.6739 20.9854 11.3096 21.25 12 21.25V19.75C11.6904 19.75 11.3261 19.6293 10.8736 19.3648C10.4213 19.1005 9.95208 18.7366 9.42605 18.3219L8.49742 19.4999ZM15.5026 19.4999C16.9292 18.3752 18.7528 17.0866 20.1833 15.4758C21.6395 13.8361 22.75 11.8026 22.75 9.1371H21.25C21.25 11.3345 20.3508 13.0282 19.0617 14.4798C17.7469 15.9603 16.0896 17.1271 14.574 18.3219L15.5026 19.4999ZM22.75 9.1371C22.75 6.42503 21.2153 4.07292 18.9992 3.05996C16.7359 2.02539 13.9015 2.44352 11.4596 4.98053L12.5404 6.02073C14.5983 3.88258 16.7639 3.68748 18.3756 4.42419C20.0346 5.18252 21.25 6.98623 21.25 9.1371H22.75ZM14.574 18.3219C14.0479 18.7366 13.5787 19.1005 13.1264 19.3648C12.6739 19.6293 12.3096 19.75 12 19.75V21.25C12.6904 21.25 13.3261 20.9854 13.8832 20.6599C14.4405 20.3343 14.9903 19.9037 15.5026 19.4999L14.574 18.3219Z" fill="currentColor"/>
 </svg>`;
 
-    // 倒序：最新草稿排在最前
-    [...items].reverse().forEach(draft => {
+    // 倒序：最新草稿排在最前；分页只渲染需要的部分
+    const sorted = [...items].reverse();
+    const dataToRender = PeekPager.slice('drafts', sorted, isAppend);
+
+    dataToRender.forEach(draft => {
         const li = document.createElement('li');
-        
+
         // 动态添加编辑模式和选中状态的 class
         const isSelected = isEdit && PeekDeleteManager.selectedIds.has(draft.id);
         li.className  = `draft-card-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}`;
@@ -85,7 +94,7 @@ function renderPeekDraftsList() {
         const mm   = _pad2(d.getMonth() + 1);
         const dd   = _pad2(d.getDate());
         const titleStr = `未命名_${yyyy}_${mm}_${dd}`;
-        
+
         // 检测 new 标记
         const newBadgeStr = draft.isNew ? '<span class="peek-new-badge">new!</span>' : '';
 
@@ -105,6 +114,9 @@ function renderPeekDraftsList() {
         `;
         list.appendChild(li);
     });
+
+    // 底部"上滑加载更多"提示
+    PeekPager.updateTip(list.parentElement, 'drafts', sorted.length, 'draft-loading-tip');
 
     // 绑定长按删除（注意第二个参数修改为新的卡片类名）
     PeekDeleteManager.attachLongPress(
@@ -161,6 +173,34 @@ function renderPeekDraftDetail(draft) {
 // ==========================================
 //  生成新草稿（点击 + 按钮）
 // ==========================================
+// ==========================================
+// 解析草稿标签文本 → 草稿对象（批量生成复用）
+// 缺少必需标签时返回 null
+// ==========================================
+function parsePeekDraftContent(draftsRawText) {
+    const raw = draftsRawText || '';
+    const toMatch = raw.match(/#TO#\s*([\s\S]*?)(?=#CONTENT#|$)/i);
+    const contentMatch = raw.match(/#CONTENT#\s*([\s\S]*?)$/i);
+
+    if (!toMatch || !contentMatch) return null;
+
+    return {
+        id: 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+        to: toMatch[1].trim(),
+        content: contentMatch[1].trim(),
+        createdAt: new Date().toISOString(),
+        isNew: true
+    };
+}
+
+// 把解析好的草稿追加进缓存（批量生成复用）
+function applyPeekDraftContent(newDraft) {
+    if (!newDraft) return 0;
+    _migrateDraftsCacheIfNeeded();
+    peekContentCache['drafts'].items.push(newDraft);
+    return 1;
+}
+
 async function generateAndRenderPeekDrafts() {
     const appType = 'drafts';
 
@@ -226,25 +266,16 @@ ${char.myName}
         const draftsRawText  = parts[0] || '';
         const hitchhikerRaw  = parts.length > 1 ? parts[1] : '';
 
-        const toMatch      = draftsRawText.match(/#TO#\s*([\s\S]*?)(?=#CONTENT#|$)/i);
-        const contentMatch = draftsRawText.match(/#CONTENT#\s*([\s\S]*?)$/i);
+        const newDraft = parsePeekDraftContent(draftsRawText);
 
-        if (toMatch && contentMatch) {
-            const newDraft = {
-                id:        'draft_' + Date.now(),
-                to:        toMatch[1].trim(),
-                content:   contentMatch[1].trim(),
-                createdAt: new Date().toISOString(),
-                isNew:     true  // <- 赋予新生成草稿标签
-            };
-
+        if (newDraft) {
             // 追加到数组（增量，不覆盖旧条目）
-            peekContentCache['drafts'].items.push(newDraft);
+            applyPeekDraftContent(newDraft);
 
             await savePeekData(char.id);
 
-            // 刷新列表
-            renderPeekDraftsList();
+            // 刷新列表（重置分页回到第一页）
+            renderPeekDraftsList(false, true);
             showToast('新草稿已生成！');
         } else {
             throw new Error('解析草稿内容失败，未找到对应标签。');
@@ -277,6 +308,15 @@ function initPeekDraftsEvents() {
     // 列表点击 → 详情
     document.getElementById('peek-drafts-list')
         ?.addEventListener('click', _onDraftItemClick);
+
+    // 绑定滚动分页加载
+    const scrollContainer = document.querySelector('#peek-drafts-screen .content');
+    PeekPager.bindScroll(
+        scrollContainer,
+        'drafts',
+        () => (peekContentCache?.drafts?.items || []).length,
+        () => renderPeekDraftsList(true)   // 追加渲染，不重置页码
+    );
 }
 
 
@@ -285,7 +325,7 @@ function initPeekDraftsEvents() {
 // ==========================================
 function openPeekDraftsScreen() {
     _migrateDraftsCacheIfNeeded();
-    renderPeekDraftsList();
+    renderPeekDraftsList(false, true);
     switchScreen('peek-drafts-screen');
 }
 

@@ -21,6 +21,61 @@ const peekScreenApps = {
 const generatingPeekApps = new Set();
 
 // ==========================================
+// 公用分页器：列表型应用的滚动分页加载
+// 用法与备忘录的分页逻辑一致：每页 PAGE_SIZE 条，
+// 滚动触底自动加载下一页，底部显示"上滑加载更多"提示。
+// ==========================================
+window.PeekPager = {
+    PAGE_SIZE: 20,
+    _pages: {},   // key -> 当前页码（0起）
+
+    reset(key) { this._pages[key] = 0; },
+    page(key) { return this._pages[key] || 0; },
+    endIndex(key) { return (this.page(key) + 1) * this.PAGE_SIZE; },
+    hasMore(key, total) { return this.endIndex(key) < total; },
+
+    // 追加模式只取当前页；全量重绘取第0页到当前页
+    slice(key, arr, isAppend) {
+        if (!arr) return [];
+        const start = isAppend ? this.page(key) * this.PAGE_SIZE : 0;
+        return arr.slice(start, this.endIndex(key));
+    },
+
+    // 绑定滚动触底加载。容器被 innerHTML 重建后重新调用即可（dataset 标记防重复绑定）
+    bindScroll(container, key, getTotal, onLoadMore) {
+        if (!container || container.dataset.pagerBound === key) return;
+        container.dataset.pagerBound = key;
+        container.addEventListener('scroll', () => {
+            const total = getTotal();
+            if (!total || !this.hasMore(key, total)) return;
+            // 触底判断（预留 50px 容差）
+            if (container.scrollTop + container.clientHeight >= container.scrollHeight - 50) {
+                this._pages[key] = this.page(key) + 1;
+                onLoadMore();
+            }
+        });
+    },
+
+    // 底部"上滑加载更多"提示（复用备忘录的 .memo-loading-tip 样式）
+    updateTip(parentEl, key, total, tipId) {
+        if (!parentEl) return;
+        let tip = document.getElementById(tipId);
+        if (this.hasMore(key, total)) {
+            if (!tip || !parentEl.contains(tip)) {
+                tip = document.createElement('div');
+                tip.id = tipId;
+                tip.className = 'memo-loading-tip';
+                tip.textContent = '上滑加载更多...';
+                parentEl.appendChild(tip);
+            }
+            tip.style.display = 'block';
+        } else if (tip) {
+            tip.style.display = 'none';
+        }
+    }
+};
+
+// ==========================================
 // 多选删除管理器
 // ==========================================
 window.PeekDeleteManager = {
@@ -334,7 +389,7 @@ function getPeekBasePromptContext(char, mainChatContext) {
 
     let allFavs = "";
     if (char.memorySummaries || char.longTermSummaries) {
-        const shortFavs = (char.memorySummaries || []).filter(s => s.isFavorited).map(s => `[回忆] ${s.title}\n${s.content}`);
+        const shortFavs = (char.memorySummaries || []).filter(s => s.isFavorited).map(s => `[回忆] ${s.title}\n${getShortSummaryContent(s, char)}`);
         const longFavs = (char.longTermSummaries || []).filter(s => s.isFavorited).map(s => `[长期历史] ${s.title}\n${s.content}`);
         allFavs = [...longFavs, ...shortFavs].join('\n\n');
     }
@@ -727,6 +782,11 @@ function setupPeekFeature() {
         peekWallpaperModal.classList.add('visible');
     });
 
+    // 批量生成：一次生成所有应用的内容 + 一组顺风车消息
+    document.getElementById('peek-batch-generate-btn')?.addEventListener('click', () => {
+        if (typeof generatePeekBatch === 'function') generatePeekBatch();
+    });
+
     peekWallpaperUpload?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -820,7 +880,7 @@ if (conversation) {
     document.getElementById('peek-messages-add-btn')
         ?.addEventListener('click', () => addPeekContact());
 
-    // 详情页目前无 action-btn 操作（刷新按钮仅在列表页）
+    // 详情页的 action-btn（屏蔽 / 继续推演）在 peek_messages.js 里绑定
     // TODO 需求3：未来可在此处绑定"旁观模式"入口
     // const peekConversationScreen = document.getElementById('peek-conversation-screen');
     // peekConversationScreen.addEventListener('click', (e) => { ... });
@@ -851,6 +911,11 @@ if (conversation) {
     // 初始化备忘录的静态事件绑定
     if (typeof initPeekMemosEvents === 'function') {
         initPeekMemosEvents();
+    }
+
+    // 初始化消息模块的静态事件绑定（列表分页 + 对话详情向上翻页）
+    if (typeof initPeekMessagesEvents === 'function') {
+        initPeekMessagesEvents();
     }
 
     // 绑定长按多选删除

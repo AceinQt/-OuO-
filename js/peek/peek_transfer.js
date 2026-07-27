@@ -3,11 +3,41 @@
 // 中转站渲染、中转站生成
 // ==========================================
 
-function renderPeekTransferStation(entries) {
-    const screen = document.getElementById('peek-transfer-station-screen');
-    let messagesHtml = '';
+// 单条中转站消息的 HTML（分页渲染复用）
+function _buildTransferItemHtml(entry, isEdit) {
+    const isSelected = isEdit && PeekDeleteManager.selectedIds.has(entry.id);
+    return `
+        <div class="message-wrapper sent transfer-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${entry.id}" style="position:relative;">
+            <div class="message-bubble-row" style="align-items: center;">
+                <div class="message-bubble sent" style="background-color: #98E165; color: #000;">
+                    ${entry.content}
+                </div>
+                ${entry.isNew ? '<span class="new-badge" style="margin-left: 8px;">new!</span>' : ''}
+            </div>
+        </div>
+    `;
+}
 
+function renderPeekTransferStation(entries, isAppend = false, resetPage = false) {
+    if (resetPage) PeekPager.reset('transfer');
+
+    const screen = document.getElementById('peek-transfer-station-screen');
     const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'transfer';
+
+    // ── 追加模式：只往现有消息区尾部补一页（数组新→旧，越往下越早），不重建整个屏幕 ──
+    if (isAppend) {
+        const messageArea = screen.querySelector('.message-area');
+        if (!messageArea || !entries) return;
+        let html = '';
+        PeekPager.slice('transfer', entries, true).forEach(entry => {
+            html += _buildTransferItemHtml(entry, isEdit);
+        });
+        messageArea.insertAdjacentHTML('beforeend', html);
+        PeekPager.updateTip(messageArea, 'transfer', entries.length, 'transfer-loading-tip');
+        return;
+    }
+
+    let messagesHtml = '';
 
     if (!entries || entries.length === 0) {
         messagesHtml = '<p class="placeholder-text">正在生成中转站内容...</p>';
@@ -31,18 +61,9 @@ function renderPeekTransferStation(entries) {
             savePeekData(window.activePeekCharId).catch(e => console.error(e));
         }
 
-        entries.forEach(entry => {
-            const isSelected = isEdit && PeekDeleteManager.selectedIds.has(entry.id);
-            messagesHtml += `
-                <div class="message-wrapper sent transfer-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${entry.id}" style="position:relative;">
-                    <div class="message-bubble-row" style="align-items: center;">
-                        <div class="message-bubble sent" style="background-color: #98E165; color: #000;">
-                            ${entry.content}
-                        </div>
-                        ${entry.isNew ? '<span class="new-badge" style="margin-left: 8px;">new!</span>' : ''}
-                    </div>
-                </div>
-            `;
+        // 分页：只渲染第0页到当前页（数组头部是最新条目）
+        PeekPager.slice('transfer', entries, false).forEach(entry => {
+            messagesHtml += _buildTransferItemHtml(entry, isEdit);
         });
     }
 
@@ -71,8 +92,17 @@ function renderPeekTransferStation(entries) {
 
     screen.querySelector('.action-btn').addEventListener('click', () => generateAndRenderPeekTransfer({ forceRefresh: true }));
 
+    // 滚动分页：最新条目在顶部，向下滚动触底时加载更早的条目
     const messageArea = screen.querySelector('.message-area');
-    if (messageArea) messageArea.scrollTop = messageArea.scrollHeight;
+    PeekPager.bindScroll(
+        messageArea,
+        'transfer',
+        () => (peekContentCache?.transfer?.entries || []).length,
+        () => renderPeekTransferStation(peekContentCache.transfer.entries, true)
+    );
+    if (entries && entries.length > 0) {
+        PeekPager.updateTip(messageArea, 'transfer', entries.length, 'transfer-loading-tip');
+    }
 
     let hasNewTransfer = false;
     if (entries) {
@@ -83,6 +113,36 @@ function renderPeekTransferStation(entries) {
     }
 }
 
+// ==========================================
+// 解析中转站标签文本 → 条目数组（批量生成复用）
+// ==========================================
+function parsePeekTransferContent(transferRawText) {
+    const rawItems = (transferRawText || '').split('===SEP===');
+    const parsedEntries = [];
+
+    rawItems.forEach((rawText) => {
+        if (!rawText.trim()) return;
+        const entryMatch = rawText.match(/#ENTRY#\s*([\s\S]*)$/i);
+        if (entryMatch && entryMatch[1].trim()) {
+            parsedEntries.push({
+                id: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                content: entryMatch[1].trim(),
+                isNew: true
+            });
+        }
+    });
+
+    return parsedEntries;
+}
+
+// 把解析好的中转站条目并入缓存（批量生成复用）
+function applyPeekTransferContent(parsedEntries) {
+    if (!parsedEntries || parsedEntries.length === 0) return 0;
+    if (!peekContentCache['transfer']) peekContentCache['transfer'] = { entries: [] };
+    peekContentCache['transfer'].entries = [...parsedEntries, ...peekContentCache['transfer'].entries];
+    return parsedEntries.length;
+}
+
 async function generateAndRenderPeekTransfer(options = {}) {
     const appType = 'transfer';
     const { forceRefresh = false } = options;
@@ -90,7 +150,7 @@ async function generateAndRenderPeekTransfer(options = {}) {
     if (generatingPeekApps.has(appType)) { showToast('中转站内容正在生成中，请稍候...'); return; }
 
     if (!forceRefresh && peekContentCache[appType]) {
-        renderPeekTransferStation(peekContentCache[appType].entries);
+        renderPeekTransferStation(peekContentCache[appType].entries, false, true);
         switchScreen('peek-transfer-station-screen');
         return;
     }
@@ -146,26 +206,12 @@ https://example.com/interesting-article
         const transferRawText = parts[0] || '';
         const hitchhikerRawText = parts.length > 1 ? parts[1] : '';
 
-        const rawItems = transferRawText.split('===SEP===');
-        const parsedEntries = [];
-
-        rawItems.forEach((rawText) => {
-            if (!rawText.trim()) return;
-            const entryMatch = rawText.match(/#ENTRY#\s*([\s\S]*)$/i);
-            if (entryMatch && entryMatch[1].trim()) {
-                parsedEntries.push({
-                    id: `transfer_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    content: entryMatch[1].trim(),
-                    isNew: true
-                });
-            }
-        });
+        const parsedEntries = parsePeekTransferContent(transferRawText);
 
         if (parsedEntries.length > 0) {
-            if (!peekContentCache['transfer']) peekContentCache['transfer'] = { entries: [] };
-            peekContentCache['transfer'].entries = [...parsedEntries, ...peekContentCache['transfer'].entries];
+            applyPeekTransferContent(parsedEntries);
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
-            renderPeekTransferStation(peekContentCache['transfer'].entries);
+            renderPeekTransferStation(peekContentCache['transfer'].entries, false, true);
         } else {
             throw new Error("解析中转站内容失败，未找到对应标签。");
         }
@@ -179,7 +225,7 @@ https://example.com/interesting-article
         console.error(error);
         showApiError(error);
         if (peekContentCache['transfer']?.entries?.length > 0) {
-            renderPeekTransferStation(peekContentCache['transfer'].entries);
+            renderPeekTransferStation(peekContentCache['transfer'].entries, false, true);
             if (typeof showToast === 'function') showToast('刷新失败: ' + error.message);
         } else {
             const screen = document.getElementById('peek-transfer-station-screen');

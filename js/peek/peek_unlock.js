@@ -22,9 +22,45 @@ function formatRelativeTime(timestamp) {
     return `${Math.floor(months / 12)}年前`;
 }
 
-function renderPeekUnlock(data) {
+// 构建单条帖子的 HTML（分页渲染复用）
+function _buildUnlockPostHtml(post, isEdit, fixedAvatar, nickname) {
+    if (!post.id) post.id = 'post_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const isSelected = isEdit && PeekDeleteManager.selectedIds.has(post.id);
+
+    // 缓存随机交互数避免重渲染跳动
+    if (post.randomComments === undefined) post.randomComments = Math.floor(Math.random() * 100);
+    if (post.randomLikes === undefined) post.randomLikes = Math.floor(Math.random() * 500);
+
+    // 使用相对时间方法动态渲染
+    let timeDisplay = formatRelativeTime(post.absoluteTime);
+
+    return `
+        <div class="unlock-post-card ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${post.id}" style="position:relative;">
+            ${post.isNew ? '<span class="new-badge" style="position:absolute; top:16px; right:16px;">new!</span>' : ''}
+            <div class="unlock-post-card-header">
+                <img src="${fixedAvatar}" alt="Profile Avatar">
+                <div class="unlock-post-card-author-info">
+                    <span class="username">${nickname}</span>
+                    <span class="timestamp">${timeDisplay}</span>
+                </div>
+            </div>
+            <div class="unlock-post-card-content">
+                ${post.content.replace(/\n/g, '<br>')}
+            </div>
+            <div class="unlock-post-card-actions">
+                <div class="action"><svg viewBox="0 0 24 24"><path d="M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L16.04,7.15C16.56,7.62 17.24,7.92 18,7.92C19.66,7.92 21,6.58 21,5C21,3.42 19.66,2 18,2C16.34,2 15,3.42 15,5C15,5.24 15.04,5.47 15.09,5.7L7.96,9.85C7.44,9.38 6.76,9.08 6,9.08C4.34,9.08 3,10.42 3,12C3,13.58 4.34,14.92 6,14.92C6.76,14.92 7.44,14.62 7.96,14.15L15.09,18.3C15.04,18.53 15,18.76 15,19C15,20.58 16.34,22 18,22C19.66,22 21,20.58 21,19C21,17.42 19.66,16.08 18,16.08Z"></path></svg> <span>分享</span></div>
+                <div class="action"><svg viewBox="0 0 24 24"><path d="M20,2H4C2.9,0,2,0.9,2,2v18l4-4h14c1.1,0,2-0.9,2-2V4C22,2.9,21.1,2,20,2z M18,14H6v-2h12V14z M18,11H6V9h12V11z M18,8H6V6h12V8z"></path></svg> <span>${post.randomComments}</span></div>
+                <div class="action"><svg viewBox="0 0 24 24"><path d="M12,21.35L10.55,20.03C5.4,15.36,2,12.27,2,8.5C2,5.42,4.42,3,7.5,3c1.74,0,3.41,0.81,4.5,2.09C13.09,3.81,14.76,3,16.5,3C19.58,3,22,5.42,22,8.5c0,3.78-3.4,6.86-8.55,11.54L12,21.35z"></path></svg> <span>${post.randomLikes}</span></div>
+            </div>
+        </div>
+    `;
+}
+
+function renderPeekUnlock(data, isAppend = false, resetPage = false) {
     const screen = document.getElementById('peek-unlock-screen');
     if (!screen) return;
+
+    if (resetPage) PeekPager.reset('unlock');
 
     const placeholder = document.getElementById('unlock-placeholder');
     const contentArea = document.getElementById('unlock-content-area');
@@ -42,14 +78,36 @@ function renderPeekUnlock(data) {
 
     const character = db.characters.find(c => c.id === window.activePeekCharId);
     const peekSettings = character?.peekScreenSettings || {};
-    
+
     // 如果有固定昵称和固定ID设置，则强制覆盖
     const nickname = peekSettings.unlockFixedNickname || data.nickname || '小号';
     const handle = peekSettings.unlockFixedHandle || data.handle || '@unknown';
     const bio = data.bio || '';
     const posts = data.posts ||[];
-    
+
     const fixedAvatar = peekSettings.unlockAvatar || 'https://i.postimg.cc/SNwL1XwR/chan-11.png';
+
+    const feed = document.getElementById('unlock-post-feed');
+    const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'unlock';
+
+    // 兼容旧数据补全时间，0代表没有时间戳的遗留老数据
+    const sortedPosts = [...posts].map(post => {
+        if (post.absoluteTime === undefined || post.absoluteTime === null) {
+            post.absoluteTime = 0;
+        }
+        return post;
+    }).sort((a, b) => b.absoluteTime - a.absoluteTime);
+
+    // ── 追加模式：只往帖子流尾部补一页，个人资料区不动 ──
+    if (isAppend) {
+        let postsHtml = '';
+        PeekPager.slice('unlock', sortedPosts, true).forEach(post => {
+            postsHtml += _buildUnlockPostHtml(post, isEdit, fixedAvatar, nickname);
+        });
+        if (feed) feed.insertAdjacentHTML('beforeend', postsHtml);
+        PeekPager.updateTip(feed, 'unlock', sortedPosts.length, 'unlock-loading-tip');
+        return;
+    }
 
     if (headerTitle) headerTitle.innerText = nickname;
 
@@ -60,7 +118,7 @@ function renderPeekUnlock(data) {
     document.getElementById('unlock-profile-bio-text').innerHTML = bio.replace(/\n/g, '<br>');
 
     document.getElementById('unlock-stat-posts').innerText = posts.length;
-    
+
     // 随机缓存粉丝数
     if (!data.randomFollowers) {
         data.randomFollowers = (Math.random() * 5 + 1).toFixed(1) + 'k';
@@ -69,53 +127,22 @@ function renderPeekUnlock(data) {
     document.getElementById('unlock-stat-followers').innerText = data.randomFollowers;
     document.getElementById('unlock-stat-following').innerText = data.randomFollowing;
 
-    const feed = document.getElementById('unlock-post-feed');
-    const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'unlock';
-
     let postsHtml = '';
-    
-    // 兼容旧数据补全时间，0代表没有时间戳的遗留老数据
-    const sortedPosts = [...posts].map(post => {
-        if (post.absoluteTime === undefined || post.absoluteTime === null) {
-            post.absoluteTime = 0; 
-        }
-        return post;
-    }).sort((a, b) => b.absoluteTime - a.absoluteTime);
-
-    sortedPosts.forEach(post => {
-        if (!post.id) post.id = 'post_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-        const isSelected = isEdit && PeekDeleteManager.selectedIds.has(post.id);
-        
-        // 缓存随机交互数避免重渲染跳动
-        if (post.randomComments === undefined) post.randomComments = Math.floor(Math.random() * 100);
-        if (post.randomLikes === undefined) post.randomLikes = Math.floor(Math.random() * 500);
-
-        // 使用相对时间方法动态渲染
-        let timeDisplay = formatRelativeTime(post.absoluteTime);
-
-        postsHtml += `
-            <div class="unlock-post-card ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${post.id}" style="position:relative;">
-                ${post.isNew ? '<span class="new-badge" style="position:absolute; top:16px; right:16px;">new!</span>' : ''}
-                <div class="unlock-post-card-header">
-                    <img src="${fixedAvatar}" alt="Profile Avatar">
-                    <div class="unlock-post-card-author-info">
-                        <span class="username">${nickname}</span>
-                        <span class="timestamp">${timeDisplay}</span>
-                    </div>
-                </div>
-                <div class="unlock-post-card-content">
-                    ${post.content.replace(/\n/g, '<br>')}
-                </div>
-                <div class="unlock-post-card-actions">
-                    <div class="action"><svg viewBox="0 0 24 24"><path d="M18,16.08C17.24,16.08 16.56,16.38 16.04,16.85L8.91,12.7C8.96,12.47 9,12.24 9,12C9,11.76 8.96,11.53 8.91,11.3L16.04,7.15C16.56,7.62 17.24,7.92 18,7.92C19.66,7.92 21,6.58 21,5C21,3.42 19.66,2 18,2C16.34,2 15,3.42 15,5C15,5.24 15.04,5.47 15.09,5.7L7.96,9.85C7.44,9.38 6.76,9.08 6,9.08C4.34,9.08 3,10.42 3,12C3,13.58 4.34,14.92 6,14.92C6.76,14.92 7.44,14.62 7.96,14.15L15.09,18.3C15.04,18.53 15,18.76 15,19C15,20.58 16.34,22 18,22C19.66,22 21,20.58 21,19C21,17.42 19.66,16.08 18,16.08Z"></path></svg> <span>分享</span></div>
-                    <div class="action"><svg viewBox="0 0 24 24"><path d="M20,2H4C2.9,0,2,0.9,2,2v18l4-4h14c1.1,0,2-0.9,2-2V4C22,2.9,21.1,2,20,2z M18,14H6v-2h12V14z M18,11H6V9h12V11z M18,8H6V6h12V8z"></path></svg> <span>${post.randomComments}</span></div>
-                    <div class="action"><svg viewBox="0 0 24 24"><path d="M12,21.35L10.55,20.03C5.4,15.36,2,12.27,2,8.5C2,5.42,4.42,3,7.5,3c1.74,0,3.41,0.81,4.5,2.09C13.09,3.81,14.76,3,16.5,3C19.58,3,22,5.42,22,8.5c0,3.78-3.4,6.86-8.55,11.54L12,21.35z"></path></svg> <span>${post.randomLikes}</span></div>
-                </div>
-            </div>
-        `;
+    // 分页：只渲染第0页到当前页
+    PeekPager.slice('unlock', sortedPosts, false).forEach(post => {
+        postsHtml += _buildUnlockPostHtml(post, isEdit, fixedAvatar, nickname);
     });
 
     if (feed) feed.innerHTML = postsHtml;
+
+    // 底部"上滑加载更多"提示 + 滚动分页绑定（.content 是静态节点，只会绑一次）
+    PeekPager.updateTip(feed, 'unlock', sortedPosts.length, 'unlock-loading-tip');
+    PeekPager.bindScroll(
+        screen.querySelector('main.content'),
+        'unlock',
+        () => (peekContentCache?.unlock?.posts || []).length,
+        () => renderPeekUnlock(peekContentCache.unlock, true)
+    );
 
     // 清除新红点
     let hasNewUnlock = false;
@@ -127,6 +154,110 @@ function renderPeekUnlock(data) {
     }
 }
 
+// ==========================================
+// 解析小号标签文本 → { nickname, handle, bio, posts }（批量生成复用）
+// lastGenTime / now 用于把 [15分钟前] 这类相对时间换算成绝对时间戳
+// 缺少昵称或帖子时返回 null
+// ==========================================
+function parsePeekUnlockContent(unlockRawText, lastGenTime, now) {
+    const raw = unlockRawText || '';
+    const nickMatch = raw.match(/#NICKNAME#\s*([\s\S]*?)(?=#HANDLE#|$)/i);
+    const handleMatch = raw.match(/#HANDLE#\s*([\s\S]*?)(?=#BIO#|$)/i);
+    const bioMatch = raw.match(/#BIO#\s*([\s\S]*?)(?=#POST#|$)/i);
+
+    const postSplits = raw.split(/#POST#/i).slice(1);
+    const parsedPosts = [];
+
+    // 尝试从AI给的tag(如[15分钟前])里提取或换算真实的相对时间戳
+    function parseTimeTag(tag, lastTime, currentTime) {
+        let offset = 0;
+        if (/刚/.test(tag)) offset = 1 * 60 * 1000;
+        else if (/(半小时|30分钟)/.test(tag)) offset = 30 * 60 * 1000;
+        else if (/分钟/.test(tag)) {
+            let m = tag.match(/(\d+)/);
+            if (m) offset = parseInt(m[1]) * 60 * 1000;
+        } else if (/小时/.test(tag)) {
+            let m = tag.match(/(\d+)/);
+            if (m) offset = parseInt(m[1]) * 3600 * 1000;
+        } else if (/天/.test(tag)) {
+            let m = tag.match(/(\d+)/);
+            if (m) offset = parseInt(m[1]) * 24 * 3600 * 1000;
+        } else if (/昨天/.test(tag)) {
+            offset = 24 * 3600 * 1000;
+        } else if (/前天/.test(tag)) {
+            offset = 48 * 3600 * 1000;
+        }
+
+        if (offset > 0) {
+            let t = currentTime - offset;
+            // 防止时间跳脱到比上次生成还要早太多的荒谬区间，稍微钳制一下
+            if (t < lastTime) t = lastTime + Math.random() * ((currentTime - lastTime) || 3600000) * 0.5;
+            return t;
+        }
+        // 解析失败的保底机制：取上次生成时间和现在的中间随机
+        return Math.floor(lastTime + Math.random() * (currentTime - lastTime));
+    }
+
+    let lastParsedTime = now; // 用于时间倒流保护
+
+    postSplits.forEach(postStr => {
+        const postMatch = postStr.match(/^\s*\[([^\]]+)\]\s*([\s\S]*)$/);
+        const contentText = postMatch ? postMatch[2].trim() : postStr.trim();
+        if (contentText) {
+            const timeTag = postMatch ? postMatch[1].trim() : '';
+            let absoluteTime = parseTimeTag(timeTag, lastGenTime, now);
+
+            // 时间逻辑保护机制：AI是倒序输出，因此当前循环到的帖子必须比前一个帖子"更老"。
+            // 否则就属于AI逻辑错误，我们直接介入纠偏，强制扣除时间。
+            if (absoluteTime >= lastParsedTime) {
+                absoluteTime = lastParsedTime - Math.floor(Math.random() * 60000 + 60000); // 强制比上一个老1到2分钟
+            }
+            lastParsedTime = absoluteTime;
+
+            parsedPosts.push({
+                id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                timestamp: timeTag,
+                absoluteTime: absoluteTime,
+                content: contentText,
+                isNew: true
+            });
+        }
+    });
+
+    if (!nickMatch || parsedPosts.length === 0) return null;
+
+    return {
+        nickname: nickMatch[1].trim(),
+        handle: handleMatch ? handleMatch[1].trim() : '@unknown',
+        bio: bioMatch ? bioMatch[1].trim() : '...',
+        posts: parsedPosts
+    };
+}
+
+// 把解析好的小号内容并入缓存（批量生成复用）
+function applyPeekUnlockContent(parsed, now) {
+    if (!parsed) return 0;
+    if (!peekContentCache['unlock']) {
+        peekContentCache['unlock'] = { nickname: '', handle: '', bio: '', posts: [] };
+    }
+
+    peekContentCache['unlock'].nickname = parsed.nickname;
+    peekContentCache['unlock'].handle = parsed.handle;
+    peekContentCache['unlock'].bio = parsed.bio;
+    // 将新帖子拼接到原数组最前面
+    peekContentCache['unlock'].posts = [...parsed.posts, ...peekContentCache['unlock'].posts];
+    peekContentCache['unlock'].lastGenTime = now; // 记录本次生成时间
+
+    return parsed.posts.length;
+}
+
+// 上次生成小号内容的时间（无记录时按 3 天前处理）
+function getPeekUnlockLastGenTime(now) {
+    return (peekContentCache['unlock'] && peekContentCache['unlock'].lastGenTime)
+        ? peekContentCache['unlock'].lastGenTime
+        : (now - 3 * 24 * 3600 * 1000);
+}
+
 async function generateAndRenderPeekUnlock(options = {}) {
     const appType = 'unlock';
     const { forceRefresh = false } = options;
@@ -134,7 +265,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
     if (generatingPeekApps.has(appType)) { showToast('小号内容正在生成中，请稍候...'); return; }
 
     if (!forceRefresh && peekContentCache[appType]) {
-        renderPeekUnlock(peekContentCache[appType]);
+        renderPeekUnlock(peekContentCache[appType], false, true);
         switchScreen('peek-unlock-screen');
         return;
     }
@@ -165,7 +296,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
 
         // 确定距离上次更新的时长，用以辅助AI产生时间概念
         const now = Date.now();
-        const lastGenTime = (peekContentCache['unlock'] && peekContentCache['unlock'].lastGenTime) ? peekContentCache['unlock'].lastGenTime : (now - 3 * 24 * 3600 * 1000);
+        const lastGenTime = getPeekUnlockLastGenTime(now);
         const hoursSinceLast = Math.max(1, Math.floor((now - lastGenTime) / 3600000));
         let timeText = hoursSinceLast > 72 ? '几天' : `约 ${hoursSinceLast} 小时`;
 
@@ -218,83 +349,13 @@ async function generateAndRenderPeekUnlock(options = {}) {
         const unlockRawText = parts[0] || '';
         const hitchhikerRawText = parts.length > 1 ? parts[1] : '';
 
-        const nickMatch = unlockRawText.match(/#NICKNAME#\s*([\s\S]*?)(?=#HANDLE#|$)/i);
-        const handleMatch = unlockRawText.match(/#HANDLE#\s*([\s\S]*?)(?=#BIO#|$)/i);
-        const bioMatch = unlockRawText.match(/#BIO#\s*([\s\S]*?)(?=#POST#|$)/i);
+        const parsedUnlock = parsePeekUnlockContent(unlockRawText, lastGenTime, now);
 
-        const postSplits = unlockRawText.split(/#POST#/i).slice(1);
-        const parsedPosts = [];
-
-        // 尝试从AI给的tag(如[15分钟前])里提取或换算真实的相对时间戳
-        function parseTimeTag(tag, lastTime, currentTime) {
-            let offset = 0;
-            if (/刚/.test(tag)) offset = 1 * 60 * 1000;
-            else if (/(半小时|30分钟)/.test(tag)) offset = 30 * 60 * 1000;
-            else if (/分钟/.test(tag)) {
-                let m = tag.match(/(\d+)/);
-                if (m) offset = parseInt(m[1]) * 60 * 1000;
-            } else if (/小时/.test(tag)) {
-                let m = tag.match(/(\d+)/);
-                if (m) offset = parseInt(m[1]) * 3600 * 1000;
-            } else if (/天/.test(tag)) {
-                let m = tag.match(/(\d+)/);
-                if (m) offset = parseInt(m[1]) * 24 * 3600 * 1000;
-            } else if (/昨天/.test(tag)) {
-                offset = 24 * 3600 * 1000;
-            } else if (/前天/.test(tag)) {
-                offset = 48 * 3600 * 1000;
-            }
-            
-            if (offset > 0) {
-                let t = currentTime - offset;
-                // 防止时间跳脱到比上次生成还要早太多的荒谬区间，稍微钳制一下
-                if (t < lastTime) t = lastTime + Math.random() * ((currentTime - lastTime) || 3600000) * 0.5;
-                return t;
-            }
-            // 解析失败的保底机制：取上次生成时间和现在的中间随机
-            return Math.floor(lastTime + Math.random() * (currentTime - lastTime));
-        }
-
-        let lastParsedTime = now; // 用于时间倒流保护
-
-        postSplits.forEach(postStr => {
-            const postMatch = postStr.match(/^\s*\[([^\]]+)\]\s*([\s\S]*)$/);
-            const contentText = postMatch ? postMatch[2].trim() : postStr.trim();
-            if (contentText) {
-                const timeTag = postMatch ? postMatch[1].trim() : '';
-                let absoluteTime = parseTimeTag(timeTag, lastGenTime, now);
-                
-                // 时间逻辑保护机制：AI是倒序输出，因此当前循环到的帖子必须比前一个帖子"更老"。
-                // 否则就属于AI逻辑错误，我们直接介入纠偏，强制扣除时间。
-                if (absoluteTime >= lastParsedTime) {
-                    absoluteTime = lastParsedTime - Math.floor(Math.random() * 60000 + 60000); // 强制比上一个老1到2分钟
-                }
-                lastParsedTime = absoluteTime;
-
-                parsedPosts.push({
-                    id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                    timestamp: timeTag,
-                    absoluteTime: absoluteTime,
-                    content: contentText,
-                    isNew: true
-                });
-            }
-        });
-
-        if (nickMatch && parsedPosts.length > 0) {
-            if (!peekContentCache['unlock']) {
-                peekContentCache['unlock'] = { nickname: '', handle: '', bio: '', posts:[] };
-            }
-
-            peekContentCache['unlock'].nickname = nickMatch[1].trim();
-            peekContentCache['unlock'].handle = handleMatch ? handleMatch[1].trim() : '@unknown';
-            peekContentCache['unlock'].bio = bioMatch ? bioMatch[1].trim() : '...';
-            // 将新帖子拼接到原数组最前面
-            peekContentCache['unlock'].posts = [...parsedPosts, ...peekContentCache['unlock'].posts];
-            peekContentCache['unlock'].lastGenTime = now; // 记录本次生成时间
+        if (parsedUnlock) {
+            applyPeekUnlockContent(parsedUnlock, now);
 
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
-            renderPeekUnlock(peekContentCache['unlock']);
+            renderPeekUnlock(peekContentCache['unlock'], false, true);
         } else {
             throw new Error("解析小号内容失败，未找到对应标签。");
         }
@@ -308,7 +369,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
         console.error(error);
         showApiError(error);
         if (peekContentCache['unlock']?.posts?.length > 0) {
-            renderPeekUnlock(peekContentCache['unlock']);
+            renderPeekUnlock(peekContentCache['unlock'], false, true);
             if (typeof showToast === 'function') showToast('刷新失败: ' + error.message);
         } else {
             const placeholder = document.getElementById('unlock-placeholder');

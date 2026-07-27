@@ -35,6 +35,25 @@ function renderPeekSteps(data) {
     annotationEl.textContent = data.annotation;
 }
 
+// ==========================================
+// 解析步数标签文本 → 步数对象（批量生成复用）
+// 缺少必需标签时返回 null
+// ==========================================
+function parsePeekStepsContent(stepsRawText) {
+    const raw = stepsRawText || '';
+    const stepsMatch = raw.match(/#CURRENT_STEPS#\s*(\d+)/i);
+    const trajMatch = raw.match(/#TRAJECTORY#\s*([\s\S]*?)(?=#ANNOTATION#|$)/i);
+    const annoMatch = raw.match(/#ANNOTATION#\s*([\s\S]*?)$/i);
+
+    if (!stepsMatch || !trajMatch) return null;
+
+    return {
+        currentSteps: parseInt(stepsMatch[1].trim(), 10),
+        trajectory: trajMatch[1].trim().split('\n').map(s => s.trim()).filter(Boolean),
+        annotation: annoMatch ? annoMatch[1].trim() : '无批注'
+    };
+}
+
 async function generateAndRenderPeekSteps(options = {}) {
     const appType = 'steps';
     const { forceRefresh = false } = options;
@@ -100,17 +119,9 @@ async function generateAndRenderPeekSteps(options = {}) {
         const stepsRawText = parts[0] || '';
         const hitchhikerRawText = parts.length > 1 ? parts[1] : '';
 
-        const stepsMatch = stepsRawText.match(/#CURRENT_STEPS#\s*(\d+)/i);
-        const trajMatch = stepsRawText.match(/#TRAJECTORY#\s*([\s\S]*?)(?=#ANNOTATION#|$)/i);
-        const annoMatch = stepsRawText.match(/#ANNOTATION#\s*([\s\S]*?)$/i);
+        const parsedSteps = parsePeekStepsContent(stepsRawText);
 
-        if (stepsMatch && trajMatch) {
-            const parsedSteps = {
-                currentSteps: parseInt(stepsMatch[1].trim(), 10),
-                trajectory: trajMatch[1].trim().split('\n').map(s => s.trim()).filter(Boolean),
-                annotation: annoMatch ? annoMatch[1].trim() : '无批注'
-            };
-
+        if (parsedSteps) {
             peekContentCache['steps'] = parsedSteps;
             savePeekData(char.id).catch(e => console.error("Peek自动保存失败:", e));
             renderPeekSteps(parsedSteps);
