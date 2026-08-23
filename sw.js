@@ -3,7 +3,7 @@
 //       从而能控制根页面（否则 navigator.serviceWorker.ready 会永久挂起），
 //       并让通知点击、图标等相对路径都从根目录解析。
 
-const CACHE_NAME = 'ouo-cache-Q1.9.0';
+const CACHE_NAME = 'ouo-cache-Q2.0.0';
 // 每次部署新版本时，把上面的版本号往上加
 // SW 会自动清理旧缓存，确保用户拿到最新文件
 
