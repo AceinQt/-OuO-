@@ -8,6 +8,29 @@ let isStickerManageMode = false;
 let selectedStickerIds = new Set();
 let currentStickerActionTarget = null;
 
+// 退出表情"管理"模式并清空勾选。
+// 表情面板是全局单例，管理模式一旦开着就会跟着换会话，所以关面板时一并复位。
+function exitStickerManageMode() {
+    if (!isStickerManageMode && selectedStickerIds.size === 0) return;
+
+    isStickerManageMode = false;
+    selectedStickerIds.clear();
+
+    const manageStickersBtn = document.getElementById('manage-stickers-btn');
+    if (manageStickersBtn) {
+        manageStickersBtn.textContent = '管理';
+        manageStickersBtn.classList.replace('btn-neutral', 'btn-primary');
+    }
+    const stickerManageBar = document.getElementById('sticker-manage-bar');
+    if (stickerManageBar) stickerManageBar.style.display = 'none';
+
+    const deleteSelectedStickersBtn = document.getElementById('delete-selected-stickers-btn');
+    if (deleteSelectedStickersBtn) {
+        deleteSelectedStickersBtn.textContent = '删除已选 (0)';
+        deleteSelectedStickersBtn.disabled = true;
+    }
+}
+
 // 重名处理函数
 function getUniqueStickerName(baseName, excludeId = null) {
     let name = baseName;

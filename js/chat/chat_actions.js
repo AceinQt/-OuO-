@@ -122,19 +122,20 @@ function createContextMenu(items, x, y) {
           } else {
                 // --- 普通消息菜单 (保持原有) ---
                 const isImageRecognitionMsg = message.parts && message.parts.some(p => p.type === 'image');
-                const isVoiceMessage = /\[.*?的语音：.*?\]/.test(message.content);
-                const isStickerMessage = /\[.*?的表情包：.*?\]|\[.*?发送的表情包：.*?\]/.test(message.content);
-                const isPhotoVideoMessage = /\[.*?发来的照片\/视频：.*?\]/.test(message.content);
-                const isTransferMessage = /\[.*?给你转账：.*?\]|\[.*?的转账：.*?\]|\[.*?向.*?转账：.*?\]/.test(message.content);
-                const isGiftMessage = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/.test(message.content);
-                const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?将.*?移出了群聊\]|\[.*?修改群名为：.*?\]|\[.*?修改.*?的群昵称为：.*?\]/.test(message.content);
+                const isStickerMessage = /\[.*?的表情包[:：].*?\]|\[.*?发送的表情包[:：].*?\]/.test(message.content);
+                const isTransferMessage = /\[.*?给你转账[:：].*?\]|\[.*?的转账[:：].*?\]|\[.*?向.*?转账[:：].*?\]/.test(message.content);
+                const isGiftMessage = /\[.*?送来的礼物[:：].*?\]|\[.*?向.*?送来了礼物[:：].*?\]/.test(message.content);
+                const isLocationMessage = /\[.*?发送了位置[:：].*?\]/.test(message.content);
+                const isInvisibleMessage = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为[:：].*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?将.*?移出了群聊\]|\[.*?修改群名为[:：].*?\]|\[.*?修改.*?的群昵称为[:：].*?\]/.test(message.content);
 
                 if (!isWithdrawn) {
-                    if (!isImageRecognitionMsg && !isVoiceMessage && !isStickerMessage && !isPhotoVideoMessage && !isTransferMessage && !isGiftMessage && !isInvisibleMessage) {
+                    // 普通对话、语音、照片/视频（图文）共用同一套编辑弹窗，且可互相转换。
+                    if (!isImageRecognitionMsg && !isStickerMessage && !isTransferMessage && !isGiftMessage && !isLocationMessage && !isInvisibleMessage) {
                          menuItems.push({
                             label: '复制',
                             action: () => {
-                                let text = message.content.replace(/\[.*?的消息：([\s\S]+?)\]/, '$1');
+                                const editableMatch = message.content.match(/^\[(?:.+?)(?:的消息|的语音|发来的照片\/视频)[:：]\s*([\s\S]*?)\]$/);
+                                const text = editableMatch ? editableMatch[1].trim() : message.content;
                                 copyTextToClipboard(text)
                                     .then(() => showToast('已复制'))
                                     .catch(() => showToast('复制失败'));
@@ -156,17 +157,33 @@ function createContextMenu(items, x, y) {
                 }
                     }
 
-                    // 图片消息：转文字描述（省 token）
-                    if (isImageRecognitionMsg) {
-                        const isConverting = (typeof isImageConverting === 'function') && isImageConverting(messageId);
+                    // 语音消息：重新生成音频
+                    // ★ 缓存键只认预设 id 不认预设内容，所以调语速/改描述/换音色都不会
+                    //   让已有音频自动作废（免得每次微调都白花一次合成的钱）。
+                    //   这里是那个策略必需的手动出口。
+                    const isVoiceMessage = typeof parseVoiceMessage === 'function'
+                        && !!parseVoiceMessage(message.content)
+                        && message.role !== 'user';
+                    if (isVoiceMessage && typeof regenerateVoiceClip === 'function') {
                         menuItems.push({
-                            label: isConverting ? '转化中…' : '转文字',
-                            action: () => {
-                                if (isConverting) { showToast('该图片正在转化中'); return; }
-                                convertImageMessageToText(messageId);
-                            }
+                            label: '重新生成语音',
+                            action: () => regenerateVoiceClip(messageId, chat, currentChatType)
                         });
                     }
+
+                    // 语音消息：把音频存成 mp3 文件
+                    // ★ 不检查"有没有生成过"就放这一项 —— 那要查一次 IndexedDB，
+                    //   而长按菜单是同步构建的。没生成过的情况由 downloadVoiceClip
+                    //   自己提示"先点播放键生成"。
+                    if (isVoiceMessage && typeof downloadVoiceClip === 'function') {
+                        menuItems.push({
+                            label: '下载语音',
+                            action: () => downloadVoiceClip(messageId, chat, currentChatType)
+                        });
+                    }
+
+                    // 图片消息的"转文字"不在这里 —— 已挪到图片气泡右下角的按钮
+                    // （chat_bubble_factory.js 的 .image-ocr-btn），和生图键同一个位置。
                 }
                 menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
             }
@@ -209,6 +226,8 @@ function createContextMenu(items, x, y) {
                     previewContent = '[语音]';
                 } else if (/\[.*?发来的照片\/视频：.*?\]/.test(message.content)) {
                     previewContent = '[照片/视频]';
+                } else if (/\[.*?发送了位置：.*?\]/.test(message.content)) {
+                    previewContent = '[位置]';
                 } else if (message.parts && message.parts.some(p => p.type === 'image')) {
                     previewContent = '[图片]';
                 }
@@ -260,8 +279,10 @@ function startMessageEdit(messageId) {
     const displayMatch = contentToEdit.match(/^\[system-display:([\s\S]+?)\]$/);
     // C. 纯系统指令 [system:...]
     const systemMatch = contentToEdit.match(/^\[system:([\s\S]+?)\]$/);
-    // D. 普通对话 [名字的消息：...]
-    const plainTextMatch = contentToEdit.match(/^\[.*?的消息：([\s\S]*)\]$/);
+    // D. 普通对话、语音和照片/视频（同时兼容中英文冒号）
+    const plainTextMatch = contentToEdit.match(/^\[.*?的消息[:：]\s*([\s\S]*)\]$/);
+    const voiceMatch = contentToEdit.match(/^\[.*?的语音[:：]\s*([\s\S]*)\]$/);
+    const photoVideoMatch = contentToEdit.match(/^\[.*?发来的照片\/视频[:：]\s*([\s\S]*)\]$/);
 
     if (narrationMatch) {
         contentToEdit = narrationMatch[1].trim();
@@ -272,6 +293,12 @@ function startMessageEdit(messageId) {
     } else if (systemMatch) {
         contentToEdit = systemMatch[1].trim();
         currentType = 'system';
+    } else if (voiceMatch) {
+        contentToEdit = voiceMatch[1].trim();
+        currentType = 'voice';
+    } else if (photoVideoMatch) {
+        contentToEdit = photoVideoMatch[1].trim();
+        currentType = 'photo-video';
     } else if (plainTextMatch && plainTextMatch[1]) {
         contentToEdit = plainTextMatch[1].trim();
         currentType = 'text';
@@ -316,10 +343,19 @@ async function saveMessageEdit() {
     let newContent = '';
 
     // --- 核心：根据下拉框类型构建新消息格式 ---
+    let senderName = '';
+    if (message.role === 'user') {
+        senderName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
+    } else if (currentChatType === 'private') {
+        senderName = chat.realName || chat.name;
+    } else {
+        const sender = findGroupMemberById(chat, message.senderId);
+        senderName = sender ? sender.groupNickname : (chat.name || '未知成员');
+    }
+
     if (selectedType === 'narration') {
         newContent = `[system-narration:${newText}]`;
-    } 
-    else if (selectedType === 'display') {
+    } else if (selectedType === 'display') {
         newContent = `[system-display:${newText}]`;
         if (message.id.startsWith('msg_visual_')) {
             const timestampSuffix = message.id.replace('msg_visual_', '');
@@ -328,32 +364,20 @@ async function saveMessageEdit() {
             if (contextMsg) {
                 const newContextContent = `[剧情旁白：${newText}]`;
                 contextMsg.content = newContextContent;
-                if (contextMsg.parts) {
-                    contextMsg.parts = [{ type: 'text', text: newContextContent }];
-                }
+                contextMsg.parts = [{ type: 'text', text: newContextContent }];
             }
         }
-    } 
-    else {
-        let senderName = '';
-        if (message.role === 'user') {
-            senderName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
-        } else {
-            if (currentChatType === 'private') {
-                senderName = chat.realName || chat.name;
-            } else {
-                const sender = findGroupMemberById(chat, message.senderId);
-                senderName = sender ? sender.groupNickname : (chat.name || '未知成员');
-            }
-        }
+    } else if (selectedType === 'voice') {
+        newContent = `[${senderName}的语音：${newText}]`;
+    } else if (selectedType === 'photo-video') {
+        newContent = `[${senderName}发来的照片/视频：${newText}]`;
+    } else {
         newContent = `[${senderName}的消息：${newText}]`;
     }
 
-    // --- 更新数据 ---
+    // 转换后统一落为纯文字 parts，避免旧格式残留导致渲染器继续误判气泡类型。
     chat.history[messageIndex].content = newContent;
-    if (chat.history[messageIndex].parts) {
-        chat.history[messageIndex].parts =[{ type: 'text', text: newContent }];
-    }
+    chat.history[messageIndex].parts = [{ type: 'text', text: newContent }];
 
     await saveMessageToDB(chat.history[messageIndex], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
@@ -370,6 +394,9 @@ async function saveMessageEdit() {
     const newBubble = createMessageBubbleElement(chat.history[messageIndex]);
 
     if (existingBubble) {
+        if (typeof releaseImageObjectUrlsWithin === 'function') {
+            releaseImageObjectUrlsWithin(existingBubble);
+        }
         if (newBubble) {
             // 3a. 如果新气泡生成成功，直接替换旧气泡
             // 这会保留浏览器当前的滚动位置，因为元素高度变化通常不会剧烈影响视口定位
@@ -504,4 +531,4 @@ async function withdrawMessage(messageId) {
     renderMessages(false, true);
     renderChatList();
     showToast('消息已撤回');
-}            
+}

@@ -227,6 +227,46 @@ function setupChatSettings() {
         });
     }
 
+    // 天气：点整行唤起弹窗（选地点 + 是否含预报），取消不写入
+    const weatherItem = document.getElementById('setting-chat-weather-item');
+    if (weatherItem) {
+        weatherItem.addEventListener('click', async () => {
+            if (typeof openWeatherSettingDialog !== 'function') return;
+            const result = await openWeatherSettingDialog({
+                weatherMode: document.getElementById('setting-chat-weather-mode').value || 'off',
+                weatherLocationPresetId: document.getElementById('setting-chat-weather-preset').value || '',
+                weatherForecastEnabled: document.getElementById('setting-chat-weather-forecast').value === '1'
+            });
+            if (!result) return;
+            document.getElementById('setting-chat-weather-mode').value = result.weatherMode;
+            document.getElementById('setting-chat-weather-preset').value = result.weatherLocationPresetId;
+            document.getElementById('setting-chat-weather-forecast').value = result.weatherForecastEnabled ? '1' : '0';
+            _refreshChatWeatherDisplay();
+        });
+    }
+
+    // 图像生成：私聊与群聊复用同一弹窗，只先回填侧栏草稿，提交侧栏时再保存。
+    const imageGenerationItem = document.getElementById('setting-chat-image-item');
+    if (imageGenerationItem) {
+        imageGenerationItem.addEventListener('click', async () => {
+            if (typeof openImageGenerationSettingDialog !== 'function') return;
+            const result = await openImageGenerationSettingDialog({
+                imageApiPresetId: document.getElementById('setting-chat-image-preset').value || '',
+                imageAutoGenerate: document.getElementById('setting-chat-image-auto').value === '1',
+                imageContentRule: document.getElementById('setting-chat-image-rule').value || '',
+                imageStylePrompt: document.getElementById('setting-chat-image-style').value || '',
+                imageReference: document.getElementById('setting-chat-image-reference').value || ''
+            });
+            if (!result) return;
+            document.getElementById('setting-chat-image-preset').value = result.imageApiPresetId;
+            document.getElementById('setting-chat-image-auto').value = result.imageAutoGenerate ? '1' : '0';
+            document.getElementById('setting-chat-image-rule').value = result.imageContentRule;
+            document.getElementById('setting-chat-image-style').value = result.imageStylePrompt;
+            document.getElementById('setting-chat-image-reference').value = result.imageReference;
+            _refreshChatImageGenerationDisplay();
+        });
+    }
+
     // 清理图片：批量把本聊天的图片转成文字描述
     const cleanupImagesBtn = document.getElementById('cleanup-images-btn');
     if (cleanupImagesBtn) {
@@ -367,7 +407,76 @@ function loadSettingsToSidebar() {
             }
             apiPresetSel.value = e.chatApiPreset || '';
         }
+
+        // 音色：预设在「API 设置 > 语音」里建，这里只选一个
+        const voiceSel = document.getElementById('setting-chat-voice-preset');
+        if (voiceSel && typeof getVoicePresetOptions === 'function') {
+            voiceSel.innerHTML = '';
+            getVoicePresetOptions().forEach(o => {
+                const opt = document.createElement('option');
+                opt.value = o.value;
+                opt.textContent = o.label;
+                voiceSel.appendChild(opt);
+            });
+            // 没设过 = 不使用；指定的预设被删掉了也落回不使用，不留悬空选项
+            const want = e.voicePresetId || VOICE_PRESET_OFF;
+            voiceSel.value = [...voiceSel.options].some(o => o.value === want)
+                ? want : VOICE_PRESET_OFF;
+        }
+
+        // 天气：隐藏 input 暂存，侧栏只显示文案，具体设置走弹窗
+        const weatherModeInput = document.getElementById('setting-chat-weather-mode');
+        if (weatherModeInput) {
+            weatherModeInput.value = e.weatherMode || 'off';
+            document.getElementById('setting-chat-weather-preset').value = e.weatherLocationPresetId || '';
+            document.getElementById('setting-chat-weather-forecast').value = e.weatherForecastEnabled ? '1' : '0';
+            _refreshChatWeatherDisplay();
+        }
+
+        const imagePresetInput = document.getElementById('setting-chat-image-preset');
+        const imageAutoInput = document.getElementById('setting-chat-image-auto');
+        if (imagePresetInput && imageAutoInput) {
+            const binding = typeof normalizeChatImageBinding === 'function'
+                ? normalizeChatImageBinding(e)
+                : {
+                    imageApiPresetId: e.imageApiPresetId || 'off',
+                    imageAutoGenerate: !!e.imageAutoGenerate,
+                    imageContentRule: e.imageContentRule || '',
+                    imageStylePrompt: e.imageStylePrompt || '',
+                    imageReference: e.imageReference || ''
+                };
+            imagePresetInput.value = binding.imageApiPresetId;
+            imageAutoInput.value = binding.imageAutoGenerate ? '1' : '0';
+            const imageRuleInput = document.getElementById('setting-chat-image-rule');
+            const imageStyleInput = document.getElementById('setting-chat-image-style');
+            const imageRefInput = document.getElementById('setting-chat-image-reference');
+            if (imageRuleInput) imageRuleInput.value = binding.imageContentRule;
+            if (imageStyleInput) imageStyleInput.value = binding.imageStylePrompt;
+            if (imageRefInput) imageRefInput.value = binding.imageReference;
+            _refreshChatImageGenerationDisplay();
+        }
     }
+}
+
+/** 按隐藏 input 的当前值刷新侧栏天气行文案 */
+function _refreshChatWeatherDisplay() {
+    const display = document.getElementById('setting-chat-weather-display');
+    if (!display || typeof formatWeatherSettingLabel !== 'function') return;
+    display.textContent = formatWeatherSettingLabel(
+        document.getElementById('setting-chat-weather-mode').value || 'off',
+        document.getElementById('setting-chat-weather-preset').value || '',
+        document.getElementById('setting-chat-weather-forecast').value === '1'
+    );
+}
+
+/** 按隐藏 input 的当前值刷新侧栏图像生成文案。 */
+function _refreshChatImageGenerationDisplay() {
+    const display = document.getElementById('setting-chat-image-display');
+    if (!display || typeof formatImageGenerationSettingLabel !== 'function') return;
+    display.textContent = formatImageGenerationSettingLabel(
+        document.getElementById('setting-chat-image-preset').value || '',
+        document.getElementById('setting-chat-image-auto').value === '1'
+    );
 }
             
 // --- 替换 saveSettingsFromSidebar 函数 ---
@@ -416,6 +525,31 @@ async function saveSettingsFromSidebar() {
         const apiPresetSel = document.getElementById('setting-chat-api-preset');
         if (apiPresetSel) {
             e.chatApiPreset = apiPresetSel.value;
+        }
+
+        const voiceSel = document.getElementById('setting-chat-voice-preset');
+        if (voiceSel && voiceSel.value) {
+            e.voicePresetId = voiceSel.value;
+        }
+
+        const weatherModeInput = document.getElementById('setting-chat-weather-mode');
+        if (weatherModeInput) {
+            e.weatherMode = weatherModeInput.value || 'off';
+            e.weatherLocationPresetId = document.getElementById('setting-chat-weather-preset').value || '';
+            e.weatherForecastEnabled = document.getElementById('setting-chat-weather-forecast').value === '1';
+        }
+
+        const imagePresetInput = document.getElementById('setting-chat-image-preset');
+        const imageAutoInput = document.getElementById('setting-chat-image-auto');
+        if (imagePresetInput && imageAutoInput) {
+            e.imageApiPresetId = imagePresetInput.value || 'off';
+            e.imageAutoGenerate = imageAutoInput.value === '1';
+            const imageRuleInput = document.getElementById('setting-chat-image-rule');
+            const imageStyleInput = document.getElementById('setting-chat-image-style');
+            const imageRefInput = document.getElementById('setting-chat-image-reference');
+            if (imageRuleInput) e.imageContentRule = imageRuleInput.value || '';
+            if (imageStyleInput) e.imageStylePrompt = imageStyleInput.value || '';
+            if (imageRefInput) e.imageReference = imageRefInput.value || '';
         }
 
         await saveSingleChat(currentChatId, currentChatType);

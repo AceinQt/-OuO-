@@ -65,6 +65,28 @@ window.fetchOlderMessages = async function (chatId, oldestTimestamp, inMemoryIds
 };
 
 // ──────────────────────────────────────────
+// Step 3b：取"比 afterTs 更新"的一页真序（供往下翻调用）—— fetchOlderMessages 的镜像
+//   背景：搜索跳转会把"目标附近 300 条"merge 进只有最近 1500 条的 chat.history，
+//         于是数组里出现一个洞（洞里的消息只在 DB）。往下翻如果只按数组下标 slice，
+//         就会从洞的上沿直接跳到下沿，中间整段消息凭空消失。
+//         所以往下翻的那一页必须以 DB 为准（DB 才是真序、才没有洞），
+//         再由调用方跟内存做归并、把缺的补进 chat.history。
+//   ★ 这里【不做】内存去重：调用方需要完整真序才能归并对齐。
+//   afterTs 用闭区间纳入（等时间戳的边界消息一并返回），多读 200 条余量给调用方跳过。
+//   ★ limit 有界：洞可能有几万条，只读最靠前的一批，绝不整段读盘。
+// ──────────────────────────────────────────
+window.fetchNewerMessages = async function (chatId, afterTs, limit) {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+    const rows = await window.dexieDB.messages
+        .where('[chatId+timestamp]')
+        .between([chatId, afterTs], [chatId, Number.POSITIVE_INFINITY], true, true)
+        .limit(limit + 200)
+        .toArray();
+    rows.sort(_sortByTimestampExact); // 铁律排序兜底
+    return rows;
+};
+
+// ──────────────────────────────────────────
 // Step 4：DB 搜索（日期 / 关键词 / 二者兼备）
 //   dateStr: 'YYYY-MM-DD' 或 空；keyword: string 或 空
 //   返回按 timestamp 降序的匹配数组（与现有 UI 顺序一致：最新在前）

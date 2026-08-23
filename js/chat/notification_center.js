@@ -234,6 +234,7 @@
         if (/(发来的?语音|的语音)/.test(t)) return '[语音]';
         if (/(发来的?转账|的转账)/.test(t)) return '[转账]';
         if (/(送来的?礼物|的礼物)/.test(t)) return '[礼物]';
+        if (/发送了位置/.test(t)) return '[位置]';
         // 去掉 [名字的消息：正文] 之类的包装
         if (t.startsWith('[')) {
             const m = t.match(/^\[[^\]]*?[:：]([\s\S]+?)\]?$/);
@@ -576,35 +577,27 @@ function updateHint() {
         }
     }
 
-// ── 设置页问号说明弹窗 ──────────────────────────────────────────────
-    window.showNotifyGroupInfo = function(key) {
-        const groupInfos = {
-            'system-notify': {
-                title: '系统通知说明',
-                content: '开启后，切到后台时如有新消息会弹出系统通知。\n\n⚠️ iOS 用户须在 Safari 中点击「分享」-「添加到主屏幕」，并在主屏幕打开应用方可接收。'
-            },
-            'notify-content': {
-                title: '通知内容说明',
-                content: '【折叠消息】\n开启：多条消息合并，避免霸屏。\n关闭：每条消息独立弹出通知。\n\n【显示角色/群名】\n关闭：统一显示"新消息"，隐藏对方身份。\n\n【静音通知】\n开启：仅亮屏弹出，无铃声震动。\n\n【桌面角标】\n开启：应用图标显示红点或数字（受系统限制可能仅显示红点或者1）。'
-            },
-            'keepalive': {
-                title: '后台保活说明',
-                content: '【允许后台持续保活】\n开启：后台播放无声循环音频，防止系统杀后台，确保实时收信（略微增加耗电）。\n关闭：切后台后随时可能断连。\n\n【保活时长】\n切后台后保持存活的有效分钟数。该项取全局与各个单独聊天的最高值。'
-            },
-            'push-node': {
-                title: '自定义推送说明',
-                content: '此为进阶功能：\n\n可部署专属的 Cloudflare Worker 节点。即使应用被杀后台或深度休眠时，服务器会准点发起 Web Push 通知，\n\n需按照配置流程填入 Worker 地址与公钥。'
-            }
-        };
-
-        if (groupInfos[key]) {
-            if (typeof AppUI !== 'undefined' && typeof AppUI.alert === 'function') {
-                AppUI.alert(groupInfos[key].content, groupInfos[key].title, "我知道了");
-            } else {
-                alert(`【${groupInfos[key].title}】\n\n${groupInfos[key].content}`);
-            }
+// ── 设置页问号说明 ──────────────────────────────────────────────────
+    // 弹窗机制在 core/utils.js 的 AppHelp 里（其他页面也用同一套），
+    // 这边只负责把本页的文案注册进去。HTML 里对应 showHelp('notify', key)。
+    AppHelp.register('notify', {
+        'system-notify': {
+            title: '系统通知说明',
+            content: '开启后，切到后台时如有新消息会弹出系统通知。\n\n⚠️ iOS 用户须在 Safari 中点击「分享」-「添加到主屏幕」，并在主屏幕打开应用方可接收。'
+        },
+        'notify-content': {
+            title: '通知内容说明',
+            content: '【折叠消息】\n开启：多条消息合并，避免霸屏。\n关闭：每条消息独立弹出通知。\n\n【显示角色/群名】\n关闭：统一显示"新消息"，隐藏对方身份。\n\n【静音通知】\n开启：仅亮屏弹出，无铃声震动。\n\n【桌面角标】\n开启：应用图标显示红点或数字（受系统限制可能仅显示红点或者1）。'
+        },
+        'keepalive': {
+            title: '后台保活说明',
+            content: '【允许后台持续保活】\n开启：后台播放无声循环音频，防止系统杀后台，确保实时收信（略微增加耗电）。\n关闭：切后台后随时可能断连。\n\n【保活时长】\n切后台后保持存活的有效分钟数。该项取全局与各个单独聊天的最高值。'
+        },
+        'push-node': {
+            title: '自定义推送说明',
+            content: '此为进阶功能：\n\n可部署专属的 Cloudflare Worker 节点。即使应用被杀后台或深度休眠时，服务器会准点发起 Web Push 通知，\n\n需按照配置流程填入 Worker 地址与公钥。'
         }
-    };
+    });
 
     window.NotifyCenter = {
         getSettings,

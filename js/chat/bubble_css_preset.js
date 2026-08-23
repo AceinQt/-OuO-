@@ -198,16 +198,23 @@ function getDynamicBubblePreview() {
         </div>
     `);
 
-    // 3. 语音气泡
+    // 3. 语音气泡（结构要跟 chat_bubble_factory.js 里真实那份保持一致，
+    //    否则用户在这儿调完 CSS，回到聊天页发现长得不一样）
     html += getRow(false, `
-        <div class="message-bubble voice-bubble received">
-            <svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+        <div class="message-bubble voice-bubble received" data-voice-state="ready">
+            <button type="button" class="voice-play-btn" data-voice-state="ready" tabindex="-1">
+                <svg class="vp-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <span class="voice-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             <span class="duration">12"</span>
         </div>
     `);
     html += getRow(true, `
-        <div class="message-bubble voice-bubble sent">
-            <svg class="play-icon" style="transform: scaleX(-1);" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+        <div class="message-bubble voice-bubble sent" data-voice-state="ready">
+            <button type="button" class="voice-play-btn" data-voice-state="ready" tabindex="-1">
+                <svg class="vp-icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <span class="voice-wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
             <span class="duration">8"</span>
         </div>
     `);

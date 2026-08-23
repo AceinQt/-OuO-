@@ -1,5 +1,5 @@
             // --- AI Interaction & Prompts ---
-            function generatePrivateSystemPrompt(character, retrievedContext = '') {
+            function generatePrivateSystemPrompt(character, retrievedContext = '', weatherText = '') {
                 const worldBooksBefore = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).map(wb => wb.content).join('\n');
                 const worldBooksAfter = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).map(wb => wb.content).join('\n');
                 // --- 新增：获取“写作专用”的世界书 ---
@@ -91,7 +91,14 @@ if (watchingContext) {
           `[${character.realName}的消息：喂？]\n` +
           `[${character.realName}的消息：听得到吗？]\n`;
     prompt += `6. **挂断通话**：如果对话需要自然结束，你可以主动挂断，单起一行输出：[${character.realName}挂断了通话]。\n`; 
-    if (character.timePerceptionEnabled) prompt += `7. 现在是 ${currentTime}。`;
+    // 调节旋钮：天气并进时间这一条，见 plans/weather-prompt-refit.md
+    if (character.timePerceptionEnabled && weatherText) {
+        prompt += `7. 现在是 ${currentTime}，${weatherText}。以上真实天气情况供你参考，不要刻意或反复提及天气。`;
+    } else if (character.timePerceptionEnabled) {
+        prompt += `7. 现在是 ${currentTime}。`;
+    } else if (weatherText) {
+        prompt += `7. ${weatherText}。以上真实天气情况供你参考，但请不要刻意或反复提及天气。`;
+    }
 
     return prompt;
 }
@@ -117,11 +124,18 @@ if (watchingContext) {
                     prompt += `💡 **关于“状态”的特殊定义**：\n`;
                     prompt += `虽然是描写面对面互动，但用户的界面上方依然有一个状态栏。请将它视为**主角此刻的“心情”或“动作速写”**。\n`;
                     
-                    // 角色和世界观    
+                    // 角色和世界观
                     if (worldBooksBefore) {
                         prompt += `**世界观设定**：\n${worldBooksBefore}\n\n`;
                     }
-                    
+
+                    // 调节旋钮：天气数据放在情境/档案区（低注意力的参考资料位），不放文末写作手册的自问区。
+                    // 若 AI 忽略天气 → 把 chat_ai_service.js 自问第 4 条扩成"什么天气？"；
+                    // 若 AI 反复重复天气 → 把下面这句改短。详见 plans/weather-prompt-refit.md
+                    if (weatherText) {
+                        prompt += `**当前室外天气**：${weatherText}。（写景时可自然带入上述天气，而不是从上下文推测当前的天气，但请不要反复描写同一天气特征，也不要让角色刻意谈论天气。）\n\n`;
+                    }
+
                     prompt += `**互动对象（故事中的“你”）**：${character.myName}\n`;
                     if (character.myPersona) {
                         prompt += `**对方背景**：${character.myPersona}\n`;
@@ -201,6 +215,7 @@ if (watchingContext) {
     - [${character.myName}的语音：xxx]：我给你发送了一段内容为xxx的语音。
     - [${character.myName}发来的照片/视频：xxx]：我给你分享了一个描述为xxx的照片或视频。
     - [${character.myName}给你转账：xxx元；备注：xxx]：我给你转了一笔钱。
+    - [${character.myName}发送了位置：{地点名}；地址：{详细地址}]：我给你分享了我所在的位置（“；地址：{详细地址}”部分可能不存在，那就只知道地点名）。你应当把它当作我此刻的真实所在地，并据此作出反应，比如认路、评价这个地方、说要过来找我。
     - [${character.myName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。
     - [${character.myName} 撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。例如，可以装作没看见并等待我的下一句话，或好奇地问一句“怎么撤回啦？”。
     - [剧情旁白: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。
@@ -234,7 +249,8 @@ if (watchingContext) {
     j) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
     k) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
     l) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]
-    m) 主动发起通话邀请: [${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]`;
+    m) 主动发起通话邀请: [${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]
+    n) 发送位置: [${character.realName}发送了位置：{地点名}；地址：{详细地址}]。当你想告诉我你在哪、约我碰面或指路时使用。地点名是店名或地标（如“老地方咖啡”），详细地址是门牌路名（如“城南槐花巷12号”）；如果你的角色说不出确切门牌，可以省略“；地址：{详细地址}”这一段，只写地点名。地点必须符合你的人设和当前所处的世界观。`;
 
                 const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
                 if (allWorldBookContent.includes('<orange>')) {
@@ -244,6 +260,13 @@ if (watchingContext) {
                 
 
                 prompt += `14. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
+                // 内容约束：只管束"照片/视频描述怎么写"这一步。真正生图时还会另外
+                // 追加风格与画面比例（见 image_generation_api.js 的 composeImagePrompt），
+                // 那些是画法，这里这条是画什么/不画什么。
+                const imageContentRule = (character.imageContentRule || '').trim();
+                if (imageContentRule) {
+                    prompt += `14.1 **照片/视频描述的内容约束**：当你使用 [${character.realName}发来的照片/视频：{描述}] 格式时，{描述}部分必须遵守：${imageContentRule}。这条只约束你怎么写画面描述，不影响你的普通聊天内容。\n`;
+                }
                 if (character.bilingualModeEnabled) {
                     prompt += `✨双语模式特别指令✨：当你的角色的母语为中文以外的语言时，你的消息回复必须严格遵循双语模式下的普通消息格式：[${character.realName}的消息：{外语原文}（中文翻译）],例如: [${character.realName}的消息：Of course, I'd love to.（当然，我很乐意。）],中文翻译文本视为系统自翻译，不视为角色的原话;当你的角色想要说中文时，需要根据你的角色设定自行判断对于中文的熟悉程度来造句，并使用普通消息的标准格式: [${character.realName}的消息：{中文消息内容}] 。这条规则的优先级非常高，请务必遵守。\n`;
                     prompt += `**注意：括号内中文翻译为纯文本翻译，原句中的颜文字、表情等内容禁止翻译！如："なので、メッセージを頂けて、めちゃくちゃ嬉しいです！(ฅ́˘ฅ̀)♡（笑） （所以，能收到你的消息，我超级开心的！）"此句，颜文字和"（笑）"禁止出现在中文翻译中**`;
@@ -256,9 +279,16 @@ if (watchingContext) {
                     if (_lo > 0 && _hi >= _lo) { replyLo = _lo; replyHi = _hi; }
                 }
                 prompt += `15. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少${replyLo}-${replyHi}条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
-                prompt += character.timePerceptionEnabled
-                    ? `16. 现在是 ${currentTime}。你应知晓当前时间，但不要主动提及或评论时间（例如，不要催促我睡觉），不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`
-                    : `16. 不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
+                // 调节旋钮：天气并进第 16 条时间那句，见 plans/weather-prompt-refit.md
+                let rule16Prefix = '';
+                if (character.timePerceptionEnabled && weatherText) {
+                    rule16Prefix = `现在是 ${currentTime}，${weatherText}。你应知晓当前正确的时间与天气，而不是从上下文推测时间与天气，但也不要刻意或反复提及时间和天气（例如，不要催促我睡觉，不要没头没脑地聊天气），`;
+                } else if (character.timePerceptionEnabled) {
+                    rule16Prefix = `现在是 ${currentTime}。你应知晓当前正确的时间，但不要刻意提及时间（例如，不要催促我睡觉），`;
+                } else if (weatherText) {
+                    rule16Prefix = `${weatherText}。你应知晓当前正确的天气，而不是从上下文推测当前的天气，但不要刻意或反复提及天气（例如，不要没头没脑地聊天气），`;
+                }
+                prompt += `16. ${rule16Prefix}不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
 
                 return prompt;
             }

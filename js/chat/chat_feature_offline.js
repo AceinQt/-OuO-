@@ -89,11 +89,11 @@
 
                 // 更新界面按钮状态和顶部呼吸灯
                 updateOfflineModeUI(chat.offlineModeEnabled);
-                
-                const offlineBtn = document.querySelector('.expansion-item[data-action="offline-mode-settings"]');
-                if (offlineBtn) {
-                    if (chat.offlineModeEnabled) offlineBtn.classList.add('active');
-                    else offlineBtn.classList.remove('active');
+
+                // "+"面板的高亮和线上功能置灰统一走 syncChatExpansionActiveState，
+                // 别在这里手动 toggle class，否则两处状态容易走偏
+                if (typeof syncChatExpansionActiveState === 'function') {
+                    syncChatExpansionActiveState();
                 }
 
                 showToast(chat.offlineModeEnabled ? '线下模式已开启' : '线下模式已关闭');
@@ -118,6 +118,16 @@
             }
 
 
+            // 当前会话是否处于线下模式（群聊恒为 false）。
+            // 给"+"面板等调用方做数据层判断，不依赖 DOM 上的置灰 class。
+            function isOfflineModeActive(chatId = currentChatId, chatType = currentChatType) {
+                if (chatType !== 'private' || !chatId) return false;
+                const chat = Array.isArray(window.db?.characters)
+                    ? db.characters.find(c => c.id === chatId)
+                    : null;
+                return !!(chat && chat.offlineModeEnabled);
+            }
+
             // 统一控制线下模式的 UI 状态（按钮禁用 + 状态灯颜色）
             function updateOfflineModeUI(isOffline) {
                 // 1. 处理顶部状态灯 (Requirement 4)
@@ -130,6 +140,8 @@
 
                 // 2. 处理 Sticker Bar 按钮 (Requirement 3)
                 // 需要禁用的按钮 ID 列表
+                // ⚠️ "+"面板里的线上功能（送礼物/发送位置）不是 <button>，disabled 无效，
+                //    改由 chat_room.js 的 syncChatExpansionActiveState 置灰，别加到这个列表里。
                 const buttonsToDisable = [
                     'voice-message-btn',       // 语音
                     'photo-video-btn',         // 照片/视频

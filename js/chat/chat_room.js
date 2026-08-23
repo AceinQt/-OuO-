@@ -1,5 +1,100 @@
 let isLoadingHistory = false; // 原有的：控制 DOM 渲染的锁
 let isFetchingDB = false;     // 新增的：控制后台静默读 DB 的锁
+
+// ==========================================
+// ★★★ 渲染窗口游标（指向 chat.history 的下标）
+//   历史上翻/下翻都靠 currentPage 反推 `total - (currentPage-1)*PAGE`，
+//   这个公式把窗口死死锚在数组末尾，数组一旦在中间或前面被改（搜索跳转 merge、
+//   后台预加载 unshift、新消息 push），下标就整体错位 → 边界处漏渲染整段消息。
+//   现在改成显式游标：
+//     _renderTopCeil     = 已向上覆盖到的最小下标（含）。0 表示内存里上面没货了。
+//     _renderBottomFloor = 已向下覆盖到的下标上界（不含）。== history.length 表示已到最新。
+//   两个游标在"前插 N 条"时整体 +N；渲染时再用 DOM 实际区间做一次校正（防止某页
+//   整页 isHidden 时游标不动导致死循环，也防止有人绕过分页直接往 DOM 追加气泡）。
+// ==========================================
+window._renderTopCeil = 0;
+window._renderBottomFloor = 0;
+
+// 单次扫描建立 id→下标 / callSessionId→首尾下标 的映射
+function _buildHistoryIndexMaps(chat) {
+    const h = chat.history;
+    const idToIndex = new Map();
+    const sidToFirstIndex = new Map();
+    const sidToLastIndex = new Map();
+    for (let i = 0; i < h.length; i++) {
+        idToIndex.set(h[i].id, i);
+        const sid = h[i].callSessionId;
+        if (sid) {
+            if (!sidToFirstIndex.has(sid)) sidToFirstIndex.set(sid, i);
+            sidToLastIndex.set(sid, i);
+        }
+    }
+    return { idToIndex, sidToFirstIndex, sidToLastIndex };
+}
+
+// 从 DOM 反推"当前实际已渲染"的 history 下标区间 [top, bottomExclusive)
+// 折叠/展开的通话气泡按整个 session 的首尾下标算。DOM 里没有可定位气泡时返回 null。
+function _getRenderedRange(chat) {
+    if (!chat || !chat.history || chat.history.length === 0) return null;
+    const { idToIndex, sidToFirstIndex, sidToLastIndex } = _buildHistoryIndexMaps(chat);
+    let top = -1, bottom = -1;
+
+    messageArea.querySelectorAll('.message-wrapper[data-id]').forEach(el => {
+        const i = idToIndex.get(el.dataset.id);
+        if (i === undefined) return;
+        if (top === -1 || i < top) top = i;
+        if (i > bottom) bottom = i;
+    });
+
+    messageArea.querySelectorAll('[data-call-session-id], [data-call-session-expanded-container]').forEach(el => {
+        const sid = el.dataset.callSessionId || el.dataset.callSessionExpandedContainer;
+        if (!sid) return;
+        const f = sidToFirstIndex.get(sid);
+        const l = sidToLastIndex.get(sid);
+        if (f === undefined) return;
+        if (top === -1 || f < top) top = f;
+        if (l > bottom) bottom = l;
+    });
+
+    if (top === -1) return null;
+    return { top, bottomExclusive: bottom + 1 };
+}
+
+// 上翻：本次要渲染的 end（不含）。取 DOM 实际顶 与 游标 的较小者。
+function _getOlderRenderEnd(chat) {
+    const r = _getRenderedRange(chat);
+    const domTop = r ? r.top : chat.history.length;
+    const ceil = (typeof window._renderTopCeil === 'number') ? window._renderTopCeil : domTop;
+    return Math.max(0, Math.min(domTop, ceil));
+}
+
+// 下翻：本次要渲染的 start（含）。取 DOM 实际底 与 游标 的较大者。
+function _getNewerRenderStart(chat) {
+    const r = _getRenderedRange(chat);
+    const domBottom = r ? r.bottomExclusive : 0;
+    const floor = (typeof window._renderBottomFloor === 'number') ? window._renderBottomFloor : domBottom;
+    return Math.min(chat.history.length, Math.max(domBottom, floor));
+}
+
+// 下面还有没有"值得渲染"的东西（用于滚动门槛）：
+// 末尾常挂着 isHidden 的 context 消息，只看下标会导致反复空转转圈，所以要求至少有一条可见消息。
+function _hasMoreNewerToRender(chat) {
+    if (!chat || !chat.history) return false;
+    const start = _getNewerRenderStart(chat);
+    for (let i = start; i < chat.history.length; i++) {
+        if (!chat.history[i].isHidden) return true;
+    }
+    return false;
+}
+
+// 当前视图是否已经贴着"最新"（决定发消息时要不要先重置回底部视图）
+function _isViewingLatest() {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history) return true;
+    return _getNewerRenderStart(chat) >= chat.history.length;
+}
 let selectedLinkStickerIds = new Set(); // 关联弹窗选中的ID
 let currentStickerCategory = '全部';    // 主面板当前选中的分类
 let currentLinkStickerCategory = '全部';// 关联弹窗当前选中的分类
@@ -59,35 +154,27 @@ function setupChatRoom() {
             stickerModal.classList.remove('visible');
         }
 
-        const offlineBtn = document.querySelector('.expansion-item[data-action="offline-mode-settings"]');
-        if (offlineBtn) {
-            offlineBtn.classList.remove('active');
-            if (currentChatType === 'private' && currentChatId) {
-                const chat = db.characters.find(c => c.id === currentChatId);
-                if (chat && chat.offlineModeEnabled) {
-                    offlineBtn.classList.add('active');
-                }
-            }
-        }
-        
-        const proactiveBtn = document.querySelector('.expansion-item[data-action="proactive-messaging-settings"]');
-        if (proactiveBtn) {
-            proactiveBtn.classList.remove('active');
-            if (currentChatType === 'private' && currentChatId) {
-                const chat = db.characters.find(c => c.id === currentChatId);
-                 // 假设我们在角色属性中用 proactiveMessagingEnabled 来控制开关
-                if (chat && chat.proactiveMode === 'fixed' || chat.proactiveMode === 'timer') {
-                    proactiveBtn.classList.add('active');
-                }
-            }
-        }               
+        // 面板是单例复用的，开之前必须按当前会话重新点灯
+        syncChatExpansionActiveState();
         chatExpansionPanel.classList.toggle('visible');
     });
     
+    // ★ sendMessage 是 fire-and-forget（三处调用点都不 await），异常默认只会变成
+    //   静默的 unhandled rejection —— 曾经因此让"消息没落库"的 ReferenceError 毫无征兆。
+    //   统一走这个包装：出错就报红 + 弹提示，让丢消息类问题第一时间可见。
+    const _safeSendMessage = () => {
+        Promise.resolve()
+            .then(() => sendMessage())
+            .catch(err => {
+                console.error('❌ [sendMessage] 发送流程异常，该消息可能未写入数据库：', err);
+                if (typeof showToast === 'function') showToast('消息发送异常，请截图控制台报错');
+            });
+    };
+
 // 1. 手机端触摸发送 (保留原有，e.preventDefault()会阻止移动端再触发click，防止发两次)
     sendMessageBtn.addEventListener('touchend', (e) => {
         e.preventDefault();
-        sendMessage();
+        _safeSendMessage();
         setTimeout(() => {
             messageInput.focus();
         }, 50);
@@ -96,7 +183,7 @@ function setupChatRoom() {
     // 2. 电脑端鼠标点击发送 (新增这个监听器)
     sendMessageBtn.addEventListener('click', (e) => {
         e.preventDefault(); // 防止默认提交等行为
-        sendMessage();
+        _safeSendMessage();
         // 电脑端发送后保持输入框焦点，方便继续打字
         messageInput.focus(); 
     });
@@ -105,7 +192,7 @@ function setupChatRoom() {
     messageInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter' && !isGenerating) {
             e.preventDefault();
-            sendMessage();
+            _safeSendMessage();
         }
     });
     getReplyBtn.addEventListener('click', async () => {
@@ -179,9 +266,9 @@ function setupChatRoom() {
             const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
             if (!chat || !chat.history) return;
             
-            const totalMessages = chat.history.length;
-            const renderedMessages = currentPage * MESSAGES_PER_PAGE;
-            const unrenderedMemory = totalMessages - renderedMessages; // 内存里还没渲染的剩余条数
+            // ★ 内存里还没渲染的剩余条数 = 已渲染窗口顶部之上还剩多少条（游标即下标，O(1)）
+            //   原来用 total - currentPage*PAGE 反推，数组在中间/前面被改动后会算错。
+            const unrenderedMemory = Math.max(0, window._renderTopCeil || 0);
 
             // [A] DOM 渲染逻辑：只要内存里还有货，就无脑调用 loadMoreMessages (它内部有 isLoadingHistory 锁防抖)
             if (unrenderedMemory > 0) {
@@ -201,11 +288,18 @@ function setupChatRoom() {
             }
         }
 
-        // 2. 向下滚动：加载后续消息 (Newer) 保持不变
+        // 2. 向下滚动：加载后续消息 (Newer)
         if (isLoadingHistory) return;
         const isNearBottom = messageArea.scrollHeight - messageArea.scrollTop - messageArea.clientHeight < 50;
-        if (isNearBottom && currentPage > 1) {
-            loadNewerMessages();
+        if (isNearBottom) {
+            // ★ 原来的门槛是 currentPage > 1（页码计数器，跳转后是错的，且到底后还会反复空转）。
+            //   现在直接看底部游标有没有到数组末尾。
+            const chatForNewer = (currentChatType === 'private')
+                ? db.characters.find(c => c.id === currentChatId)
+                : db.groups.find(g => g.id === currentChatId);
+            if (_hasMoreNewerToRender(chatForNewer)) {
+                loadNewerMessages();
+            }
         }
     });
 
@@ -233,9 +327,19 @@ function setupChatRoom() {
             // 3. 普通模式下的点击事件
             const voiceBubble = e.target.closest('.voice-bubble');
             if (voiceBubble) {
-                const transcript = voiceBubble.closest('.message-wrapper').querySelector('.voice-transcript');
-                if (transcript) {
-                    transcript.classList.toggle('active');
+                // ★ 两个动作分给两个目标：点播放键出声，点气泡其他地方切换文字稿。
+                //   文字稿照旧独立于音频 —— 有没有声音都不影响看文字。
+                //   例外是自己发的语音（播不了），播放键也会退回切文字稿。
+                if (e.target.closest('.voice-play-btn')) {
+                    if (typeof handleVoiceBubbleClick === 'function') {
+                        const wrapper = voiceBubble.closest('.message-wrapper');
+                        const chat = (currentChatType === 'group' ? db.groups : db.characters)
+                            .find(c => c.id === currentChatId);
+                        handleVoiceBubbleClick(voiceBubble, chat, currentChatType,
+                            wrapper && wrapper.dataset.senderId);
+                    }
+                } else if (typeof toggleVoiceTranscript === 'function') {
+                    toggleVoiceTranscript(voiceBubble);
                 }
             }
             
@@ -249,10 +353,13 @@ function setupChatRoom() {
 
             const pvCard = e.target.closest('.pv-card');
             if (pvCard) {
+                if (e.target.closest('.image-zoom-btn')) return;
                 const imageOverlay = pvCard.querySelector('.pv-card-image-overlay');
                 const footer = pvCard.querySelector('.pv-card-footer');
-                imageOverlay.classList.toggle('hidden');
-                footer.classList.toggle('hidden');
+                if (imageOverlay && footer) {
+                    imageOverlay.classList.toggle('hidden');
+                    footer.classList.toggle('hidden');
+                }
             }
             const giftCard = e.target.closest('.gift-card');
             if (giftCard) {
@@ -339,8 +446,88 @@ let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
     initCallFeature();
     
 }
- 
-            
+
+    // ==========================================
+    // 聊天室临时 UI 复位
+    // ==========================================
+// "+"面板里属于"隔着手机才成立"的线上功能，线下模式（面对面）下要禁用。
+// sticker bar 上的转账/语音/照片由 updateOfflineModeUI 用 disabled 属性禁；
+// 面板项是 div，只能靠 class 置灰 + 点击拦截，所以清单放在这里。
+const OFFLINE_DISABLED_EXPANSION_ACTIONS = ['send-gift-modal', 'send-location-modal'];
+
+/**
+ * 把"+"面板里与会话绑定的开关（线下模式 / 后台消息）对齐到当前会话的真实状态，
+ * 并按线下模式置灰面板里的线上功能（送礼物 / 发送位置）。
+ * 面板是全局单例、只在启动时构建一次，所以每次打开面板、每次进聊天室都得重新对齐，
+ * 否则会挂着上一个会话残留的蓝色高亮 / 置灰状态。
+ */
+function syncChatExpansionActiveState(chatId = currentChatId, chatType = currentChatType) {
+    const chat = (chatType === 'private' && chatId && Array.isArray(window.db?.characters))
+        ? db.characters.find(c => c.id === chatId)
+        : null;
+
+    const offlineBtn = document.querySelector('.expansion-item[data-action="offline-mode-settings"]');
+    if (offlineBtn) {
+        offlineBtn.classList.toggle('active', !!(chat && chat.offlineModeEnabled));
+    }
+
+    const proactiveBtn = document.querySelector('.expansion-item[data-action="proactive-messaging-settings"]');
+    if (proactiveBtn) {
+        // ★ 括号不能省：原来的 `chat && x === 'fixed' || x === 'timer'` 因 && 优先级更高，
+        //   timer 模式下整个条件恒真，会把面板里所有图标都点亮。
+        proactiveBtn.classList.toggle('active',
+            !!chat && (chat.proactiveMode === 'fixed' || chat.proactiveMode === 'timer'));
+    }
+
+    // 线下模式是面对面互动，隔着手机才成立的功能要跟 sticker bar 上的转账/语音一样禁掉。
+    // 这些是 div 不是 button，disabled 无效，只能靠 .disabled class + 点击处的拦截。
+    const isOffline = !!(chat && chat.offlineModeEnabled);
+    OFFLINE_DISABLED_EXPANSION_ACTIONS.forEach(action => {
+        const el = document.querySelector(`.expansion-item[data-action="${action}"]`);
+        if (el) el.classList.toggle('disabled', isOffline);
+    });
+}
+
+/**
+ * 关闭聊天室里所有"浮在页面上"的临时 UI：底部 + 面板、表情面板、设置侧边栏、
+ * 通话记录侧栏、通话记录折叠浮动按钮。离开聊天室时由 _screenLeaveHooks 自动调用。
+ *
+ * ⚠️ 故意不碰 #call-overlay：通话中有计时器、音频和未落库的会话状态，
+ *    只把 UI 藏掉会变成"看不见但还在跑"，挂断另有出口。
+ */
+function closeChatRoomPanels() {
+    // 这两个是裸 .visible 的普通 div，switchScreen 的遮罩清理覆盖不到，必须手动关
+    document.getElementById('chat-expansion-panel')?.classList.remove('visible');
+    document.getElementById('sticker-modal')?.classList.remove('visible');
+    if (typeof exitStickerManageMode === 'function') exitStickerManageMode();
+
+    // 侧边栏：switchScreen 也会清，但"聊天室 → 聊天室"直切时这里要兜住
+    document.getElementById('chat-settings-sidebar')?.classList.remove('open');
+    document.getElementById('group-settings-sidebar')?.classList.remove('open');
+
+    // 通话的附属 UI（通话本体不动）
+    if (typeof closeCallHistory === 'function') closeCallHistory();
+    if (typeof hideCallCollapseBtn === 'function') hideCallCollapseBtn();
+
+    // 顺手把开关高亮复位，避免下次面板出现的第一帧还是旧会话的状态
+    syncChatExpansionActiveState();
+}
+
+/**
+ * 换会话时的完整复位：面板之外，再把输入区的会话级状态（多选、引用、编辑）清掉，
+ * 否则 A 会话选中的消息 / 引用的气泡会带进 B 会话。
+ */
+function resetChatRoomState() {
+    closeChatRoomPanels();
+    if (typeof exitMultiSelectMode === 'function') exitMultiSelectMode();
+    if (typeof cancelQuoteReply === 'function') cancelQuoteReply();
+    if (typeof cancelMessageEdit === 'function') cancelMessageEdit();
+}
+
+// 离开聊天室即复位（界面返回按钮 / 滑动返回 / 系统返回键最终都会走 switchScreen）
+window._screenLeaveHooks = window._screenLeaveHooks || {};
+window._screenLeaveHooks['chat-room-screen'] = closeChatRoomPanels;
+
     // ==========================================
     // 初始化聊天室界面
     // ==========================================                       
@@ -369,10 +556,11 @@ if (window.NotifyCenter && typeof NotifyCenter.clearChatNotifications === 'funct
     NotifyCenter.clearChatNotifications(chatId);
 }
 
-      if (typeof hideCallCollapseBtn === 'function') hideCallCollapseBtn();
-                exitMultiSelectMode();
-                cancelMessageEdit();
+                // 进新会话前先把上一个会话残留的面板/侧边栏/多选/引用全部清干净
+                resetChatRoomState();
                 switchScreen('chat-room-screen');
+                // 按本次要打开的会话重新点灯（不依赖调用方是否已同步全局 currentChatId）
+                syncChatExpansionActiveState(chatId, type);
                 const callBtn = document.getElementById('video-call-btn');
     if (callBtn) {
         if (type === 'group') {
@@ -665,7 +853,6 @@ if (!isLoadMore) {
         end   = (typeof window._jumpRenderEnd === 'number' && window._jumpRenderEnd > start)
                     ? window._jumpRenderEnd
                     : totalMessages;
-        currentPage = Math.ceil((totalMessages - start) / MESSAGES_PER_PAGE) || 1;
         window._jumpRenderStart = -1;
         window._jumpRenderEnd   = -1;
     } else {
@@ -673,14 +860,25 @@ if (!isLoadMore) {
         start = _calcInitialStart(chat);  // 同时更新 currentPage
         end   = totalMessages;
     }
+    // 全量重绘：两端游标都重置为本次切片的真实边界
+    window._renderTopCeil     = start;
+    window._renderBottomFloor = end;
 } else {
-    end   = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
+    // ★ 上翻：end 用显式游标（DOM 实际顶 ∩ 游标），不再用 total-(currentPage-1)*PAGE 反推。
+    //   反推公式把窗口锚在数组末尾，跳转/新消息导致数组长度变化后会在顶部边界漏掉几十条。
+    end   = _getOlderRenderEnd(chat);
     start = Math.max(0, end - MESSAGES_PER_PAGE);
+    window._renderTopCeil = start;
 }
+
+// currentPage 现已退化为派生量（外部多处仍在写 currentPage = 1 再全量重绘，保持兼容）：
+// 语义 = 已渲染窗口顶部距数组末尾有几页
+currentPage = Math.max(1, Math.ceil((totalMessages - start) / MESSAGES_PER_PAGE));
 
 const messagesToRender = chat.history.slice(start, end);
 
     if (!isLoadMore) {
+        if (typeof releaseImageObjectUrlsWithin === 'function') releaseImageObjectUrlsWithin(messageArea);
         messageArea.innerHTML = '';
     } else {
         // 如果是加载更多，先移除可能存在的 loading 指示器（如果有的话）
@@ -860,7 +1058,7 @@ function loadMoreMessages() {
     // 稍微给一点延迟（例如 200ms），让 Loading 图标能显示出来一瞬间，
     // 否则本地渲染太快，用户可能感觉不到加载动作，体验反而生硬
     setTimeout(() => {
-        currentPage++;
+        // ★ 不再 currentPage++：切片边界由 _renderTopCeil 决定，currentPage 由 renderMessages 派生
         renderMessages(true, false);
     }, 200);
 }
@@ -878,12 +1076,14 @@ async function loadOlderFromDB() {
     topLoader.innerHTML = `<div class="custom-spinner"></div>`;
     messageArea.insertBefore(topLoader, messageArea.firstChild);
 
+    const chatIdAtStart = currentChatId; // ★ 下面有 await，中途切会话必须放弃本次渲染
     try {
         const oldestTs = chat.history[0].timestamp || 0;
         const inMemoryIds = new Set(chat.history.map(m => m.id));
         const DB_FETCH_CHUNK = 200; 
-        const older = await window.fetchOlderMessages(currentChatId, oldestTs, inMemoryIds, DB_FETCH_CHUNK);
+        const older = await window.fetchOlderMessages(chatIdAtStart, oldestTs, inMemoryIds, DB_FETCH_CHUNK);
         topLoader.remove();
+        if (currentChatId !== chatIdAtStart) { isLoadingHistory = false; return; } // 已切会话，作废
         if (!older || older.length === 0) {
             chat._noMoreOlderInDB = true; // 真到头了，本次会话不再查
             isLoadingHistory = false;
@@ -891,8 +1091,10 @@ async function loadOlderFromDB() {
         }
         // 前插到 chat.history（older 已升序且 timestamp 全 <= oldestTs，不整体重排，避免打乱已渲染 DOM）
         chat.history.unshift(...older);
-        // 复用现有渲染路径：currentPage++ 后 renderMessages(true) 会切出这一页并前插到 DOM
-        currentPage++;
+        // ★ 前插 N 条 → DOM 内容没变但所有下标整体后移 N，两端游标同步平移
+        window._renderTopCeil     = (window._renderTopCeil || 0) + older.length;
+        window._renderBottomFloor = (window._renderBottomFloor || 0) + older.length;
+        // 复用现有渲染路径：renderMessages(true) 会按 _renderTopCeil 切出这一页并前插到 DOM
         renderMessages(true, false); // 其内部会把 isLoadingHistory 置回 false
     } catch (e) {
         console.error('❌ [懒加载] 加载更旧消息失败:', e);
@@ -906,19 +1108,26 @@ async function preloadOlderFromDBInBackground(chat) {
     if (isFetchingDB || chat._noMoreOlderInDB) return;
     isFetchingDB = true; // 上锁，防止重复查库
 
+    const chatIdAtStart = currentChatId; // ★ 下面有 await；游标属于"当前会话"，切走了就不能再动
     try {
         const oldestTs = chat.history[0].timestamp || 0;
         const inMemoryIds = new Set(chat.history.map(m => m.id));
         
         // 每次偷偷进货 200 条
         const DB_FETCH_CHUNK = 200; 
-        const older = await window.fetchOlderMessages(currentChatId, oldestTs, inMemoryIds, DB_FETCH_CHUNK);
+        const older = await window.fetchOlderMessages(chatIdAtStart, oldestTs, inMemoryIds, DB_FETCH_CHUNK);
 
         if (!older || older.length === 0) {
             chat._noMoreOlderInDB = true; // 数据库到底了
         } else {
-            // ★ 重点：只把数据塞进内存，绝对不触碰 DOM，也不改 currentPage
+            // ★ 重点：只把数据塞进内存，绝对不触碰 DOM
             chat.history.unshift(...older);
+            // ★ 但下标整体后移了 N，游标必须同步平移，否则下次上翻/下翻会切错位置
+            //   （若期间已切到别的会话，游标已属于新会话，绝不能平移）
+            if (currentChatId === chatIdAtStart) {
+                window._renderTopCeil     = (window._renderTopCeil || 0) + older.length;
+                window._renderBottomFloor = (window._renderBottomFloor || 0) + older.length;
+            }
         }
     } catch (e) {
         console.error('❌ [懒加载] 后台预加载更旧消息失败:', e);
@@ -928,42 +1137,92 @@ async function preloadOlderFromDBInBackground(chat) {
 }
 
 // === 新增函数 1：触发加载后续消息 ===
-function loadNewerMessages() {
+async function loadNewerMessages() {
     if (isLoadingHistory) return;
+
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history) return;
+
+    // ★ 先算起点再决定要不要转圈：已经贴着最新就直接校正游标退出，不再空转 500ms
+    const start = _getNewerRenderStart(chat);
+    if (start >= chat.history.length) {
+        window._renderBottomFloor = chat.history.length;
+        return;
+    }
+
     isLoadingHistory = true;
 
-    // 添加底部 Loading 指示器 (可选，为了体验更好)
+    // 底部 Loading 指示器
     const bottomLoader = document.createElement('div');
     bottomLoader.className = 'history-loading-indicator bottom-loader';
     bottomLoader.innerHTML = `<div class="custom-spinner"></div>`;
     messageArea.appendChild(bottomLoader);
-    
-    // 自动滚动一点点以露出 Loading(可选)
-    // messageArea.scrollTop += 60;
 
-    // 模拟一点延迟，防止闪烁
-    setTimeout(() => {
-        // 核心逻辑：页码减 1，代表向“现在”迈进一步
-        currentPage--; 
-        
-        // 渲染下一页数据
-        renderNewerMessages();
-        
-        // 移除 Loading
-        if(bottomLoader) bottomLoader.remove();
-        
+    try {
+        await renderNewerMessages(start);
+    } catch (e) {
+        console.error('❌ [懒加载] 向下加载失败:', e);
+    } finally {
+        if (bottomLoader) bottomLoader.remove();
         isLoadingHistory = false;
-    }, 500);
+    }
 }
 
 // === 新增函数 2：渲染后续消息 (追加到底部) ===
-function renderNewerMessages() {
+async function renderNewerMessages(startIndex) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
 
+    const chatIdAtStart = currentChatId; // ★ 下面有 await，中途切会话必须放弃本次渲染
+    let start = (typeof startIndex === 'number') ? startIndex : _getNewerRenderStart(chat);
+
+    // ★★★ 缝隙回填（本次 bug 的根治点）
+    //   搜索跳转会把"目标附近 300 条"merge 进只有最近 1500 条的 chat.history，
+    //   数组中间因此出现一个洞（洞里的消息只在 DB）。往下翻如果只按下标 slice，
+    //   就会从洞的上沿直接跳到下沿——用户看到 8/10 后面直接接 8/12，中间整天消失。
+    //   所以这一页以 DB 为准：拉一页真序回来，跟内存从 start 开始归并，
+    //   凡是内存里缺的就地插进去。洞在页首还是页中间都能兜住。
+    if (window.LAZY_LOAD && typeof window.fetchNewerMessages === 'function'
+        && start > 0 && start <= chat.history.length) {
+        try {
+            const prevTs = chat.history[start - 1].timestamp || 0;
+            const dbRows = await window.fetchNewerMessages(chatIdAtStart, prevTs, MESSAGES_PER_PAGE);
+            if (currentChatId !== chatIdAtStart) return; // 已切到别的会话，本次结果作废
+
+            const inMemoryIds = new Set(chat.history.map(m => m.id));
+            let ptr = start;   // 内存指针
+            let filled = 0;    // 本页补进内存的条数
+            for (const row of dbRows) {
+                if (ptr - start >= MESSAGES_PER_PAGE) break;     // 本页够了
+                if (ptr < chat.history.length && chat.history[ptr].id === row.id) {
+                    ptr++;      // 内存里有且位置吻合 → 指针前进
+                    continue;
+                }
+                if (inMemoryIds.has(row.id)) continue;            // 已在内存别处（含上沿本身/等时间戳边界）
+                chat.history.splice(ptr, 0, row);                 // 内存里缺 → 就地补上
+                inMemoryIds.add(row.id);
+                ptr++;
+                filled++;
+            }
+            if (filled > 0) {
+                console.log(`🕳️ [懒加载] 向下翻发现内存缝隙，已回填 ${filled} 条（起点下标 ${start}）`);
+                if (typeof window.assertHistoryOrder === 'function') {
+                    window.assertHistoryOrder(chat, 'scroll-down-gapfill');
+                }
+            }
+        } catch (e) {
+            console.error('❌ [懒加载] 缝隙回填失败:', e);
+        }
+    }
+
     const totalMessages = chat.history.length;
-    const end = totalMessages - (currentPage - 1) * MESSAGES_PER_PAGE;
-    const start = Math.max(0, end - MESSAGES_PER_PAGE);
+    const end = Math.min(totalMessages, start + MESSAGES_PER_PAGE);
+    if (end <= start) {
+        window._renderBottomFloor = totalMessages;
+        return;
+    }
 
     const messagesToRender = chat.history.slice(start, end);
 
@@ -1009,6 +1268,8 @@ function renderNewerMessages() {
         }
     }
 
+    let renderedCount = 0; // 统计本页实际渲染的气泡数
+
     messagesToRender.forEach(msg => {
         if (msg.isHidden) return;
 
@@ -1022,17 +1283,30 @@ function renderNewerMessages() {
                 if (info.firstMsgId === msg.id) {
                     const collapsed = createCollapsedCallBubble(sid, info.range.msgs, info.isSentByUser);
                     fragment.appendChild(collapsed);
+                    renderedCount++;
                 }
             }
             return;
         }
 
         const bubble = createMessageBubbleElement(msg);
-        if (bubble) fragment.appendChild(bubble);
+        if (bubble) {
+            fragment.appendChild(bubble);
+            renderedCount++;
+        }
     });
 
     // 追加到底部
     messageArea.appendChild(fragment);
+
+    // ★ 推进底部游标（这一页已覆盖到 end）
+    window._renderBottomFloor = end;
+
+    // ★ 空页自动穿透：整页都是隐藏/已折叠消息 → DOM 高度不变，用户没法再触发滚动，
+    //   这里自动接着加载下一页（游标已前进，不会死循环）
+    if (renderedCount === 0 && end < chat.history.length) {
+        setTimeout(() => loadNewerMessages(), 0);
+    }
 }
 
             async function addMessageBubble(message, targetChatId, targetChatType) {
@@ -1093,6 +1367,7 @@ if (!invisibleRegex.test(message.content)) {
                             else if (/\[.*?发来的照片\/视频：.*?\]/.test(previewText)) previewText = '[照片/视频]';
                             else if (/\[.*?的转账：.*?\]/.test(previewText)) previewText = '[转账]';
                             else if (/\[.*?送来的礼物：.*?\]/.test(previewText)) previewText = '[礼物]';
+                            else if (/\[.*?发送了位置：.*?\]/.test(previewText)) previewText = '[位置]';
                             else if (/\[.*?发来了一张图片：\]/.test(previewText)) previewText = '[图片]';
                             else if (message.parts && message.parts.some(p => p.type === 'html')) previewText = '[互动]';
                         }
@@ -1266,7 +1541,10 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
                 if (!currentChatType && currentChatId) {
         currentChatType = currentChatId.startsWith('char_') ? 'private' : 'group';
     }
-                if (currentPage > 1) {
+                // ★ 视图停在历史里（含搜索跳转后停在几天前）时，先重置回最新，
+                //   否则新气泡会被追加到"几天前"那段 DOM 的下面。
+                //   原来判断 currentPage > 1，跳转后该值不可靠且到底后不会复位。
+                if (!_isViewingLatest()) {
         currentPage = 1;
         // 重新渲染整个页面为最新状态，或者您可以选择仅提示用户
         renderMessages(false, true); 
@@ -1332,21 +1610,45 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
     message.callSessionId = chat.currentCallSessionId;
 }             
                 chat.history.push(message);
-                addMessageBubble(message, currentChatId, currentChatType);
-   if (currentChatType === 'private' && chat.callMode && typeof appendCallUserMessage === 'function') {
-    appendCallUserMessage(text);
-}             
 
-                if (chat.history.length > 0 && chat.history.length % 100 === 0) {
-                    promptForBackupIfNeeded('history_milestone');
+                // ★★★ 落库铁律 ★★★
+                //   消息进了内存，就必须落库。push 与 saveMessageToDB 之间不允许出现任何
+                //   会同步抛异常的语句，可选逻辑一律套 try/catch。
+                //
+                //   历史 Bug（用户消息偶发丢失的根因）：这里原先在写库之前调用了一个
+                //   从未定义过的 promptForBackupIfNeeded('history_milestone')，
+                //   条件是 chat.history.length % 100 === 0 —— 每满 100 条触发一次
+                //   ReferenceError，把后面的 saveMessageToDB / saveSingleChat 全部掀翻。
+                //   于是：消息在内存里、气泡在屏幕上、AI 也读得到并正常回复，
+                //   但数据库里从来没有过它。重开 App 后用户消息消失、AI 的回复还在，
+                //   表现就是"最后一次对话的倒数第二条丢了"，且只发生在普通文字消息上
+                //   （贴纸/图片/转账等走 chat_feature_basic.js，没有这段代码）。
+                //   三个调用点（click / touchend / Enter）都是 fire-and-forget，
+                //   异常只是静默的 unhandled rejection，界面上毫无征兆。
+
+                // 气泡先上屏，保持发送手感（async 函数未 await，其内部异常不会波及本函数）
+                try {
+                    addMessageBubble(message, currentChatId, currentChatType);
+                    if (currentChatType === 'private' && chat.callMode && typeof appendCallUserMessage === 'function') {
+                        appendCallUserMessage(text);
+                    }
+                } catch (e) {
+                    console.error('⚠️ [sendMessage] 气泡渲染失败，但消息仍会正常落库：', e);
                 }
-await saveMessageToDB(message, currentChatId, currentChatType);
-                await saveSingleChat(currentChatId, currentChatType);
-                renderChatList();
 
-                // 新增：发送后清空引用状态
-                if (currentQuoteInfo) {
-                    cancelQuoteReply();
+                // 关键路径：写库。上面无论出什么事都必须执行到这里。
+                await saveMessageToDB(message, currentChatId, currentChatType);
+                await saveSingleChat(currentChatId, currentChatType);
+
+                // 收尾的非关键逻辑，同样不允许影响已落库的消息
+                try {
+                    renderChatList();
+                    // 新增：发送后清空引用状态
+                    if (currentQuoteInfo) {
+                        cancelQuoteReply();
+                    }
+                } catch (e) {
+                    console.error('⚠️ [sendMessage] 消息已成功落库，但收尾步骤出错：', e);
                 }
             }
             
@@ -1450,6 +1752,14 @@ function formatSmartTime(timestamp) {
 </svg>`
                     },
                     {
+                        id: 'send-location-modal',
+                        name: '发送位置',
+                        icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M12 21.5C12 21.5 19 15.6 19 10C19 6.1 15.9 3 12 3C8.1 3 5 6.1 5 10C5 15.6 12 21.5 12 21.5Z" stroke="#555" stroke-width="2" fill="none" stroke-linejoin="round"/>
+<circle cx="12" cy="10" r="2.6" stroke="#555" stroke-width="2"/>
+</svg>`
+                    },
+                    {
             id: 'chat-search', // 这里的 ID 对应下面的 case
             name: '聊天搜索',
             icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -1467,29 +1777,12 @@ function formatSmartTime(timestamp) {
                     }
                 ];
 
-                // 在渲染 expansionGrid 时，检查当前角色是否开启了线下模式，如果是，给按钮加 active 样式
- // 在渲染 expansionGrid 时，检查当前角色是否开启了线下模式/主动消息
                 expansionGrid.innerHTML = '';
                 expansionItems.forEach(item => {
                     const itemEl = document.createElement('div');
                     itemEl.className = 'expansion-item';
                     itemEl.dataset.action = item.id;
 
-                    // --- 检查激活状态 ---
-                    if (currentChatType === 'private') {
-                        const chat = db.characters.find(c => c.id === currentChatId);
-                        if (chat) {
-                            if (item.id === 'offline-mode-settings' && chat.offlineModeEnabled) {
-                                itemEl.classList.add('active');
-                            }
-                            // ====== 【新增：判断主动发消息的激活状态】 ======
-                            if (item.id === 'proactive-messaging-settings' && chat.proactiveMode === 'fixed'|| chat.proactiveMode === 'timer') {
-    itemEl.classList.add('active');
-}
-                            // ==============================================
-                        }
-                    }
-                    
                     itemEl.innerHTML = `
                     <div class="expansion-item-icon">${item.icon}</div>
                     <span class="expansion-item-name">${item.name}</span>
@@ -1497,11 +1790,23 @@ function formatSmartTime(timestamp) {
                     expansionGrid.appendChild(itemEl);
                 });
 
+                // 激活状态（线下模式 / 后台消息）统一交给 syncChatExpansionActiveState，
+                // 这里构建时先按当前会话对齐一次；之后每次开面板、每次进聊天室都会再对齐。
+                syncChatExpansionActiveState();
+
                 expansionGrid.addEventListener('click', (e) => {
                     const item = e.target.closest('.expansion-item');
                     if (!item) return;
 
                     const action = item.dataset.action;
+
+                    // 线下模式下的线上功能：按数据判断，不依赖 DOM 上的置灰 class 是否刷新过
+                    // （置灰用的是 class 而非 pointer-events:none，点击照样会走到这里）
+                    if (OFFLINE_DISABLED_EXPANSION_ACTIONS.includes(action)
+                        && typeof isOfflineModeActive === 'function' && isOfflineModeActive()) {
+                        showToast('线下模式下无法使用该功能');
+                        return;
+                    }
 
 switch (action) {
     case 'memory-journal':
@@ -1561,6 +1866,11 @@ switch (action) {
                                 renderGroupRecipientSelectionList('送礼物给');
                                 groupRecipientSelectionModal.classList.add('visible');
                             }
+                            break;
+                        case 'send-location-modal':
+                            // 打开发送位置弹窗（私聊/群聊直接发送，无需选收件人）
+                            sendLocationForm.reset();
+                            sendLocationModal.classList.add('visible');
                             break;
                         case 'time-skip-modal':
                             // 打开跳过时间

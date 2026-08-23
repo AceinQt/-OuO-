@@ -321,6 +321,26 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 messages = getMixedContent(processedResponse).filter(item => item.content.trim() !== '');
             }
 
+            // ★ 语音合成：整批合成完，才让打字机开始逐条推送。
+            //   这样气泡一出现就能点播放，不会出现"点了再等 20 秒"。
+            //   为什么可以这么等：发请求前上面已经把「"某某"正在输入中…」打出来了
+            //   （typingIndicator，见本文件 :674 与 :961），合成期间它一直挂着，
+            //   所以多等这一会儿看起来就是"他在输入"。
+            //   反过来如果边演边等，会在弹出几条之后突然卡住 —— 那才像坏了。
+            //   只在「收到就自动合成」开着时才等；内部有 120 秒上限且不抛异常，
+            //   TTS 挂了或者慢得离谱都不会把回复压住。
+            if (typeof prepareVoiceForMessages === 'function') {
+                await prepareVoiceForMessages(messages, chat, targetChatType);
+            }
+
+            // ★ 生图同理：整批里那张图也先画完，才让打字机开始推。
+            //   否则气泡先弹出来，用户得盯着一张空占位图转几十秒圈。
+            //   内部会提前占好消息 id（图片缓存键由 id 推导），循环里用
+            //   applyPreparedImage 装配回去；超时/失败都不会把回复压住。
+            if (typeof prepareImageForMessages === 'function') {
+                await prepareImageForMessages(messages, chat, targetChatId, targetChatType);
+            }
+
             let isFirstMsg = true;
 
             for (const item of messages) {
@@ -472,6 +492,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         } else if (giftRegex.test(message.content)) {
                             message.giftStatus = 'sent';
                         }
+                        // 照片/视频描述走这一支：把预生成占的 id 和画好的图装配回来
+                        if (typeof applyPreparedImage === 'function') applyPreparedImage(item, message);
                         if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                         chat.history.push(message);
                         newMessagesForDB.push(message);
@@ -480,7 +502,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 } 
                 else if (targetChatType === 'group') {
                     const group = chat;
-                    const standardRegex = /\[(.*?)((?:的消息|的语音|的表情包|发送的表情包|发来的照片\/视频))[:：]/;
+                    const standardRegex = /\[(.*?)((?:的消息|的语音|的表情包|发送的表情包|发来的照片\/视频|发送了位置))[:：]/;
                     const quoteRegex = /\[(.*?)引用["“](.*?)["”]并回复[:：]([\s\S]*?)\]/;
 
                     const quoteMatch = item.content.match(quoteRegex);
@@ -537,6 +559,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                                 timestamp: Date.now(),
                                 senderId: sender.id
                             };
+                            // 群聊的照片/视频也走 standardMatch 这一支，同样要装配预生成结果
+                            if (typeof applyPreparedImage === 'function') applyPreparedImage(item, message);
                             group.history.push(message);
                             addMessageBubble(message, targetChatId, targetChatType);
                             newMessagesForDB.push(message);
@@ -580,6 +604,13 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         await saveMessagesToDB(newMessagesForDB, targetChatId, targetChatType);
         await saveSingleChat(targetChatId, targetChatType);
         renderChatList();
+
+        // 兜底：正常路径的图已经在推气泡前就画好了（prepareImageForMessages），
+        // 那条消息带着 media 出场，这里会被 !isImageMediaMessage 直接跳过。
+        // 留着是为了照顾没走预生成的分支（线下模式 / 视频通话那一支）。
+        if (typeof queueAutoImageGeneration === 'function') {
+            queueAutoImageGeneration(newMessagesForDB, chat, targetChatId, targetChatType);
+        }
 
         // Step 2：若此刻在后台，弹系统通知（标题=角色名，内部已判权限/开关/可见性）
         if (window.NotifyCenter) {
@@ -678,11 +709,17 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
     try {
         let systemPrompt, requestBody;
         const isCompatibilityMode = effectiveApiSettings.compatibilityModeEnabled || false; 
+        // ★ 天气上下文：按该聊天绑定的地点取数，仅注入本次请求，不写入历史。
+        //   这里只负责"取"，具体排在 prompt 的哪一段由 private_prompt.js / group_prompt.js 决定。
+        let weatherText = '';
+        if (typeof getWeatherPromptContext === 'function') {
+            weatherText = (await getWeatherPromptContext(chat)) || '';
+        }
         if (chatType === 'private') {
-            systemPrompt = generatePrivateSystemPrompt(chat, retrievedContext);
+            systemPrompt = generatePrivateSystemPrompt(chat, retrievedContext, weatherText);
         } else {
-            systemPrompt = generateGroupSystemPrompt(chat, retrievedContext);
-}
+            systemPrompt = generateGroupSystemPrompt(chat, retrievedContext, weatherText);
+        }
 
         let rawHistory = chat.history.slice(-chat.maxMemory);
         const historySlice = rawHistory.filter(msg => {

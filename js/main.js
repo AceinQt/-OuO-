@@ -178,6 +178,11 @@ const pageActions = {
     'customize-screen': typeof renderCustomizeForm !== 'undefined' ? renderCustomizeForm : null,
     'tutorial-screen': typeof renderTutorialContent !== 'undefined' ? renderTutorialContent : null,
     'storage-analysis-screen': window.refreshStorageScreen,
+    'github-repos-screen': () => openGithubReposScreen(),
+    // 只为刷新「GitHub 仓库」那一行右侧的状态文案，不点进去也能看出配没配
+    'settings-screen': () => {
+        if (typeof refreshGithubReposSummary === 'function') refreshGithubReposSummary();
+    },
     'notification-settings-screen': () => window.NotifyCenter?.initSettingsUI(),
     'chat-list-screen': resetChatListTabs ,
     'chat-appearance-screen': () => {
@@ -234,6 +239,26 @@ window.init = async () => {
             console.error("Critical: loadData function not found!");
         }
         
+        // ★ 语音缓存键从 v1（含预设内容指纹）迁到 v2（只含预设 id）。
+        //   不迁的话老片段全部对不上号，会被白白重新合成一遍。幂等。
+        if (typeof migrateVoiceKeysToV2 === 'function') {
+            try {
+                await migrateVoiceKeysToV2();
+            } catch (error) {
+                console.warn('语音缓存键迁移失败：', error);
+            }
+        }
+
+        // ★ 把备份功能原先存在 localStorage 的 GitHub 仓库配置迁进 db.githubRepos。
+        //   幂等，迁完不删老配置（留作保险）。必须在 loadData 之后 —— 它要读写 db。
+        if (typeof migrateLegacyGithubConfig === 'function') {
+            try {
+                await migrateLegacyGithubConfig();
+            } catch (error) {
+                console.warn('GitHub 仓库配置迁移失败（老配置仍在 localStorage 里）：', error);
+            }
+        }
+
         // 数据加载完毕后，立刻应用安全区设置        
         if (typeof applySafeAreaSettings === 'function') {
             applySafeAreaSettings();
@@ -365,6 +390,7 @@ window.init = async () => {
         if (typeof setupImageRecognition === 'function') setupImageRecognition();
         if (typeof setupWalletSystem === 'function') setupWalletSystem();
         if (typeof setupGiftSystem === 'function') setupGiftSystem();
+        if (typeof setupLocationSystem === 'function') setupLocationSystem();
         if (typeof setupTimeSkipSystem === 'function') setupTimeSkipSystem();
         if (typeof setupWorldBookApp === 'function') setupWorldBookApp();
         if (typeof setupFontSettingsApp === 'function') setupFontSettingsApp();

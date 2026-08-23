@@ -188,6 +188,7 @@ window.exportPartialData = async function(categoryKey) {
             case 'settings':
                 partialData.apiSettings = db.apiSettings;
                 partialData.apiPresets = db.apiPresets;
+                partialData.imageSettings = db.imageSettings;
                 partialData.pomodoroSettings = db.pomodoroSettings;
                 partialData.pomodoroTasks = db.pomodoroTasks;
                 partialData.homeScreenMode = db.homeScreenMode;
@@ -203,6 +204,31 @@ window.exportPartialData = async function(categoryKey) {
                 partialData.characters = db.characters || [];
                 partialData.groups = db.groups || [];
                 partialData.peekData = db.peekData || {};
+                break;
+            // ★ ToDouo：存储页一直给这一类显示"导出"按钮，但这里从来没有对应的 case，
+            //   点下去只会弹"导出错误: 未知分类"。补上。
+            //   元数据走 db 数组（导入时按 id 合并），正文/共读/章节总结在独立表里，
+            //   得显式读出来 —— importBackupData 末尾已有对应的 bulkPut，能原样还原。
+            //   studyPageCache 故意不导出：它是按正文重算出来的分页缓存，
+            //   导入端也没有还原逻辑，带上只是白白撑大文件。
+            case 'study':
+                partialData.studyBooks = db.studyBooks || [];
+                partialData.studyQuestions = db.studyQuestions || [];
+                partialData.studyRecords = db.studyRecords || [];
+                partialData.studyBanks = db.studyBanks || [];
+                partialData.studyExams = db.studyExams || [];
+                partialData.studyExamRecords = db.studyExamRecords || [];
+                partialData.studySettings = db.studySettings;
+                if (typeof dexieDB !== 'undefined') {
+                    const [contents, coreadMsgs, bookSummaries] = await Promise.all([
+                        dexieDB.studyBookContents.toArray(),
+                        dexieDB.studyCoreadMessages.toArray(),
+                        dexieDB.studyBookSummaries.toArray()
+                    ]);
+                    partialData.studyBookContents = contents;
+                    partialData.studyCoreadMessages = coreadMsgs;
+                    partialData.studyBookSummaries = bookSummaries;
+                }
                 break;
             default: throw new Error("未知分类");
         }
@@ -352,6 +378,17 @@ async function downloadDataStream(jsonChunkGenerator, filenameSuffix) {
 // 单行就能到 20~40MB，导入时 JSON.parse 这一行照样 OOM），而是每 500 条消息一行，
 // 单行体积始终控制在几百 KB —— 导入端逐行 parse 入库，内存峰值极低。
 // 第一行固定是 meta（_type 必须是第一个 key，导入端靠文件头探测格式）。
+/**
+ * 备份用的推送设置副本：保留 Worker 地址、VAPID 密钥、令牌这些可搬的服务端配置，
+ * 剥掉 subscription（绑定这台设备浏览器的凭证）并把开关置为关。
+ * @see createFullBackupStream 里的注释
+ */
+function _sanitizePushSettingsForBackup(raw) {
+    if (!raw) return raw;
+    const { subscription, ...portable } = raw;
+    return { ...portable, enabled: false, subscription: null };
+}
+
 async function* createFullBackupStream() {
     // ── 1. meta 行：所有小数据（设置、世界书等）──
     const meta = {
@@ -386,8 +423,27 @@ async function* createFullBackupStream() {
         enableBottomSafeArea:   db.enableBottomSafeArea,
         enableScreenAdaptation: db.enableScreenAdaptation,
         enableSwipeBack:        db.enableSwipeBack,
+        enableSystemBack:       db.enableSystemBack,
         studySettings:          db.studySettings,
         globalVisionSettings:   db.globalVisionSettings,
+        // ★ 以下几个原先漏在导出清单外，换设备恢复后会静默丢失：
+        //   weatherSettings   → 和风 Host/Key 和所有地点预设
+        //   embeddingSettings → 向量 API 配置，丢了向量检索直接失效
+        //   globalNotifySettings → 通知开关和保活时长
+        embeddingSettings:      db.embeddingSettings,
+        weatherSettings:        db.weatherSettings,
+        globalNotifySettings:   db.globalNotifySettings,
+        // ★ 推送配置只搬可搬的部分：subscription 是绑定这台设备浏览器的凭证，
+        //   原样恢复到新设备会让 app 以为推送开着、实际推给了旧设备 ——
+        //   静默失效比"要你重新开一次"糟糕得多。所以剥掉订阅并强制关掉开关，
+        //   到新设备上重新打开开关即可拿到新订阅。
+        globalPushSettings:     _sanitizePushSettingsForBackup(db.globalPushSettings),
+        voiceSettings:          db.voiceSettings,
+        imageSettings:          db.imageSettings,
+        // ★ githubRepos 里含访问令牌。必须进备份，否则换设备恢复后
+        //   语音/图片记录里的 cloudRepoId 找不到对应凭据，已归档内容就读不回来了。
+        githubRepos:            db.githubRepos             || [],
+        githubBindings:         db.githubBindings          || {},
         studyBanks:             db.studyBanks              || [],
         studyExams:             db.studyExams              || [],
         studyExamRecords:       db.studyExamRecords        || [],
@@ -572,6 +628,8 @@ async function importJsonlStream(byteStream, onProgress) {
             dexieDB.studyExams.clear(),
             dexieDB.studyExamRecords.clear(),
             dexieDB.studyBookSummaries.clear(),
+            // imageCache 是当前浏览器的可淘汰数据，不属于备份内容。
+            dexieDB.imageCache?.clear(),
         ]);
         // 小数据整体进内存 db
         Object.keys(meta).forEach(key => {
@@ -931,6 +989,7 @@ async function lazyImportBackupData(jsonString) {
             dexieDB.studyExams.clear(),
             dexieDB.studyExamRecords.clear(),
             dexieDB.studyBookSummaries.clear(),
+            dexieDB.imageCache?.clear(),
         ]);
     }
 
@@ -1250,6 +1309,7 @@ if (typeof dexieDB !== 'undefined') {
         dexieDB.studyExams.clear(),         // ★ V10：清空考卷
         dexieDB.studyExamRecords.clear(),   // ★ V11：清空考试记录
         dexieDB.studyBookSummaries.clear(), // ★ V12：清空书本总结
+        dexieDB.imageCache?.clear(),         // ★ V16：本地图片缓存不随备份恢复
     ]);
 }
             message = "全量数据已恢复";
@@ -1432,14 +1492,29 @@ const FILE_NAME_CHATS = 'qchat_backup_chats.ee';   // 旧版分片（仅恢复�
 const FILE_NAME_LEGACY = 'qchat_auto_backup.json'; // ★ 新增:旧版备份文件名
 
 const GitHubService = {
+    /**
+     * 读备份用的仓库配置。
+     *
+     * ★ 仓库定义已经统一收进「设置 > GitHub 仓库」页（db.githubRepos），备份只是
+     *   其中一个"用途"。这里改成先读新数据源、读不到再回落 localStorage，
+     *   好处是下面 8 个调用点（含 main.js 的每日自动备份）一行都不用改。
+     * ★ localStorage 那份老配置迁移后**不删**，作为保险留着。回落分支也因此保留。
+     */
     getConfig: () => {
+        if (typeof getGithubBinding === 'function') {
+            const bound = getGithubBinding('backup');
+            if (bound) {
+                const bindings = _normalizeGithubBindings(db.githubBindings);
+                return {
+                    token: bound.repo.token,
+                    username: bound.repo.username,
+                    repo: bound.repo.repo,
+                    autoBackup: !!bindings.backup.autoBackup
+                };
+            }
+        }
+        // 还没迁移过的老用户走这里
         try { return JSON.parse(localStorage.getItem(GH_CONFIG_KEY)); } catch (e) { return null; }
-    },
-
-    saveConfig: (token, username, repo, autoBackup) => {
-        const config = { token, username, repo, autoBackup };
-        localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(config));
-        return config;
     },
 
     getFileInfo: async (config, fileName) => {
@@ -1504,42 +1579,54 @@ const GitHubService = {
         }
     },
 
+    /**
+     * 云端同步配置对话框：只选仓库 + 是否每日自动备份。
+     *
+     * ★ 令牌/用户名/仓库名的输入框从这里去掉了 —— 仓库定义统一在
+     *   「设置 > GitHub 仓库」页。两个地方都能填仓库会让同一个仓库的令牌存两处、
+     *   改一次要改两遍。这里只是引用它。
+     */
+    openConfigDialog: async () => {
+        const bindings = _normalizeGithubBindings(db.githubBindings);
+        const current = bindings.backup;
+        const repo = getGithubRepo(current.repoId);
+
+        // 仓库只展示不可改 —— 换仓库要去「设置 > GitHub 仓库」。
+        // 同一个设置只在一个地方能改，否则改了这边不知道那边是什么状态。
+        const where = repo
+            ? `${repo.name}（${describeGithubRepo(repo)}）`
+            : '尚未选择';
+        const result = await AppUI.form([
+            {
+                type: 'note', key: 'repoNote', label: '备份仓库', value: where,
+                hint: repo
+                    ? '要换仓库请到「设置 > GitHub 仓库」，在「数据备份」那一项里选'
+                    : '请先到「设置 > GitHub 仓库」添加仓库，并在「数据备份」那一项里选中它'
+            },
+            { type: 'switch', key: 'autoBackup', label: '每日自动备份', value: current.autoBackup }
+        ], { title: '云端同步', confirmText: '保存', cancelText: '取消' });
+        if (!result) return;
+
+        // 展开合并：这个键里还有语音/图片的绑定，不能整体覆盖
+        db.githubBindings = _normalizeGithubBindings({
+            ...bindings,
+            backup: { ...current, autoBackup: !!result.autoBackup }
+        });
+        await saveGlobalKeys(['githubBindings']);
+        GitHubService.updateUIState(!!GitHubService.getConfig());
+        if (typeof refreshGithubReposSummary === 'function') refreshGithubReposSummary();
+        showToast(repo ? '云端同步已保存' : '已保存，但还没选备份仓库');
+    },
+
     initUI: () => {
         const btnConfig = document.getElementById('btn-gh-config');
         const btnUpload = document.getElementById('btn-gh-upload');
         const btnDownload = document.getElementById('btn-gh-download');
-        const modal = document.getElementById('github-settings-modal');
         const lastSync = document.getElementById('github-last-sync');
-        
+
         GitHubService.updateUIState(!!GitHubService.getConfig());
 
-        btnConfig.onclick = () => {
-            modal.classList.add('visible');
-            const currentConfig = GitHubService.getConfig();
-            if (currentConfig) {
-                document.getElementById('gh-token-input').value = currentConfig.token || '';
-                document.getElementById('gh-username-input').value = currentConfig.username || '';
-                document.getElementById('gh-repo-input').value = currentConfig.repo || '';
-                document.getElementById('gh-auto-backup-switch').checked = !!currentConfig.autoBackup;
-            }
-        };
-
-        document.getElementById('btn-gh-cancel').onclick = () => modal.classList.remove('visible');
-        document.getElementById('btn-gh-save').onclick = async () => {
-            const token = document.getElementById('gh-token-input').value.trim();
-            const username = document.getElementById('gh-username-input').value.trim();
-            const repo = document.getElementById('gh-repo-input').value.trim();
-            const auto = document.getElementById('gh-auto-backup-switch').checked;
-
-            if (!token || !username || !repo) {
-                await AppUI.alert("请填写完整信息");
-                return;
-            }
-            GitHubService.saveConfig(token, username, repo, auto);
-            modal.classList.remove('visible');
-            GitHubService.updateUIState(true);
-            showToast("GitHub 配置已保存");
-        };
+        btnConfig.onclick = () => GitHubService.openConfigDialog();
 
         btnUpload.onclick = async () => {
             if(await AppUI.confirm("将覆盖原有云端备份数据,确定要备份到云端吗?", "系统提示", "确认", "取消")) {

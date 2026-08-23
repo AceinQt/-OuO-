@@ -4,6 +4,20 @@ function switchScreen(targetId) {
     const targetScreen = document.getElementById(targetId);
     if (!targetScreen) return;
 
+    // ── 页面离开钩子 ──
+    // 下面那句"关闭所有遮罩层"只认 .modal-overlay / .action-sheet-overlay / .settings-sidebar，
+    // 用裸 .visible 控制显隐的面板（如聊天室底部的"+"面板、表情面板）会活着跟去下一个页面。
+    // 各模块在这里注册自己的复位逻辑，返回键 / 滑动返回 / 系统返回键最终都会走到这。
+    const leavingScreen = document.querySelector('.screen.active');
+    const leavingId = leavingScreen ? leavingScreen.id : null;
+    if (leavingId && leavingId !== targetId && window._screenLeaveHooks?.[leavingId]) {
+        try {
+            window._screenLeaveHooks[leavingId](targetId);
+        } catch (e) {
+            console.error(`[switchScreen] 离开钩子执行失败 (${leavingId}):`, e);
+        }
+    }
+
     // 检查是否是滑动返回触发的切换
     const isSwipeBack = targetScreen.dataset.swipeBack === 'true';
 
@@ -505,6 +519,127 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
     },
 
     /**
+     * 通用多字段表单弹窗（复用 components.css / api.css 的 .form-group、.switch 样式，不新增 CSS）
+     * @param {Array<{type:'select'|'switch'|'text'|'note', key:string, label:string, options?:Array<{value:string,label:string}>, value?:any, placeholder?:string, hint?:string}>} fields
+     *        note 类型只展示不可编辑，也不会出现在返回的结果里（给"这个值在别处改"用）
+     * @param {object} opts { title, confirmText, cancelText }
+     * @returns {Promise<object|null>} 返回 { key: value } 映射；取消返回 null
+     */
+    async form(fields = [], { title = '设置', confirmText = '保存', cancelText = '取消' } = {}) {
+        return new Promise((resolve) => {
+            const overlay        = document.getElementById('app-global-dialog');
+            const titleEl        = document.getElementById('global-dialog-title');
+            const contentEl      = document.getElementById('global-dialog-content');
+            const actionsEl      = document.getElementById('global-dialog-actions');
+            const inputContainer = document.getElementById('global-dialog-input-container');
+
+            if (!overlay) return resolve(null);
+
+            titleEl.innerText   = title;
+            contentEl.innerText = '';
+            contentEl.classList.remove('is-scrollable');
+            actionsEl.innerHTML = '';
+
+            // 劫持 input-container：把原有子节点整体存下来，关闭时原样塞回。
+            // 注意别学 select() 那样关闭时硬拼 innerHTML 还原——两个弹窗叠开时，后关的会冲掉前面的 DOM。
+            const savedNodes   = Array.from(inputContainer.childNodes);
+            const savedDisplay = inputContainer.style.display;
+            inputContainer.innerHTML = '';
+            inputContainer.style.display = 'block';
+
+            // key -> 读值函数
+            const readers = new Map();
+
+            fields.forEach(field => {
+                const row = document.createElement('div');
+                row.className = field.type === 'switch' ? 'form-group form-group-switch' : 'form-group';
+
+                const labelEl = document.createElement('label');
+                labelEl.innerText = field.label || field.key;
+                row.appendChild(labelEl);
+
+                if (field.type === 'note') {
+                    // 只展示、不可编辑、不参与取值。用于"这个值在别处改"这类场景，
+                    // 比如云端同步弹框里显示当前用的仓库并指路去哪改。
+                    const noteEl = document.createElement('div');
+                    noteEl.className = 'appui-note';
+                    noteEl.innerText = field.value == null ? '' : String(field.value);
+                    row.appendChild(noteEl);
+                    if (field.hint) {
+                        const hintEl = document.createElement('div');
+                        hintEl.className = 'appui-note-hint';
+                        hintEl.innerText = field.hint;
+                        row.appendChild(hintEl);
+                    }
+                    // 故意不 readers.set —— note 不该出现在返回值里
+                } else if (field.type === 'select') {
+                    const sel = document.createElement('select');
+                    sel.className = 'appui-select';
+                    (field.options || []).forEach(o => {
+                        const opt = document.createElement('option');
+                        opt.value = String(o.value);
+                        opt.textContent = o.label;
+                        sel.appendChild(opt);
+                    });
+                    sel.value = String(field.value == null ? '' : field.value);
+                    row.appendChild(sel);
+                    readers.set(field.key, () => sel.value);
+                } else if (field.type === 'switch') {
+                    const sw = document.createElement('label');
+                    sw.className = 'switch';
+                    const box = document.createElement('input');
+                    box.type = 'checkbox';
+                    box.checked = !!field.value;
+                    const slider = document.createElement('span');
+                    slider.className = 'slider round';
+                    sw.appendChild(box);
+                    sw.appendChild(slider);
+                    row.appendChild(sw);
+                    readers.set(field.key, () => box.checked);
+                } else {
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.autocomplete = 'off';
+                    input.placeholder = field.placeholder || '';
+                    input.value = field.value == null ? '' : String(field.value);
+                    row.appendChild(input);
+                    readers.set(field.key, () => input.value);
+                }
+
+                inputContainer.appendChild(row);
+            });
+
+            const close = () => {
+                overlay.classList.remove('visible');
+                inputContainer.innerHTML = '';
+                savedNodes.forEach(node => inputContainer.appendChild(node));
+                inputContainer.style.display = savedDisplay || 'none';
+            };
+
+            const createBtn = (text, cls, onClick) => {
+                const btn = document.createElement('button');
+                btn.className     = `btn ${cls}`;
+                btn.style.flex    = '1';
+                btn.style.padding = '10px';
+                btn.innerText     = text;
+                btn.onclick = (e) => { e.stopPropagation(); close(); onClick(); };
+                return btn;
+            };
+
+            const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(null));
+            const confirmBtn = createBtn(confirmText, 'btn-primary',  () => {
+                const result = {};
+                readers.forEach((read, key) => { result[key] = read(); });
+                resolve(result);
+            });
+            actionsEl.appendChild(confirmBtn);
+            actionsEl.appendChild(cancelBtn);
+
+            overlay.classList.add('visible');
+        });
+    },
+
+    /**
      * 先弹窗、后填内容的确认框：点下去立刻有反馈，正文先显示"计算中"且确定按钮禁用，
      * 等异步任务出结果再替换正文并启用确定。避免统计耗时让用户以为没点到而反复点
      * @param {string}   loadingText 计算期间的占位正文
@@ -620,6 +755,90 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
 };
 
 // ================================================================
+// === AppHelp: 小标题右边的问号说明 ==============================
+// ================================================================
+// 设置类页面上大段的说明文字会把设置项本身挤没了，所以统一收进问号弹窗：
+//   · 小标题右边一个问号 → 讲这一段
+//   · app-header 右边一个 action-btn → 讲整个页面
+// 页面上只留一句话都不留，需要的人点问号，不需要的人眼里就是干净的设置列表。
+//
+// ★ 文案不集中放在这个文件里 —— 每个页面模块自己 register 自己的那几条，
+//   改功能的时候文案就在手边，不用跨文件找，也不会攒成一个几百行的大字典。
+//   这里只管"存"和"弹"两件事。
+//
+// 用法：
+//   模块加载时（js/settings/github_repos.js 那样）：
+//     AppHelp.register('github', {
+//         page: { title: '关于 GitHub 仓库', content: '……' },
+//         repo: { title: '仓库配置说明',     content: () => `……` }   // 函数 = 点开时才生成
+//     });
+//   HTML 里（notification-settings-screen / github-repos-screen 那样）：
+//     <svg class="settings-group-info-icon" onclick="showHelp('github','repo')" …>
+//
+// ★ 正文走 AppUI.alert，而 AppUI 用的是 innerText —— 换行写 \n，不要写 <br>。
+// ================================================================
+const AppHelp = {
+    // scope（页面名）→ { key: {title, content} }。scope 是为了让不同页面能各用
+    // 各自的 'page'、'repo' 这种短 key，不用担心撞车
+    _scopes: {},
+
+    /**
+     * 注册说明文案。同一个 scope 可以多次调用，结果是合并 —— 一个页面拆成
+     * 几个模块时，各自注册自己那几条即可
+     * @param {string} scope  页面/模块名，如 'notify'、'github'
+     * @param {Object} topics { key: {title, content} }；value 直接给字符串时标题用默认值
+     */
+    register(scope, topics) {
+        if (!scope || !topics) return;
+        const bucket = this._scopes[scope] || (this._scopes[scope] = {});
+        Object.keys(topics).forEach(key => {
+            const topic = topics[key];
+            bucket[key] = (typeof topic === 'string' || typeof topic === 'function')
+                ? { title: '说明', content: topic }
+                : topic;
+        });
+    },
+
+    /** 取一条，没注册返回 null */
+    get(scope, key) {
+        const bucket = this._scopes[scope];
+        return (bucket && bucket[key]) || null;
+    },
+
+    /**
+     * 弹出说明。content 允许是函数，点开的那一刻才求值 ——
+     * 像"用途列表"这种内容跟着数据变的说明，写死字符串就会过期
+     */
+    show(scope, key) {
+        const topic = this.get(scope, key);
+        if (!topic) {
+            console.warn(`[AppHelp] 未注册的说明：${scope}/${key}`);
+            return;
+        }
+        const title = topic.title || '说明';
+        let content = topic.content;
+        if (typeof content === 'function') {
+            try {
+                content = content();
+            } catch (err) {
+                // 说明文案生成失败不该把页面带崩，退化成一句话就行
+                console.warn(`[AppHelp] ${scope}/${key} 文案生成失败`, err);
+                content = '说明加载失败了。';
+            }
+        }
+        if (typeof AppUI !== 'undefined' && typeof AppUI.alert === 'function') {
+            AppUI.alert(String(content || ''), title, '我知道了');
+        } else {
+            alert(`【${title}】\n\n${content}`);
+        }
+    }
+};
+window.AppHelp = AppHelp;
+
+// HTML 的 onclick 里用的短名字：showHelp('github', 'repo')
+window.showHelp = function (scope, key) { AppHelp.show(scope, key); };
+
+// ================================================================
 // === historyToPlainText: 聊天记录转纯文本（过滤图片等非文本内容）===
 // ================================================================
 function historyToPlainText(history) {
@@ -642,3 +861,51 @@ function findGroupMemberById(group, senderId) {
         || null;
 }
 window.findGroupMemberById = findGroupMemberById;
+
+// ================================================================
+// === getRandomValue: 多 Key 轮换（逗号分隔时随机取一个）===
+//   Gemini 等按 Key 限流的服务商可以在设置里填多个 Key 摊平配额。
+//   调用方：chat_ai_service.js、chat_feature_basic.js、chat_feature_proactive.js、
+//           settings/api_settings.js 的拉取模型。原先住在那个文件里，
+//           但它跟"API 设置页"无关，是纯工具函数，故归到 core。
+// ================================================================
+function getRandomValue(str) {
+    if (str.includes(',')) {
+        const arr = str.split(',').map(s => s.trim());
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+    return str;
+}
+window.getRandomValue = getRandomValue;
+
+// ================================================================
+// === base64 <-> 字节：语音合成、GitHub 上传下载都要用 ===
+//   放在 core 是因为 js/api/doubao_tts_api.js 和 js/api/github_repo_api.js
+//   都需要它。让后者去调前者的私有函数会形成"仓库模块依赖 TTS 模块"的
+//   反向依赖 —— 仓库模块压根不该知道语音的存在。
+// ================================================================
+
+/** base64 字符串 → Uint8Array */
+function base64ToBytes(b64) {
+    const bin = atob(String(b64 || ''));
+    const u8 = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+    return u8;
+}
+window.base64ToBytes = base64ToBytes;
+
+/**
+ * Uint8Array → base64 字符串。
+ * ★ 必须分块。String.fromCharCode.apply 一次传太多参数会爆调用栈
+ *   （几十万个参数就炸），而音频动辄几百 KB。
+ */
+function bytesToBase64(bytes) {
+    const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes || 0);
+    const CHUNK = 0x8000;   // 32K 个字符一批，实测安全
+    let binary = '';
+    for (let i = 0; i < u8.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, u8.subarray(i, i + CHUNK));
+    }
+    return btoa(binary);
+}
+window.bytesToBase64 = bytesToBase64;

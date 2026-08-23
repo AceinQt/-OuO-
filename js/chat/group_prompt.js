@@ -1,4 +1,4 @@
-function generateGroupSystemPrompt(group, retrievedContext = '') {
+function generateGroupSystemPrompt(group, retrievedContext = '', weatherText = '') {
      const worldBooksBefore = (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).map(wb => wb.content).join('\n');
     const worldBooksAfter = (group.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).map(wb => wb.content).join('\n');
 
@@ -116,6 +116,7 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
     - [${myRealName} 向 {某个成员真名} 转账：...]：我给某个特定成员转账了。
     - [${myRealName} 向 {某个成员真名} 送来了礼物：...]： 我给某个特定成员送了礼物。
     - [${myRealName}的表情包：...], [${myRealName}的语音：...], [${myRealName}发来的照片/视频：...]：我发送了特殊类型的消息，群成员可以对此发表评论。
+    - [${myRealName}发送了位置：{地点名}；地址：{详细地址}]：我把我所在的位置分享给了全群（“；地址：{详细地址}”部分可能不存在，那就只知道地点名）。群成员应当把它当作我此刻的真实所在地，并据此作出反应，比如说这地方他知道、问我在那干嘛、说要过来找我。
     - [${myRealName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。
     - [${myRealName}撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据ai成员们的人设和当前群聊的氛围对此作出自然的反应。
     - [system: ...], [...邀请...加入了群聊], [...将...移出了群聊], [...修改群名为...]: 系统通知或事件，群成员应据此作出反应，例如欢迎新人、讨论新群名等。
@@ -126,7 +127,8 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
   - **发送表情包**: [{成员真名}的表情包：{表情名称}]
   - **语音**: [{成员真名}的语音：{语音转述的文字}]
   - **照片/视频**: [{成员真名}发来的照片/视频：{内容描述}]
-  - **引用消息**: [{成员真名}引用“{被引用内容}”并回复：{回复内容}]\n\n`;
+  - **引用消息**: [{成员真名}引用“{被引用内容}”并回复：{回复内容}]
+  - **发送位置**: [{成员真名}发送了位置：{地点名}；地址：{详细地址}]。当某个成员想告诉大家他在哪、约大家碰面或指路时使用。地点名是店名或地标，详细地址是门牌路名；说不出确切门牌时可以省略“；地址：{详细地址}”，只写地点名。地点必须符合该成员的人设和当前世界观。\n\n`;
 
     const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
     if (allWorldBookContent.includes('<orange>')) {
@@ -135,6 +137,11 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
 
 
     prompt += `4. **你的输出格式 (极其重要)**: 你生成的每一条消息都 **必须** 严格遵循以下格式之一。每条消息占一行。请用成员的 **真名** 填充格式中的 \`{成员真名}\`。\n${outputFormats}\n\n`;
+    // 内容约束：只管束"照片/视频描述怎么写"这一步；风格与画面比例在生图时另加。
+    const groupImageContentRule = (group.imageContentRule || '').trim();
+    if (groupImageContentRule) {
+        prompt += `   - **照片/视频描述的内容约束**: 任何成员使用 [{成员真名}发来的照片/视频：{内容描述}] 格式时，{内容描述}必须遵守：${groupImageContentRule}。这条只约束画面描述怎么写，不影响普通聊天内容。\n\n`;
+    }
     prompt += `   - **重要**: 群聊不支持AI成员接收/退回转账或接收礼物的特殊指令，也不支持更新状态。你只需要通过普通消息来回应我发送的转账或礼物即可。\n\n`;
 
     prompt += `5. **模拟群聊氛围**: 为了让群聊看起来真实、活跃且混乱，你的每一次回复都必须遵循以下随机性要求：\n`;
@@ -158,12 +165,21 @@ function generateGroupSystemPrompt(group, retrievedContext = '') {
     prompt += `   - 你的回复中只能包含第4点列出的合法格式的消息。绝对不能包含任何其他内容，如 \`[场景描述]\`, \`(心理活动)\`, \`*动作*\` 或任何格式之外的解释性文字。\n`;
     prompt += `   - 保持对话的持续性，不要主动结束对话。\n\n`;
     // 时间感知：仅在该群开启时注入当前时间（与私聊、processTimePerception 用同一个开关）
-    if (group.timePerceptionEnabled) {
-        const now = new Date();
-        const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
-        const currentWeekDay = weekDays[now.getDay()];
-        const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${currentWeekDay} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
-        prompt += `7. **当前时间**: 现在是 ${currentTime}。群成员应知晓当前时间，但不要主动提及或评论时间。\n\n`;
+    // 调节旋钮：天气并进这一条，与私聊线上第 16 条同构，见 plans/weather-prompt-refit.md
+    if (group.timePerceptionEnabled || weatherText) {
+        let line = '';
+        if (group.timePerceptionEnabled) {
+            const now = new Date();
+            const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
+            const currentWeekDay = weekDays[now.getDay()];
+            const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${currentWeekDay} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+            line = weatherText
+                ? `7. **当前时间与天气**: 现在是 ${currentTime}，${weatherText}。群成员应知晓当前时间与天气，但不要主动提及或评论时间和天气。\n\n`
+                : `7. **当前时间**: 现在是 ${currentTime}。群成员应知晓当前时间，但不要主动提及或评论时间。\n\n`;
+        } else {
+            line = `7. **当前天气**: ${weatherText}。群成员应知晓当前天气，但不要主动提及或评论天气。\n\n`;
+        }
+        prompt += line;
     }
 
     prompt += `现在，请根据以上设定，开始扮演群聊中的所有角色。`;

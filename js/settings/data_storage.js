@@ -1,28 +1,75 @@
 // --- 文件位置: js/settings/data_storage.js ---
 
 const dataStorage = {
+    // ★ 唯一的顺序真相：饼图和详情列表都按这个数组来排。
+    //   顺序是**按导出关系和依赖关系**排的，不是按体积：
+    //     1  系统设置        —— 哪怕什么都没建，这里也有内容，放第一个
+    //     2-4 角色与聊天 / 记忆与向量 / 角色手机数据 —— 这三项一起导出，必须挨着
+    //     5  个性化          —— 很多也是聊天相关的设置
+    //     6  世界书          —— 体积小，但几乎所有功能都用到
+    //     7  喵坛            —— 聊天之外最占空间的，但本身依赖聊天+世界书
+    //     8  ToDouo
+    //     9  游戏            —— 体积很小，同样依赖聊天+世界书
+    //     10 本地媒体        —— 唯一不参与导出的，放最后
+    //   往下加新分类时**必须**同时加进这里，否则详情列表不会显示它
+    //   （历史上语音/图片就是这么漏掉的）。
+    categoryOrder: [
+        'settings',
+        'characters',
+        'memory',
+        'peek',
+        'personalization',
+        'worldBooks',
+        'forum',
+        'study',
+        'rpg',
+        'localMedia'
+    ],
+
+    // ★ 配色 = 沿 categoryOrder 从深到浅的单色蓝渐变，一一对应，无重复色。
+    //   为什么是渐变而不是"相邻色差最大化"：饼图的作用只是让人一眼看出**哪几项很大**，
+    //   不需要分辨挨着的扇区 —— 精确数值下面的列表里有数字，看得更清楚。
+    //   而顺序本身已经把几个大项拉开了距离（角色与聊天 2、喵坛 7、ToDouo 8、本地媒体 10），
+    //   在渐变上自然落到深/中/浅不同段位，该区分的地方就已经区分开了。
+    //   渐变还顺带保证了列表从上到下颜色是连续过渡的，比跳变好看。
     categoryColors: {
-        settings:        '#0C3A6C',
-        worldBooks:      '#05519F',
-        characters:      '#0462C2',
-        memory:          '#1080E6',
-        peek:            '#2590EE',
-        study:           '#3A9EF6',
-        forum:           '#7EBEFB',
-        rpg:             '#BADBFC',
-        personalization: '#E0EDFE'
+        settings:        '#1B60A1',
+        characters:      '#1B6CB3',
+        memory:          '#1F78BC',
+        peek:            '#2E81C2',
+        personalization: '#3991CC',
+        worldBooks:      '#4EA2D8',
+        forum:           '#77B7E3',
+        study:           '#A5D2F1',
+        rpg:             '#CEE9FB',
+        localMedia:      '#E6F5FB'
     },
 
     categoryNames: {
+        settings:        '系统设置',
         characters:      '角色与聊天',
-        worldBooks:      '世界书',
         memory:          '记忆与向量',
         peek:            '角色手机数据',
-        study:           '学习',
-        forum:           '喵坛',
-        rpg:             '游戏',
         personalization: '个性化',
-        settings:        '系统设置'
+        worldBooks:      '世界书',
+        forum:           '喵坛',
+        study:           'ToDouo',
+        rpg:             '游戏',
+        localMedia:      '本地媒体'
+    },
+
+    /**
+     * 把 categorizedSizes 拉平成 [{key, value}]，按 categoryOrder 排好、滤掉 0。
+     * 饼图和详情列表都走这里 —— 顺序只有一份实现，两边不可能再排得不一样。
+     * 不在 categoryOrder 里的分类会被追加到末尾（见 categoryOrder 上的说明）。
+     */
+    orderedEntries: function (categorizedSizes) {
+        const sizes = categorizedSizes || {};
+        const known = this.categoryOrder.filter(key => key in sizes);
+        const unregistered = Object.keys(sizes).filter(key => !this.categoryOrder.includes(key));
+        return known.concat(unregistered)
+            .map(key => ({ key, value: sizes[key] || 0 }))
+            .filter(item => item.value > 0);
     },
 
     getStorageInfo: async function () {
@@ -41,15 +88,16 @@ const dataStorage = {
         }
 
         let categorizedSizes = {
+            settings: 0,
             characters: 0,
-            worldBooks: 0,
             memory: 0,
             peek: 0,
-            study: 0,
-            forum: 0,
-            rpg: 0,
             personalization: 0,
-            settings: 0
+            worldBooks: 0,
+            forum: 0,
+            study: 0,
+            rpg: 0,
+            localMedia: 0
         };
 
         try {
@@ -147,16 +195,35 @@ const dataStorage = {
             categorizedSizes.personalization += stringify(db.homeWidgetSettings);
 
             // 7. 系统设置
-            categorizedSizes.settings += stringify(db.apiSettings);
-            categorizedSizes.settings += stringify(db.apiPresets);
-            categorizedSizes.settings += stringify(db.pomodoroSettings);
-            categorizedSizes.settings += stringify(db.pomodoroTasks);
-            categorizedSizes.settings += stringify(db.homeScreenMode);
-            categorizedSizes.settings += stringify(db.fontUrl);
-            categorizedSizes.settings += stringify(db.homeStatusBarColor);
-            categorizedSizes.settings += stringify(db.homeNavigationBarColor);
+            // ★ 这里原先只统计了 8 个 key，globalSettingKeys 白名单里另外 14 个
+            //   （识图/天气/向量/通知/推送/语音图片配置、GitHub 仓库凭据与绑定、
+            //   各种开关）一项都没算，导致"什么都没建"时这一类显示得比实际小。
+            //   现在直接对着 database.js 的 globalSettingKeys 走一遍，
+            //   以后往白名单加 key 就自动算进来，不用再改这里。
+            if (typeof globalSettingKeys !== 'undefined' && Array.isArray(globalSettingKeys)) {
+                // 个性化那一类已经单独统计过的 key，别重复计一遍
+                const countedElsewhere = new Set([
+                    'wallpaper', 'customIcons', 'bubbleCssPresets', 'globalCss', 'globalCssPresets',
+                    'homeSignature', 'insWidgetSettings', 'homeWidgetSettings',
+                    'studySettings'   // 归到 ToDouo
+                ]);
+                globalSettingKeys.forEach(key => {
+                    if (countedElsewhere.has(key)) return;
+                    categorizedSizes.settings += stringify(db[key]);
+                });
+            } else {
+                // 白名单拿不到时的兜底：至少保住原有的几项
+                categorizedSizes.settings += stringify(db.apiSettings);
+                categorizedSizes.settings += stringify(db.apiPresets);
+                categorizedSizes.settings += stringify(db.pomodoroSettings);
+                categorizedSizes.settings += stringify(db.pomodoroTasks);
+                categorizedSizes.settings += stringify(db.homeScreenMode);
+                categorizedSizes.settings += stringify(db.fontUrl);
+                categorizedSizes.settings += stringify(db.homeStatusBarColor);
+                categorizedSizes.settings += stringify(db.homeNavigationBarColor);
+            }
 
-// ★ 8. 学习模块
+// ★ 8. ToDouo 模块
 categorizedSizes.study += stringify(db.studyBooks);
 categorizedSizes.study += stringify(db.studyQuestions);
 categorizedSizes.study += stringify(db.studyRecords);
@@ -165,17 +232,43 @@ categorizedSizes.study += stringify(db.studyExams);
 categorizedSizes.study += stringify(db.studyExamRecords);
 categorizedSizes.study += stringify(db.studySettings);
 // ★ V8：正文和共读消息在独立表，需从 Dexie 读取；★ V12：章节总结同
+// ★ studyPageCache 原先整张表都没统计：它按 bookId 存整本书的分页结果，
+//   等于把正文又存了一份，体积和 studyBookContents 同量级 —— 漏掉它会让
+//   ToDouo 显示的占用差出快一半。虽然可随时重算，但空间是实打实占着的。
 if (typeof dexieDB !== 'undefined') {
     try {
-        const [allContents, allCoreadMsgs, allBookSummaries] = await Promise.all([
+        const [allContents, allCoreadMsgs, allBookSummaries, allPageCache] = await Promise.all([
             dexieDB.studyBookContents.toArray(),
             dexieDB.studyCoreadMessages.toArray(),
             dexieDB.studyBookSummaries.toArray(),
+            dexieDB.studyPageCache ? dexieDB.studyPageCache.toArray() : Promise.resolve([]),
         ]);
         allContents.forEach(r => categorizedSizes.study += stringify(r));
         allCoreadMsgs.forEach(r => categorizedSizes.study += stringify(r));
         allBookSummaries.forEach(r => categorizedSizes.study += stringify(r));
+        allPageCache.forEach(r => categorizedSizes.study += stringify(r));
     } catch(e) {}
+}
+
+// ★ 9. 本地媒体 = 语音音频字节 + 语音元数据 + 生图图片字节，合成一项统计。
+//   两者都是"只存在于本机的媒体缓存"：不进备份、恢复时会被清空、可按限额淘汰，
+//   归档过的还能从 GitHub 仓库拉回来 —— 性质完全一致，所以不拆成两项。
+//   ★ 绝不能 stringify 这两张表：几兆的音频/图片字节读进内存只为算个大小。
+//   统一走各自的 stats 函数，它们只遍历元数据里的 size 字段。
+if (typeof getVoiceCacheStats === 'function') {
+    try {
+        const voiceStats = await getVoiceCacheStats();
+        // metaBytes 原先没算：voiceClips 元数据带 TTS 原文，条数多了不可忽略。
+        // 字节被淘汰、只剩元数据的 clip 也照样占空间，所以两项都要加。
+        categorizedSizes.localMedia += voiceStats.cachedBytes + (voiceStats.metaBytes || 0);
+    } catch (e) { console.warn('[storage] 语音缓存统计失败:', e); }
+}
+
+if (typeof getImageCacheStats === 'function') {
+    try {
+        const imageStats = await getImageCacheStats();
+        categorizedSizes.localMedia += imageStats.cachedBytes;
+    } catch (e) { console.warn('[storage] 图片缓存统计失败:', e); }
 }
 
             const totalSize = Object.values(categorizedSizes).reduce((sum, size) => sum + size, 0);
@@ -260,13 +353,14 @@ function renderStorageChart(container, info) {
         myStorageChart = echarts.init(container);
     }
 
-    const chartData = Object.entries(info.categorizedSizes)
-        .filter(([_, value]) => value > 0)
-        .map(([key, value]) => ({
-            name: dataStorage.categoryNames[key] || key,
-            value: value,
+    // ★ 饼图与详情列表共用 dataStorage.orderedEntries()：
+    //   扇区顺序 = 列表顺序 = 配色深浅顺序。
+    const chartData = dataStorage.orderedEntries(info.categorizedSizes)
+        .map(item => ({
+            name: dataStorage.categoryNames[item.key] || item.key,
+            value: item.value,
             itemStyle: {
-                color: dataStorage.categoryColors[key] || '#999' 
+                color: dataStorage.categoryColors[item.key] || '#999'
             }
         }));
 
@@ -326,20 +420,22 @@ function renderStorageDetails(container, info) {
     container.innerHTML = ''; 
     container.classList.add('storage-details-container');
 
-    // 定义类别的显示顺序（与顶部定义的顺序一致）
-    const categoryOrder = ['settings', 'worldBooks', 'characters', 'memory', 'peek', 'study', 'forum', 'rpg', 'personalization'];
+    // ★ 顺序与饼图共用 orderedEntries()。以前这里另有一份写死的 categoryOrder 白名单，
+    //   新加的语音/图片没登记进去，于是"算进了总量、画进了饼图、却不在列表里"。
+    const sortedData = dataStorage.orderedEntries(info.categorizedSizes);
 
-    // 按照预定义的顺序排序
-    const sortedData = categoryOrder
-        .map(key => ({ 
-            key, 
-            value: info.categorizedSizes[key] || 0 
-        }))
-        .filter(item => item.value > 0); // 只显示有数据的类别
+    // 没有独立导出通道的分类，右侧显示说明文字而不是导出按钮。
+    // 能导出的分类见 exportPartialData() 的 switch。
+    const noExportNotes = {
+        memory:     '随角色导出',
+        peek:       '随角色导出',
+        localMedia: '不参与备份'
+    };
 
     sortedData.forEach((item) => {
         const name = dataStorage.categoryNames[item.key] || item.key;
         const color = dataStorage.categoryColors[item.key] || '#ccc';
+        const note = noExportNotes[item.key];
 
         const row = document.createElement('div');
         row.className = 'storage-detail-item';
@@ -351,7 +447,7 @@ function renderStorageDetails(container, info) {
             </div>
             <div class="storage-item-right">
                 <span class="storage-detail-size">${formatBytes(item.value)}</span>
-                ${(item.key !== 'memory' && item.key !== 'peek') ? `<button class="btn-export-sm">导出</button>` : '<span style="font-size:11px;color:#aaa;">随角色导出</span>'}
+                ${note ? `<span style="font-size:11px;color:#aaa;">${note}</span>` : `<button class="btn-export-sm">导出</button>`}
             </div>
         `;
 
@@ -464,7 +560,11 @@ function setupStorageAnalysisScreen() {
                 if (confirmed) {
                     const hideDeleting = typeof showLoadingToast === 'function' ? showLoadingToast("正在执行清理...") : () => {};
                     if (toDelete.length > 0) {
-                        await dexieDB.messages.bulkDelete(toDelete); // 从数据库抹除
+                        if (typeof deleteMessagesFromDB === 'function') {
+                            await deleteMessagesFromDB(toDelete);
+                        } else {
+                            await dexieDB.messages.bulkDelete(toDelete);
+                        }
                     }
                     if (snapshotTargets.length > 0) {
                         // 同步清空内存对象与 memories 表（挂载对象与表记录是两份，须都更新）

@@ -216,7 +216,13 @@ function createMessageBubbleElement(message) {
     // 兼容全角和半角冒号，兼容前后空格
     const unifiedStickerRegex = /\[(.*?)的表情包[:：]\s*(.*?)\]/;
     const legacyReceivedStickerRegex = /\[(?:.+?)发送的表情包[:：]\s*([\s\S]+?)\]/i;
-    const voiceRegex = /\[(?:.+?)的语音[:：]\s*([\s\S]+?)\]/;
+    // ★ 语音正则统一取 js/chat/chat_voice_service.js 里那一份 ——
+    //   这里原先另写了一份，两处各写必然漂移：改了一处忘了另一处，就会出现
+    //   "气泡画成语音条但合成层不认"或者反过来的鬼故事。
+    //   service 万一没加载上就退回内联的同一个模式，不让气泡直接崩。
+    const voiceRegex = typeof VOICE_MESSAGE_REGEX !== 'undefined'
+        ? VOICE_MESSAGE_REGEX
+        : /\[(?:.+?)的语音[:：]\s*([\s\S]+?)\]/;
     const photoVideoRegex = /\[(?:.+?)发来的照片\/视频[:：]\s*([\s\S]+?)\]/;
     
     // 转账超级宽容版：允许中英文分号、逗号；允许只写金额不写备注；兼容各种乱加空格
@@ -228,6 +234,9 @@ function createMessageBubbleElement(message) {
     const groupGiftRegex = /\[(.*?)\s*向\s*(.*?)\s*送来了礼物[:：]\s*([\s\S]+?)\]/;
     const imageRecogRegex = /\[.*?发来了一张图片[:：]\]/;
     const textRegex = /\[(?:.+?)的消息[:：]\s*([\s\S]+?)\]/;
+    // 位置：先整体抓 body，再在分支里按「；地址：」拆成地点名 + 详细地址（地址选填）
+    // 发送者名里禁冒号，免得正文提到「发送了位置：」的普通消息被这条抢走（本分支在 textRegex 之前）
+    const locationRegex = /\[(?:[^\[\]：:]+?)发送了位置[:：]\s*([\s\S]+?)\]/;
     const pomodoroRecordRegex = /\[专注记录\]\s*任务：([\s\S]+?)，时长：([\s\S]+?)，期间与 .*? 互动 (\d+)\s*次。/;
 
     const pomodoroMatch = content.match(pomodoroRecordRegex);
@@ -242,6 +251,7 @@ function createMessageBubbleElement(message) {
     const groupGiftMatch = content.match(groupGiftRegex);
     const imageRecogMatch = content.match(imageRecogRegex);
     const textMatch = content.match(textRegex);
+    const locationMatch = content.match(locationRegex);
 
     if (pomodoroMatch) {
         const taskName = pomodoroMatch[1];
@@ -330,25 +340,205 @@ function createMessageBubbleElement(message) {
                 </div>`;
         }
     } else if (voiceMatch) {
+        const voiceText = voiceMatch[1].trim();
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'voice-bubble';
         bubbleElement.style.backgroundColor = bubbleTheme.bg;
         bubbleElement.style.color = bubbleTheme.text;
 
+        // 合成前只能按字数估个占位（实测同字数时长能差一倍），
+        // 真的播过一次之后播放器会用 original_duration 替掉它
         let duration = "0";
         if (typeof calculateVoiceDuration === 'function') {
-            duration = calculateVoiceDuration(voiceMatch[1].trim());
+            duration = calculateVoiceDuration(voiceText);
         }
 
-        bubbleElement.innerHTML = `<svg class="play-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg><svg class="voice-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 9v6h2V9H6z"></path><path d="M7 7v10h2V7h-2z"></path><path d="M11 5v14h2V5h-2z"></path><path d="M15 9v6h2V9H6z"></path></svg><span class="duration">${duration}"</span>`;
+        // 播放器要靠这几个 data 属性找回原文和归属，别删
+        bubbleElement.dataset.voiceRaw = content || '';
+        bubbleElement.dataset.voiceMsgId = id || '';
+        bubbleElement.dataset.voiceChatId = currentChatId || '';
+        bubbleElement.dataset.voiceState = 'idle';
+
+        // ★ 播放键是真的 <button>：能聚焦、能键盘触发、有 aria-label。
+        //   原先只是个静态三角 SVG，点整个气泡才有反应。
+        //   波形改用 CSS 竖条 —— 原来那个 SVG 有两条 path 写错了（H6 应为 H15/H3），
+        //   实际只画得出两条竖线。竖条同时兼任播放进度条。
+        bubbleElement.innerHTML =
+            `<button type="button" class="voice-play-btn" data-voice-state="idle"`
+            + ` aria-label="播放语音（首次需要合成，约 20 秒）">`
+            + `<svg class="vp-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>`
+            + `<svg class="vp-icon-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>`
+            + `<svg class="vp-icon-fail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6"/><path d="M12 16.5v.5"/></svg>`
+            + `<span class="vp-spinner" aria-hidden="true"></span>`
+            + `</button>`
+            + `<span class="voice-wave" aria-hidden="true">`
+            + '<i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>'
+            + `</span>`
+            + `<span class="duration">${duration}"</span>`;
+
         const transcriptDiv = document.createElement('div');
         transcriptDiv.className = 'voice-transcript';
-        transcriptDiv.textContent = voiceMatch[1].trim();
+        transcriptDiv.textContent = voiceText;
         wrapper.appendChild(transcriptDiv);
+
+        // ★ 已有音频的话把按钮标成"可播"。放在这里而不是各个渲染入口 ——
+        //   createMessageBubbleElement 有 7 个调用点，逐个接必然漏一两个。
+        //   不 await：只查缓存不发请求，慢一点也不该拖住气泡创建。
+        if (typeof refreshVoiceBubbleState === 'function') {
+            refreshVoiceBubbleState(bubbleElement, chat, currentChatType, senderId)
+                .catch(() => {});
+        }
     } else if (photoVideoMatch) {
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'pv-card';
-        bubbleElement.innerHTML = `<div class="pv-card-content">${photoVideoMatch[1].trim()}</div><div class="pv-card-image-overlay" style="background-image: url('${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}');"></div><div class="pv-card-footer"><svg viewBox="0 0 24 24"><path d="M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z"></path></svg><span>照片/视频・点击查看</span></div>`;
+        const hasImageMedia = typeof isImageMediaMessage === 'function'
+            ? isImageMediaMessage(message)
+            : !!(message && message.media && message.media.kind === 'image');
+
+        const description = document.createElement('div');
+        description.className = 'pv-card-content';
+        description.textContent = photoVideoMatch[1].trim();
+
+        const overlay = document.createElement('div');
+        overlay.className = 'pv-card-image-overlay';
+        overlay.style.backgroundImage = `url("${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}")`;
+
+        const footer = document.createElement('div');
+        footer.className = 'pv-card-footer';
+        const coverIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        coverIcon.setAttribute('viewBox', '0 0 24 24');
+        coverIcon.setAttribute('aria-hidden', 'true');
+        const coverPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        coverPath.setAttribute('d', 'M4,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M4,6V18H20V6H4M10,9A1,1 0 0,1 11,10A1,1 0 0,1 10,11A1,1 0 0,1 9,10A1,1 0 0,1 10,9M8,17L11,13L13,15L17,10L20,14V17H8Z');
+        coverIcon.appendChild(coverPath);
+        const media = hasImageMedia && typeof normalizeImageMedia === 'function'
+            ? normalizeImageMedia(message.media)
+            : (hasImageMedia ? message.media : null);
+        const livePending = !!(media && media.state === 'pending'
+            && typeof isImageGenerationPending === 'function'
+            && isImageGenerationPending(message.id, typeof currentChatId !== 'undefined' ? currentChatId : ''));
+        const footerText = document.createElement('span');
+        footerText.textContent = !hasImageMedia
+            ? '照片/视频・点击查看'
+            : livePending
+                ? '正在生成图片・点击查看描述'
+                : media && media.state === 'pending'
+                    ? '生成已中断・点击重试'
+                : media && media.state === 'failed'
+                    ? '生成失败・点击查看描述'
+                    : '图片加载中・点击查看描述';
+        footer.append(coverIcon, footerText);
+
+        const generateButton = document.createElement('button');
+        generateButton.type = 'button';
+        generateButton.className = 'pv-card-generate';
+        generateButton.title = media && (media.state === 'failed' || media.state === 'pending') ? '重试生成图片' : '生成图片';
+        generateButton.setAttribute('aria-label', generateButton.title);
+        generateButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3 1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z"/><path d="m19 14 .7 2.3L22 17l-2.3.7L19 20l-.7-2.3L16 17l2.3-.7L19 14Z"/></svg>';
+        generateButton.hidden = hasImageMedia && (!media || livePending || media.state === 'ready');
+        generateButton.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof generateImageForMessage !== 'function') {
+                if (typeof showToast === 'function') showToast('图片生成功能尚未加载');
+                return;
+            }
+            generateButton.disabled = true;
+            try {
+                await generateImageForMessage(message, {
+                    chatId: typeof currentChatId !== 'undefined' ? currentChatId : '',
+                    chatType: typeof currentChatType !== 'undefined' ? currentChatType : ''
+                });
+            } catch (error) {
+                if (typeof showToast === 'function') showToast(error.message || '图片生成失败');
+            } finally {
+                generateButton.disabled = false;
+            }
+        });
+        footer.appendChild(generateButton);
+
+        if (hasImageMedia) {
+            // 右上角放大按钮：真实图片加载成功后才出现，点击打开图片查看器
+            const zoomButton = document.createElement('button');
+            zoomButton.type = 'button';
+            zoomButton.className = 'image-zoom-btn';
+            zoomButton.title = '查看大图';
+            zoomButton.setAttribute('aria-label', '查看大图');
+            zoomButton.hidden = true;
+            zoomButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+            zoomButton.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                const src = overlay.dataset.imageObjectUrl;
+                if (src && typeof openImageViewer === 'function') openImageViewer(message, src);
+            });
+            bubbleElement.appendChild(zoomButton);
+            bubbleElement.dataset.imageMedia = 'true';
+            bubbleElement._imageGenerateButton = generateButton;
+            bubbleElement._imageFooterText = footerText;
+            bubbleElement._imageHydrationToken = Symbol('image-card');
+            const token = bubbleElement._imageHydrationToken;
+            Promise.resolve().then(async () => {
+                try {
+                    const result = await readImageMessageBytes(message);
+                    if (bubbleElement._imageHydrationToken !== token) return;
+                    if (bubbleElement.ownerDocument && bubbleElement.ownerDocument.body && !bubbleElement.ownerDocument.body.contains(bubbleElement)) return;
+                    if (!result || !result.bytes) {
+                        footerText.textContent = livePending
+                            ? '正在生成图片・点击查看描述'
+                            : media && media.state === 'pending'
+                                ? '生成已中断・点击重试'
+                            : media && media.state === 'failed'
+                                ? '生成失败・点击查看描述'
+                                : '图片暂不可用・点击查看描述';
+                        generateButton.hidden = !!(livePending || media && media.source === 'uploaded');
+                        bubbleElement.classList.add('pv-card-unavailable');
+                        return;
+                    }
+                    const objectUrl = createImageObjectUrl(
+                        result.bytes,
+                        result.mime,
+                        message.media && message.media.localCacheKey
+                    );
+                    if (!objectUrl) return;
+                    overlay.style.backgroundImage = `url("${objectUrl}")`;
+                    overlay.dataset.imageObjectUrl = objectUrl;
+                    overlay.classList.remove('is-placeholder');
+                    footerText.textContent = '照片/视频・点击查看';
+                    generateButton.hidden = true;
+                    zoomButton.hidden = false;
+                    bubbleElement.classList.add('pv-card-real-image');
+                    // 卡片默认是 1:1 占位；读到真实图片后按比例撑高，保证完整显示不裁剪
+                    // （overlay 是 cover，容器比例等于图片比例时 cover 即完整铺满）
+                    const probe = new Image();
+                    probe.onload = () => {
+                        if (bubbleElement._imageHydrationToken !== token) return;
+                        if (probe.naturalWidth > 0 && probe.naturalHeight > 0) {
+                            bubbleElement.style.aspectRatio = `${probe.naturalWidth} / ${probe.naturalHeight}`;
+                        }
+                    };
+                    probe.src = objectUrl;
+                } catch (error) {
+                    footerText.textContent = error.code === 'image-repo-missing'
+                        ? '图片仓库不可用・点击查看描述'
+                        : '图片加载失败・点击查看描述';
+                    generateButton.hidden = !!(media && media.source === 'uploaded');
+                    bubbleElement.classList.add('pv-card-unavailable');
+                }
+            });
+        }
+        bubbleElement.append(description, overlay, footer);
+    } else if (locationMatch) {
+        const body = locationMatch[1].trim();
+        const sepIndex = body.indexOf('；地址：');
+        const locName = sepIndex === -1 ? body : body.slice(0, sepIndex).trim();
+        const locAddress = sepIndex === -1 ? '' : body.slice(sepIndex + 4).trim();
+
+        bubbleElement = document.createElement('div');
+        bubbleElement.className = 'location-card';
+        bubbleElement.innerHTML = `<div class="location-card-map"><svg class="location-card-pin" viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5A2.5 2.5 0 0 1 9.5 9 2.5 2.5 0 0 1 12 6.5 2.5 2.5 0 0 1 14.5 9a2.5 2.5 0 0 1-2.5 2.5z"/></svg></div><div class="location-card-info"><p class="location-card-name"></p>${locAddress ? '<p class="location-card-address"></p>' : ''}</div>`;
+        bubbleElement.querySelector('.location-card-name').textContent = locName;
+        if (locAddress) bubbleElement.querySelector('.location-card-address').textContent = locAddress;
     } else if (privateSentTransferMatch || privateReceivedTransferMatch || groupTransferMatch) {
         const isSentTransfer = !!privateSentTransferMatch || (groupTransferMatch && isSent);
         const match = privateSentTransferMatch || privateReceivedTransferMatch || groupTransferMatch;
@@ -383,7 +573,49 @@ function createMessageBubbleElement(message) {
     } else if (imageRecogMatch || urlRegex.test(content)) {
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'image-bubble';
-        bubbleElement.innerHTML = `<img src="${content}" alt="图片消息">`;
+        const legacyImage = document.createElement('img');
+        const imagePart = Array.isArray(message.parts) && message.parts.find(p => p && p.type === 'image' && p.data);
+        legacyImage.src = imagePart ? imagePart.data : content;
+        legacyImage.alt = '图片消息';
+        bubbleElement.appendChild(legacyImage);
+        // 右上角放大按钮：点击查看大图（下载挪进查看器弹窗里）
+        const legacyZoom = document.createElement('button');
+        legacyZoom.type = 'button';
+        legacyZoom.className = 'image-zoom-btn';
+        legacyZoom.title = '查看大图';
+        legacyZoom.setAttribute('aria-label', '查看大图');
+        legacyZoom.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+        legacyZoom.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (legacyImage.src && typeof openImageViewer === 'function') openImageViewer(message, legacyImage.src);
+        });
+        bubbleElement.appendChild(legacyZoom);
+
+        // 右下角转文字按钮：和 pv-card 的生图按钮同一个位置，两种图片气泡的
+        // "右下角动作键"就统一了。只有真的带 base64 的图片能转 —— 纯 URL 图片
+        // 走的是同一个分支但没有 parts，convert 那边也拿不到数据。
+        if (imagePart && typeof convertImageMessageToText === 'function') {
+            const ocrButton = document.createElement('button');
+            ocrButton.type = 'button';
+            ocrButton.className = 'image-ocr-btn';
+            ocrButton.title = '转文字';
+            ocrButton.setAttribute('aria-label', '转文字');
+            ocrButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M9 9h6"/><path d="M12 9v6"/></svg>';
+            ocrButton.addEventListener('click', event => {
+                event.preventDefault();
+                // 多选模式下不吞事件：交给 chat_room 的委托去勾选这条消息。
+                // 转文字不可逆，误触的代价比"少一次转化"大得多。
+                if (typeof isInMultiSelectMode !== 'undefined' && isInMultiSelectMode) return;
+                event.stopPropagation();
+                if (typeof isImageConverting === 'function' && isImageConverting(message.id)) {
+                    if (typeof showToast === 'function') showToast('该图片正在转化中');
+                    return;
+                }
+                convertImageMessageToText(message.id);
+            });
+            bubbleElement.appendChild(ocrButton);
+        }
     } else if (textMatch) {
         bubbleElement = document.createElement('div');
         bubbleElement.className = `message-bubble ${isSent ? 'sent' : 'received'}`;

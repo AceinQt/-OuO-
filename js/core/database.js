@@ -18,7 +18,19 @@ const globalSettingKeys =[
     // ★ 进阶推送节点设置（CF Worker 地址 / VAPID 公钥 / 令牌 / 订阅凭证）
     'globalPushSettings',
     // ★ 识图 API 设置（图片转文字描述专用；空 = 跟随各聊天自己的 API）
-    'globalVisionSettings'
+    'globalVisionSettings',
+    // ★ 天气 API 设置（用户自行配置，供后续聊天上下文读取）
+    'weatherSettings',
+    // ★ 语音合成设置（豆包音频生成：Key / 音色预设 / 按秒配额 / 本地缓存上限）
+    //   注：必须在这个白名单里，否则 saveGlobalKeys 写得进去、loadData 读不回来，
+    //   表现为"配置和今日用量每次重启都归零"。
+    'voiceSettings',
+    'imageSettings',
+    // ★ GitHub 仓库定义（凭据在这里，可被语音/图片等多个用途共享）
+    'githubRepos',
+    // ★ 用途绑定（哪个功能用哪个仓库、存哪个目录）。和上面拆开是因为仓库是共享资源，
+    //   同一个仓库可以被多个用途引用，凭据不该跟着用途复制好几份。
+    'githubBindings'
 ];
 
 // 2. 初始化内存数据库对象 (db) -> 唯一来源
@@ -67,6 +79,36 @@ window.db = {
     //   apiPreset: 预设名；空字符串 = 同聊天API（跟随每个聊天自己的 chatApiPreset）
     //   一旦指定预设，所有聊天的图片转化都走它
     globalVisionSettings: { apiPreset: '' },
+
+    // ★ GitHub 仓库定义 + 用途绑定（见 js/api/github_repo_api.js）
+    //   githubRepos:    [{ id, name, token, username, repo, branch }]
+    //   githubBindings: { voice: { enabled, repoId, pathPrefix }, image: {...} }
+    //   拆成两层是因为仓库是可被多个用途共享的资源：绑定只存一个 repoId 引用，
+    //   改令牌只改一处。每条已归档的内容还会记下自己当时用的 repoId，
+    //   所以换绑定不会让旧内容失联。
+    githubRepos: [],
+    githubBindings: {},
+
+    // ★ 天气 API 设置：全局服务凭据 + 可复用地点预设
+    weatherSettings: {
+        enabled: false,
+        provider: 'qweather',
+        apiHost: '',
+        apiKey: '',
+        locationPresets: [],
+        defaultLocationPresetId: '',
+        // 额度刹车：和风超额不报错、直接发账单，本地计数器是唯一防线
+        dailyLimit: 800,
+        dailyCount: 0,
+        dailyCountDate: ''
+    },
+    imageSettings: {
+        apiUrl: '',
+        apiKey: '',
+        imagePresets: [],
+        defaultPresetId: '',
+        localCacheLimitMB: 10
+    },
     homeStatusBarColor: '#ffffff',
     homeNavigationBarColor: '#ffffff',
 
@@ -230,6 +272,38 @@ dexieDB.version(14).stores({
     await tx.table('forumPosts').toCollection().modify(post => {
         if (post.timestamp === undefined || post.timestamp === null) post.timestamp = 0;
     });
+});
+
+// ★★★ Version 15（语音消息：元数据与音频字节分两张表）★★★
+// voiceClips     — 元数据。体积极小，永久保留
+// voiceClipData  — 音频字节。这一张才是可淘汰的本地缓存
+//
+// 为什么拆两张：LRU 淘汰和存储统计都要遍历所有 clip，如果字节和元数据在一张表里，
+// 为了算个总大小就得把几兆音频全读进内存。跟 studyBooks / studyBookContents 同一个道理。
+//
+// ★ 立起来的不变式：「voiceClips 里有、voiceClipData 里没有」= 云端有副本。
+//   淘汰已归档的 clip 时只删字节、留元数据（里面有 cloudRepoId 和 cloudPath），
+//   下次播放就能从云端拉回来。没归档的 clip 淘汰时元数据一起删 ——
+//   留着会让上层以为"能从云端下载"，然后失败。
+//
+// 索引说明：
+//   lastPlayedAt —— LRU 淘汰要按最久未播放取
+//   cloudRepoId  —— 删仓库前要数"有多少条内容归档在这个仓库里"
+//   chatId/msgId —— 删聊天 / 删消息时级联清理
+dexieDB.version(15).stores({
+    voiceClips:    '&voiceKey, chatId, msgId, lastPlayedAt, cloudRepoId',
+    voiceClipData: '&voiceKey',
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 15 (voiceClips / voiceClipData tables added)...");
+});
+
+// ★★★ Version 16（双层图片消息：独立本地缓存表）★★★
+// imageCache 只保存浏览器本地的图片字节，不随消息备份导出。
+// 消息中的 media.localCacheKey 是稳定定位键；LRU 字段用于全局缓存淘汰。
+dexieDB.version(16).stores({
+    imageCache: '&key, chatId, messageId, lastAccessedAt'
+}).upgrade(async tx => {
+    console.log("Upgrading database to version 16 (imageCache table added)...");
 });
 
 window.loadData = async () => {
@@ -683,12 +757,18 @@ window.saveMessagesToDB = async (msgs, chatId, chatType) => {
 };
 // msgIds 必须是数组，如 ['id1', 'id2']，单条也要包裹成 [id]
 window.deleteMessagesFromDB = async (msgIds) => {
-    try { await dexieDB.messages.bulkDelete(msgIds); } catch (e) { console.error("❌ 消息删除失败:", e); }
+    try {
+        await dexieDB.messages.bulkDelete(msgIds);
+        if (typeof deleteImageCacheByMessage === 'function') {
+            await Promise.all((msgIds || []).map(id => deleteImageCacheByMessage(id)));
+        }
+    } catch (e) { console.error("❌ 消息删除失败:", e); }
 };
 window.clearChatHistoryInDB = async (chatId) => {
     try {
         const keys = await dexieDB.messages.where({chatId}).primaryKeys();
         await dexieDB.messages.bulkDelete(keys);
+        if (typeof deleteImageCacheByChat === 'function') await deleteImageCacheByChat(chatId);
     } catch (e) { console.error("❌ 清空消息失败:", e); }
 };
 

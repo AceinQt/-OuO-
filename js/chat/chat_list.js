@@ -185,6 +185,21 @@ function setupChatListScreen() {
             });
         }
 
+        // ====== 语音消息按钮：总闸 + 自动合成 ======
+        // 只放这两个开关。音色预设、Key、配额在「API 设置 > 语音」，
+        // 归档仓库在「设置 > GitHub 仓库」，谁用什么声音在各自的角色档案里。
+        // 总闸放在这一层而不是每个聊天里，是为了"额度快用完时一键全关"——
+        // 放到聊天侧边栏就得逐个关，达不到这个目的。
+        const voiceBtn = document.getElementById('chat-sidebar-voice-btn');
+        if (voiceBtn) {
+            voiceBtn.addEventListener('click', async () => {
+                sidebar.classList.remove('active');
+                sidebarOverlay?.classList.remove('visible');
+                await openChatSidebarVoiceDialog();
+            });
+        }
+        refreshChatSidebarVoiceDisplay();
+
     chatListContainer.addEventListener('click', (e) => {
         const chatItem = e.target.closest('.chat-item');
         if (chatItem) {
@@ -199,6 +214,79 @@ function setupChatListScreen() {
         if (!chatItem) return;
         handleChatListLongPress(chatItem.dataset.id, chatItem.dataset.type, e.clientX, e.clientY);
     });
+}
+
+// ============================================================
+// 语音消息（聊天列表侧边栏）
+// ============================================================
+// 这一层只有两个开关：总闸 + 收到后自动合成。
+//   · 音色预设 / API Key / 配额 → API 设置的语音 tab
+//   · 归档仓库                  → 设置页的「GitHub 仓库」
+//   · 谁用什么声音              → 各自的角色档案
+// 总闸放在聊天列表这一层而不是每个聊天里，是为了"额度快用完时一键全关"；
+// 放到单个聊天的侧边栏就得逐个关，达不到这个目的。
+// 私聊本来就能靠"角色不绑音色"关掉，不需要再来一个 per-chat 开关。
+
+/**
+ * 把两个开关写回 db.voiceSettings。
+ * ★ 必须展开合并，不能整体赋值 —— 这个键里还有 apiKey / voicePresets /
+ *   用量计数器等一堆归 API 设置那个 tab 管的字段，整体覆盖会把它们全抹掉。
+ */
+async function saveChatSidebarVoiceSettings({ enabled, autoSynthesize } = {}) {
+    db.voiceSettings = {
+        ...(db.voiceSettings || {}),
+        enabled: !!enabled,
+        autoSynthesize: !!autoSynthesize
+    };
+    await saveGlobalKeys(['voiceSettings']);
+    refreshChatSidebarVoiceDisplay();
+
+    // 开了但还缺东西的话现在就说清楚，否则要等到聊天里没声音才发现
+    if (enabled) {
+        const after = _normalizeVoiceSettings(db.voiceSettings);
+        if (!after.apiKey) {
+            return showToast('已开启，但还没填语音 API Key（API 设置 > 语音）');
+        }
+        if (!after.voicePresets.length) {
+            return showToast('已开启，但还没建音色预设（API 设置 > 语音）');
+        }
+    }
+    showToast('语音设置已保存');
+}
+
+/** 弹出语音消息设置对话框（复用 AppUI.form，不需要专门的 modal HTML） */
+async function openChatSidebarVoiceDialog() {
+    const current = _normalizeVoiceSettings(db.voiceSettings);
+    const result = await AppUI.form([
+        { type: 'switch', key: 'enabled', label: '启用语音消息', value: current.enabled },
+        { type: 'switch', key: 'autoSynthesize', label: '收到后自动合成', value: current.autoSynthesize },
+        {
+            type: 'note', key: 'autoHint', label: '',
+            value: '开启后：语音全部合成好，消息才开始逐条出现。'
+                 + '合成一条约 20 秒，这段时间聊天页会一直显示"正在输入中"，'
+                 + '好处是语音气泡一出现就能点播放。\n\n'
+                 + '关闭后：消息立刻出现，点播放键时才合成，需要现场等约 20 秒。'
+        }
+    ], { title: '语音消息', confirmText: '保存', cancelText: '取消' });
+    if (!result) return;
+    await saveChatSidebarVoiceSettings(result);
+}
+
+/**
+ * 刷新聊天列表侧边栏「语音消息」那一行右侧的状态文案。
+ * 让用户不点进去就知道当前是什么状态 —— 尤其是"开着但还没配好"这种，
+ * 否则只能等聊天里没声音才发现。
+ */
+function refreshChatSidebarVoiceDisplay() {
+    const display = document.getElementById('chat-sidebar-voice-display');
+    if (!display || typeof _normalizeVoiceSettings !== 'function') return;
+    const s = _normalizeVoiceSettings(db.voiceSettings);
+    let text;
+    if (!s.enabled) text = '未开启';
+    else if (!s.apiKey) text = '缺 API Key';
+    else if (!s.voicePresets.length) text = '缺音色预设';
+    else text = s.autoSynthesize ? '自动合成' : '手动合成';
+    display.textContent = text;
 }
 
 // --- 替换 chat_list.js 中的 setupAddCharModal 函数 ---
@@ -535,6 +623,7 @@ function goBackToContacts() {
                             const transferRegex = /\[.*?的转账：.*?元.*?\]|\[.*?给你转账：.*?元.*?\]|\[.*?向.*?转账：.*?元.*?\]/;
                             const stickerRegex = /\[.*?的表情包：.*?\]|\[.*?发送的表情包：.*?\]/;
                             const giftRegex = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/;
+                            const locationRegex = /\[.*?发送了位置：.*?\]/;
 
 
 
@@ -548,6 +637,8 @@ function goBackToContacts() {
                                 lastMessageText = '[照片/视频]';
                             } else if (transferRegex.test(lastMsg.content)) {
                                 lastMessageText = '[转账]';
+                            } else if (locationRegex.test(lastMsg.content)) {
+                                lastMessageText = '[位置]';
                             } else if (imageRecogRegex.test(lastMsg.content) || (lastMsg.parts && lastMsg.parts.some(p => p.type === 'image'))) {
                                 lastMessageText = '[图片]';
                             } else if ((lastMsg.parts && lastMsg.parts.some(p => p.type === 'html'))) {

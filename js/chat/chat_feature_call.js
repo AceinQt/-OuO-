@@ -1047,7 +1047,11 @@ callSendBtn?.addEventListener('touchend', (e) => {
     if (!val) return;
     document.getElementById('message-input').value = val;
     callInput.value = '';
-    sendMessage();
+    // ★ 同 chat_room.js：sendMessage 不 await，异常必须显式接住，否则丢消息时毫无征兆
+    Promise.resolve().then(() => sendMessage()).catch(err => {
+        console.error('❌ [通话内发送] 异常，该消息可能未写入数据库：', err);
+        if (typeof showToast === 'function') showToast('消息发送异常，请截图控制台报错');
+    });
     setTimeout(() => callInput?.focus(), 50);            // 回还焦点
 });
 callSendBtn?.addEventListener('click', () => {           // PC 端兜底
@@ -1055,7 +1059,10 @@ callSendBtn?.addEventListener('click', () => {           // PC 端兜底
     if (!val) return;
     document.getElementById('message-input').value = val;
     callInput.value = '';
-    sendMessage();
+    Promise.resolve().then(() => sendMessage()).catch(err => {
+        console.error('❌ [通话内发送] 异常，该消息可能未写入数据库：', err);
+        if (typeof showToast === 'function') showToast('消息发送异常，请截图控制台报错');
+    });
 });
 
     document.getElementById('call-ai-reply-btn')?.addEventListener('click', () => {

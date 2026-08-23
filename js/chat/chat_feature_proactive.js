@@ -136,6 +136,14 @@ async function applyAwaySettings(chat, mode, dailyLimit, frequency, timerInterva
     }
     // ─────────────────────────────────
 
+    // 【保活】模式一改就地重算一次保活需求。
+    //   必须在这里补：用户点“确定”的那次 click 是先冒泡到 window 跑完 handleUserInteractionForAudio、
+    //   之后才轮到 submit 的默认行为，所以那一次读到的还是旧模式(算出 0 → 直接 return)。
+    //   等模式真正落到 fixed/timer 时手势已经过去，用户直接切后台就没有播放器。
+    //   放在 await 之前、字段已就位之后调用，用户激活仍在有效期内，play() 不会被拦。
+    //   反向切到 random/dnd 时同样受益：这一次调用会把不再需要的保活音频顺手销毁。
+    if (typeof handleUserInteractionForAudio === 'function') handleUserInteractionForAudio();
+
     await saveSingleChat(chat.id, currentChatType);
 
     // 切到免打扰 / 固定模式：这两种不该有顺风车推送，撤销该会话在 CF 上的待发任务
@@ -324,6 +332,10 @@ async function checkAndDeliverProactiveMessages() {
                         parts: [{ type: 'text', text: finalContent }],
                         timestamp: baseTs + i * 1000
                     };
+                    // 与实时回复路径(chat_ai_service.js)对齐：私聊收到的转账须标记 pending，
+                    // 否则 chat_room.js 点击接收守卫(transferStatus === 'pending')不放行，用户无法收款
+                    if (type === 'private' && actionStr === '的转账') newMsg.transferStatus = 'pending';
+                    else if (actionStr === '送来的礼物') newMsg.giftStatus = 'sent';
                     if (actionStr === '撤回了一条消息' || actionStr === '撤回了上一条消息') {
                         newMsg.isWithdrawn = true; newMsg.originalContent = msgInfo.text;
                     }
@@ -618,6 +630,11 @@ async function checkAndDeliverProactiveMessages() {
                         timestamp: msgFakeTimestamp
                     };
 
+                    // 与实时回复路径(chat_ai_service.js)对齐：私聊收到的转账须标记 pending，
+                    // 否则 chat_room.js 点击接收守卫(transferStatus === 'pending')不放行，用户无法收款
+                    if (type === 'private' && actionStr === '的转账') newMsg.transferStatus = 'pending';
+                    else if (actionStr === '送来的礼物') newMsg.giftStatus = 'sent';
+
                     if (actionStr === '撤回了一条消息' || actionStr === '撤回了上一条消息') {
                         newMsg.isWithdrawn = true;
                         newMsg.originalContent = msgInfo.text;
@@ -693,6 +710,34 @@ let generationTimeoutId = null;
 const keepAliveAudioSrc = "./audio/keepalive.mp3";
 
 // ==========================================
+// ==========================================
+// 播放语音消息时临时让位
+// ==========================================
+// iOS 上同时播两个 audio，后启的那个可能把前一个掐掉。保活这个元素一旦被掐，
+// _paPlaying 变 false、媒体会话丢失，防杀就失效了。所以播语音前先主动让位、播完恢复。
+//
+// ★ 不碰 mediaSession —— 上面那套元数据是刻意伪装成音乐播放器用的，
+//   语音播放器去改它会把通知栏那张卡片顶掉。让位只是 pause/play。
+// ★ 只在前台（用户刚点了播放）才会走到这里，短暂丢一下媒体焦点没有被杀风险。
+let _keepAliveSuspended = false;
+
+function suspendKeepAliveForPlayback() {
+    if (!bgAudioElement || !bgAudioElement._paPlaying) return;
+    _keepAliveSuspended = true;
+    bgAudioElement.pause();
+}
+
+function resumeKeepAliveAfterPlayback() {
+    if (!_keepAliveSuspended || !bgAudioElement) return;
+    _keepAliveSuspended = false;
+    // 恢复失败就算了 —— 用户下次在前台点任何地方，那套 touchstart/click 解锁会重新起播
+    bgAudioElement.play().catch(() => {});
+    try { navigator.mediaSession.playbackState = 'playing'; } catch (_) {}
+}
+
+window.suspendKeepAliveForPlayback = suspendKeepAliveForPlayback;
+window.resumeKeepAliveAfterPlayback = resumeKeepAliveAfterPlayback;
+
 // 【新增修复】：彻底销毁音频和通知栏播放卡片
 // ==========================================
 function killKeepAliveAudio() {
@@ -772,7 +817,9 @@ function handleUserInteractionForAudio() {
     const { keepAliveDuration, needsGeneration } = evaluateKeepAliveNeeds();
 
     if (keepAliveDuration <= 0) {
-        if (bgAudioElement && !bgAudioElement.paused) killKeepAliveAudio();
+        // 用 bgAudioElement 存在与否作判据：解锁失败(paused)的元素也要销毁，
+        // 否则它会带着已设好的 mediaSession 元数据滞留，通知栏可能留一张假卡片。
+        if (bgAudioElement) killKeepAliveAudio();
         if (generationTimeoutId) clearTimeout(generationTimeoutId);
         return;
     }
@@ -786,6 +833,13 @@ function handleUserInteractionForAudio() {
         bgAudioElement.setAttribute('webkit-playsinline', '');
         bgAudioElement.preload = 'auto';
         bgAudioElement.src = keepAliveAudioSrc;
+
+        // 【关键】用真实的 playing/pause 事件记录“到底播起来没有”。
+        //   不能拿 element.paused 当判据：play() 会同步把 paused 置为 false，
+        //   哪怕这次调用最终因缺少用户手势被拒。于是前一次徒劳的 play() 会让
+        //   后一次“真正带手势”的事件误以为已在播放而跳过重试。
+        bgAudioElement.addEventListener('playing', () => { bgAudioElement._paPlaying = true; });
+        bgAudioElement.addEventListener('pause', () => { bgAudioElement._paPlaying = false; });
 
         // 媒体控制中心适配（增强版“伪装成正规播放器”，提高安卓通知栏挂载媒体卡片的概率）
         if ('mediaSession' in navigator) {
@@ -816,15 +870,17 @@ function handleUserInteractionForAudio() {
     }
 
     // 播放和唤醒：必须在“用户手势内”首次调用 play() 才能解锁 iOS 的后台播放许可。
-    // 本函数绑定在 window 的 touchstart/click 上，用户在前台随便点一下就完成解锁+起播。
-    if (bgAudioElement.paused) {
+    // 本函数绑定在 window 的 touchstart/touchend/click 上，用户在前台随便点一下就完成解锁+起播。
+    // 判据用 _paPlaying(真播起来了)而非 paused，否则同一次点击里 touchstart 的失败尝试
+    // 会挡掉 touchend/click 这次“带用户激活”的重试——聊天页正是死在这里。
+    if (!bgAudioElement._paPlaying) {
         const p = bgAudioElement.play();
         if (p && typeof p.catch === 'function') {
             p.catch(e => {
                 // iOS 首次点击时音频常常还没加载完，play() 会抛 AbortError/NotAllowedError——属良性。
                 // 此刻元素已被用户手势“解锁”，等它就绪后自动补一次 play() 即可，无需用户二次点击。
                 if (e && (e.name === 'AbortError' || e.name === 'NotAllowedError')) {
-                    const retry = () => { if (bgAudioElement.paused) bgAudioElement.play().catch(() => {}); };
+                    const retry = () => { if (bgAudioElement && !bgAudioElement._paPlaying) bgAudioElement.play().catch(() => {}); };
                     if (bgAudioElement.readyState >= 3) retry(); // 已就绪，直接补播
                     else bgAudioElement.addEventListener('canplaythrough', retry, { once: true });
                 } else {
@@ -838,7 +894,7 @@ function handleUserInteractionForAudio() {
     if (bgTimeoutId) clearTimeout(bgTimeoutId);
     bgTimeoutId = setTimeout(() => {
         console.log(`[保活精灵] ${Math.floor(keepAliveDuration/60000)} 分钟保活到期，休眠释放资源。`);
-        if (bgAudioElement && !bgAudioElement.paused) killKeepAliveAudio();
+        if (bgAudioElement) killKeepAliveAudio();
         // 同步媒体会话状态，避免通知栏卡片停留在“正在播放”的假象
         if ('mediaSession' in navigator) { try { navigator.mediaSession.playbackState = 'paused'; } catch (_) {} }
     }, keepAliveDuration);
@@ -883,11 +939,17 @@ window.ensureBgAudioUnlocked = ensureBgAudioUnlocked;
 
     // 每次点击都会重置那两个计时器
     window.addEventListener('touchstart', handleUserInteractionForAudio, { passive: true });
+    // 【必须有 touchend】按规范只有 touchend 属于“激活触发事件”，touchstart 不是——
+    //   靠 touchstart 调 play() 拿不到用户激活。而聊天页的发送按钮(chat_room.js)与长按消息区
+    //   都在 touchend 里调了 preventDefault()，那会掐掉浏览器合成的 click，于是聊天页只剩
+    //   touchstart 能触发本函数 → 保活音频永远解锁不了，通知栏不出播放器。
+    //   touchend 被 preventDefault 只影响“是否合成 click”，用户激活照常授予，故此处能救回来。
+    window.addEventListener('touchend', handleUserInteractionForAudio, { passive: true });
     window.addEventListener('click', handleUserInteractionForAudio, { passive: true });
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
-            console.log(`[保活精灵] App进入后台，当前保活状态: ${bgAudioElement && !bgAudioElement.paused ? '工作中' : '休眠中'}`);
+            console.log(`[保活精灵] App进入后台，当前保活状态: ${bgAudioElement && bgAudioElement._paPlaying ? '工作中' : '休眠中'}`);
             // 进入后台：把到点该发的主动消息移交给 CF 推送节点（未启用则内部直接跳过）
             if (window.PushNode && typeof window.PushNode.reconcile === 'function') {
                 window.PushNode.reconcile().catch(e => console.warn('[推送节点] reconcile 异常:', e));

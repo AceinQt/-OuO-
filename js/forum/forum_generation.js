@@ -127,6 +127,12 @@
                 return { content: rest, comments: picked };
             }
 
+            // 将连续超过 10 个“哈”的片段压缩到 10 个，其他内容保持不变。
+            function limitRepeatedHa(text) {
+                if (typeof text !== 'string') return text;
+                return text.replace(/哈{11,}/g, '哈哈哈哈哈哈哈哈哈哈');
+            }
+
             // --- 文本解析工具函数 ---
             function parseAIResponseToPost(text) {
                 // 先归一化标签，后面就可以用最朴素的 indexOf 定位
@@ -175,7 +181,7 @@
                         if (colonIndex > 0) {
                             comments.push({
                                 username: line.substring(0, colonIndex).trim(),
-                                content: line.substring(colonIndex + 1).trim(),
+                                content: limitRepeatedHa(line.substring(colonIndex + 1).trim()),
                                 timestamp: "刚刚"
                             });
                         }
@@ -187,7 +193,11 @@
                     const salvaged = _stripTrailingComments(content);
                     if (salvaged) {
                         content = salvaged.content;
-                        salvaged.comments.forEach(c => comments.push({ ...c, timestamp: "刚刚" }));
+                        salvaged.comments.forEach(c => comments.push({
+                            ...c,
+                            content: limitRepeatedHa(c.content),
+                            timestamp: "刚刚"
+                        }));
                         console.warn('[forum] #REPLY# 标签缺失，已从正文尾部回收', comments.length, '条评论');
                     }
                 }
@@ -557,7 +567,7 @@ const lines = cleanContentComments.split('\n');
 
                         if (colonIndex > 0) {
                             let name = line.substring(0, colonIndex).trim();
-                            const text = line.substring(colonIndex + 1).trim();
+                            const text = limitRepeatedHa(line.substring(colonIndex + 1).trim());
 
                             if (name === myNickname) {
                                 name = getRandomNetName();

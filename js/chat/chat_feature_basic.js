@@ -21,6 +21,10 @@
             const sendGiftModal = document.getElementById('send-gift-modal'),
                 sendGiftForm = document.getElementById('send-gift-form'),
                 giftDescriptionInput = document.getElementById('gift-description-input');
+            const sendLocationModal = document.getElementById('send-location-modal'),
+                sendLocationForm = document.getElementById('send-location-form'),
+                locationNameInput = document.getElementById('location-name-input'),
+                locationAddressInput = document.getElementById('location-address-input');
             const timeSkipModal = document.getElementById('time-skip-modal'),
                 timeSkipForm = document.getElementById('time-skip-form'),
                 timeSkipInput = document.getElementById('time-skip-input');     
@@ -55,10 +59,9 @@
                                                      
 
             // ==========================================
-            // 图片转文字描述（省 token）
-            // 长按图片消息 →「转化为文字」→ 额外调一次识图 API 拿描述
-            // → 成功后才把原图换成文字消息；失败零副作用，原图完好
-            // 转化后 parts 只剩 text，上下文里不再是一张图，而是一小段文字
+            // 图片转文字并归档（省 token）
+            // 识图、本地缓存/GitHub 归档和消息写库全部成功后，才移除 Base64。
+            // 任何失败都保留原图；转化后上下文只保留文字描述。
             // ==========================================
 
             // 正在转化中的消息 ID：防止重复点击，长按菜单里据此置灰
@@ -207,6 +210,21 @@
                 if (bubble) bubble.classList.toggle('converting', isConverting);
             }
 
+            function _imageConversionStorage() {
+                return typeof getImageStorageAvailability === 'function'
+                    ? getImageStorageAvailability()
+                    : { localEnabled: false, cloudEnabled: false, localCacheLimitMB: 0 };
+            }
+
+            function _imageConversionConfirmText(count, storage, estimatedText = '') {
+                const countText = count > 1 ? `共找到 ${count} 张图片。\n` : '';
+                const timeText = estimatedText ? `预计耗时 ${estimatedText} 左右，中途可以随时停止。\n\n` : '';
+                const storageText = storage.cloudEnabled
+                    ? '识图成功后会把原图归档到 GitHub 图片仓库，并尽量保留本地缓存。只有至少一个保存位置成功后，才会从消息中移除 Base64。'
+                    : `当前没有绑定 GitHub 图片仓库。原图将只保存在此浏览器的本地缓存中（上限 ${storage.localCacheLimitMB} MB），可能因缓存淘汰、清理站点数据或换设备而丢失，且不能随备份恢复。`;
+                return `${countText}${storageText}\n\n${timeText}确定继续吗？`;
+            }
+
             // 主流程：把一条图片消息转化成文字描述
             async function convertImageMessageToText(messageId) {
                 if (_convertingMsgIds.has(messageId)) { showToast('该图片正在转化中'); return; }
@@ -222,9 +240,14 @@
                 const imagePart = (message.parts || []).find(p => p.type === 'image');
                 if (!imagePart || !imagePart.data) { showToast('这条消息里没有图片'); return; }
 
-                const confirmMsg = '转化后将删除原图，只保留AI生成的文字描述，且无法还原。但这张图将不再占用上下文额度。\n\n确定继续吗？';
+                const storage = _imageConversionStorage();
+                if (!storage.localEnabled && !storage.cloudEnabled) {
+                    showToast('请先开启本地图片缓存或绑定 GitHub 图片仓库');
+                    return;
+                }
+                const confirmMsg = _imageConversionConfirmText(1, storage);
                 const confirmed = (typeof AppUI !== 'undefined' && AppUI.confirm)
-                    ? await AppUI.confirm(confirmMsg, '转化为文字', '确定', '取消')
+                    ? await AppUI.confirm(confirmMsg, '转文字并归档', '继续', '取消')
                     : confirm(confirmMsg);
                 if (!confirmed) return;
 
@@ -241,14 +264,16 @@
                     if (!desc) throw new Error('返回内容为空');
 
                     const senderName = _resolveMsgSenderName(chat, message, targetChatType);
-
-                    // ★ 写数据是最后一步：上面任何一步失败，原图都分毫未动
-                    const newContent = `[${senderName}发来的照片/视频：${desc}]`;
-                    message.content = newContent;
-                    message.parts = [{ type: 'text', text: newContent }];
-
-                    await saveMessageToDB(message, targetChatId, targetChatType);
-                    await saveSingleChat(targetChatId, targetChatType);
+                    if (typeof archiveUploadedImageMessage !== 'function') {
+                        throw new Error('图片归档模块未加载');
+                    }
+                    const archived = await archiveUploadedImageMessage(message, {
+                        chatId: targetChatId,
+                        chatType: targetChatType,
+                        description: desc,
+                        senderName,
+                        dataUrl: imagePart.data
+                    });
                     renderChatList();
 
                     // 原地换气泡（还在同一个聊天室时才动 DOM）
@@ -258,7 +283,9 @@
                         if (oldBubble && newBubble) oldBubble.replaceWith(newBubble);
                     }
 
-                    showToast('已转化为文字');
+                    showToast(archived.localOnly
+                        ? '已转文字；原图仅保存在当前浏览器'
+                        : '已转文字并归档原图');
                 } catch (err) {
                     console.error('图片转化失败:', err);
                     showToast('转化失败：' + (err.message || '未知错误'));
@@ -280,6 +307,12 @@
                     : db.groups.find(g => g.id === chatId);
                 if (!chat) return;
 
+                const storage = _imageConversionStorage();
+                if (!storage.localEnabled && !storage.cloudEnabled) {
+                    await AppUI.alert('请先开启本地图片缓存或绑定 GitHub 图片仓库。原图没有可用保存位置，不能执行转化。', '清理图片');
+                    return;
+                }
+
                 // 收起侧栏
                 const sidebarId = (chatType === 'private') ? 'chat-settings-sidebar' : 'group-settings-sidebar';
                 document.getElementById(sidebarId)?.classList.remove('open');
@@ -300,12 +333,12 @@
                             });
                             if (!ids.length) return null;   // 没图片：弹窗自动关闭
 
-                            // 粗估耗时：每张约 3 秒，3 个并发
-                            const estSec = Math.ceil(ids.length * 3 / 3);
+                            // 批量转换串行执行，避免同时占用多份 Base64 和触发识图 API 限流。
+                            const estSec = Math.ceil(ids.length * 5);
                             const estText = (estSec < 60) ? `${estSec} 秒` : `${Math.ceil(estSec / 60)} 分钟`;
-                            return `共找到 ${ids.length} 张图片。\n将逐张调用识图API转成文字描述，原图会被删除且无法还原。预计耗时 ${estText} 左右，中途可以随时停止。\n\n确定开始吗？`;
+                            return _imageConversionConfirmText(ids.length, storage, estText);
                         },
-                        { title: '清理图片', confirmText: '开始', cancelText: '取消' }
+                        { title: '转文字并归档', confirmText: '开始', cancelText: '取消' }
                     );
                 } catch (e) {
                     console.error('扫描图片失败:', e);
@@ -322,7 +355,7 @@
                 const bar = AppUI.progress(`已完成 0 / ${ids.length}`, { title: '清理图片', stopText: '停止' });
                 let done = 0, failed = 0;
 
-                // 单张转化：读库 → 调API → 写回（写库仍是最后一步，失败不动原图）
+                // 单张转化复用同一条安全归档流程；任一步失败都保留 Base64。
                 const convertOne = async (id) => {
                     const row = await dexieDB.messages.get(id);
                     if (!row) return;
@@ -331,21 +364,18 @@
 
                     const desc = _sanitizeVisionDesc(await requestImageDescription(imagePart.data, chat));
                     if (!desc) throw new Error('返回内容为空');
-
-                    const newContent = `[${_resolveMsgSenderName(chat, row, chatType)}发来的照片/视频：${desc}]`;
-                    row.content = newContent;
-                    row.parts = [{ type: 'text', text: newContent }];
-                    await dexieDB.messages.put(row);   // row 自带 chatId/chatType
-
-                    // 同步内存里的那份（懒加载下两者是不同对象）
-                    const memMsg = (chat.history || []).find(m => m.id === id);
-                    if (memMsg) {
-                        memMsg.content = newContent;
-                        memMsg.parts = [{ type: 'text', text: newContent }];
-                    }
+                    if (typeof archiveUploadedImageMessage !== 'function') throw new Error('图片归档模块未加载');
+                    await archiveUploadedImageMessage(row, {
+                        chatId,
+                        chatType,
+                        description: desc,
+                        senderName: _resolveMsgSenderName(chat, row, chatType),
+                        dataUrl: imagePart.data,
+                        saveChat: false
+                    });
                 };
 
-                // 2. 并发 3 个 worker 消费同一个游标，停止后不再领新任务
+                // 2. 单 worker 串行消费，停止后不再领新任务
                 let cursor = 0;
                 const worker = async () => {
                     while (true) {
@@ -363,7 +393,7 @@
                     }
                 };
 
-                await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
+                await worker();
                 const stoppedEarly = (done + failed) < ids.length;
 
                 bar.close();
@@ -524,6 +554,46 @@
                 }
                 await saveSingleChat(currentChatId, currentChatType);
                 renderChatList();
+            }
+
+            // --- NEW: Send Location System ---
+            async function sendMyLocation(name, address) {
+                if (!name) return;
+                sendLocationModal.classList.remove('visible');
+                await new Promise(resolve => setTimeout(resolve, 100));
+                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
+                await processTimePerception(chat, currentChatId, currentChatType);
+
+                const locationPart = address ? `；地址：${address}` : '';
+                const content = (currentChatType === 'private')
+                    ? `[${chat.myName}发送了位置：${name}${locationPart}]`
+                    : `[${chat.me.realName}发送了位置：${name}${locationPart}]`;
+                const message = {
+                    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+                    role: 'user',
+                    content: content,
+                    parts: [{ type: 'text', text: content }],
+                    timestamp: Date.now()
+                };
+                if (currentChatType === 'group') message.senderId = 'user_me';
+                chat.history.push(message);
+                addMessageBubble(message, currentChatId, currentChatType);
+                await saveMessageToDB(message, currentChatId, currentChatType);
+                await saveSingleChat(currentChatId, currentChatType);
+                renderChatList();
+            }
+
+            // --- NEW: Location Modal System ---
+            function setupLocationSystem() {
+                sendLocationModal.addEventListener('click', (e) => {
+                    if (e.target === sendLocationModal) sendLocationModal.classList.remove('visible');
+                });
+                sendLocationForm.addEventListener('submit', (e) => {
+                    e.preventDefault();
+                    const name = locationNameInput.value.trim();
+                    const address = locationAddressInput.value.trim();
+                    sendMyLocation(name, address);
+                });
             }
 
             // --- NEW: Time Skip System ---
@@ -875,4 +945,4 @@
                     confirmBtn.style.opacity = '';
                     confirmBtn.style.cursor = '';
                 });
-            }                               
+            }
