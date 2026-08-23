@@ -74,24 +74,11 @@
     width: 100%;
 }
 
-/* 设置项内的通用文本输入框 */
-#notification-settings-screen .settings-input-text {
-    margin-left: 47px;
-    width: calc(100% - 47px);
-    padding: 10px;
-    box-sizing: border-box;
-    border: 1px solid #eee;
-    border-radius: 8px;
-    font-size: 14px;
-    background-color: #fafafa;
-    color: #333;
-    outline: none;
-}
+/* 通用文本输入框样式继承 settings_screen.css 的全局 .settings-input-text */
 
 /* 设置项内的多行文本区 (用于私钥等长文本) */
 #notification-settings-screen .settings-textarea {
-    margin-left: 47px;
-    width: calc(100% - 47px);
+    width: 100%;
     padding: 10px;
     box-sizing: border-box;
     font-size: 12px;
@@ -150,4 +137,9 @@
 
 #advanced-notification-settings .btn-test:disabled {
     background: var(--gray-color);
+}
+
+/* 覆盖全局分割线缩进：让本页面的分割线不再避让图标，占满卡片宽度 */
+#notification-settings-screen .settings-item::after {
+    left: 20px;
 }

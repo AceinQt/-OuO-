@@ -880,3 +880,23 @@ input[type="range"]::-webkit-slider-thumb {
 input[type="range"]::-moz-range-thumb {
     pointer-events: auto; 
 }
+
+/* ── AppUI.form 的 note 字段：只展示、不可编辑 ─────────────────── */
+/* 用在"这个值要去别处改"的场景，样式上做成一块静态区域，
+   跟旁边可输入的控件区分开，别让人以为点了能编辑。 */
+.appui-note {
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f4f6f8;
+    color: #44515a;
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-all;
+}
+
+.appui-note-hint {
+    margin-top: 6px;
+    color: #8a9399;
+    font-size: 12px;
+    line-height: 1.6;
+}

@@ -54,6 +54,7 @@
 @import './pages/settings/customize.css';
 @import './pages/settings/tutorial.css';
 @import './pages/settings/api.css';
+@import './pages/settings/github_repos.css';
 @import './pages/settings/console.css';
 
 /* base */

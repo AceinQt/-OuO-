@@ -244,6 +244,33 @@
     margin-bottom: 10px;
 }
 
+/* 图像生成弹窗：参考图预览框，尺寸比表情预览大一些好看清构图 */
+#image-generation-reference-preview {
+    width: 120px;
+    height: 120px;
+    border: 2px dashed #ddd;
+    border-radius: 10px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #aaa;
+    background-color: #f9f9f9;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+#image-generation-reference-preview img {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+/* 内容较多，弹窗本体给个高度上限，超出自己滚 */
+#image-generation-modal .modal-window {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
 #sticker-preview {
     width: 80px;
     height: 80px;
@@ -536,5 +563,138 @@
     /* 图标变色 */
     box-shadow: 0 0 5px rgba(56, 155, 244, 0.3);
     /* 可选：加一点发光效果 */
+}
+
+/* --- 扩展面板按钮禁用状态（线下模式下的线上功能） --- */
+/* 只淡化"墨色"：白底卡片和阴影跟其他按钮完全一致，只有图标和文字转灰。
+   原来照搬 sticker bar 的 opacity:0.3 + grayscale，那是给"透明小图标"设计的，
+   套到这种白卡片上会把卡片本身也压透，一排按钮里两个发灰发虚，很难看。
+   故意不用 pointer-events:none —— 点击要能走到 JS 里弹"线下模式无法使用"的提示 */
+.expansion-item.disabled {
+    /* ★ 想调深浅只改这两行（越深越接近可用态的 #555 / #666）。
+       这两个值挨着 --dgray-color(#AAB4BE)，是全项目"弱化态"惯用的那档灰 */
+    --expansion-disabled-icon: #AEB6BD;
+    --expansion-disabled-text: #A0A8B0;
+    cursor: not-allowed;
+}
+
+/* 面性图标（礼物）：必须和上面 .expansion-item-icon svg 的 fill 一一对应地盖掉，
+   svg 上没写 fill 的子元素（如定位图标的圆圈）靠继承拿到同一个灰 */
+.expansion-item.disabled .expansion-item-icon svg {
+    fill: var(--expansion-disabled-icon);
+}
+
+/* 线性图标（定位）：颜色写死在元素的 stroke="#555" 表现属性上，
+   表现属性优先级低于任何 CSS 规则，所以这条能盖掉，不用改 JS 里的 SVG 字符串 */
+.expansion-item.disabled .expansion-item-icon svg [stroke] {
+    stroke: var(--expansion-disabled-icon);
+}
+
+.expansion-item.disabled .expansion-item-name {
+    color: var(--expansion-disabled-text);
+}
+
+.expansion-item.disabled:hover .expansion-item-icon {
+    background-color: #fff;
+    /* 抵掉 hover 变色，避免置灰状态下还有可点的暗示 */
+}
+
+/* =========================================
+   图像生成设置弹窗专用样式
+   ========================================= */
+
+/* 消除多余底边距 */
+#image-generation-modal .form-group.mb-0,
+#image-generation-modal textarea.mb-0,
+#image-generation-modal input.mb-0 {
+    margin-bottom: 0;
+}
+
+/* 提示小字说明。
+   ★ margin-top 必须显式归零：reset.css 只重置了滚动条，没有通用 margin reset，
+     而这些说明现在是 <p>，会吃到浏览器默认的 1em 上边距，撑出一道空隙。 */
+#image-generation-modal .field-hint {
+    font-weight: normal;
+    font-size: 12px;
+    color: #888;
+    display: block;
+    margin: 0;
+    line-height: 1.6;
+}
+
+/* 开关行里的标题：.form-group label 自带 margin-bottom:8px，在 align-items:center
+   的 flex 行里会把文字顶高约 4px，和开关对不齐 —— 这里归零。
+   只点名这一个 label，避免顺手影响参考图那边的 label.btn。 */
+#image-generation-modal label[for="image-generation-auto"] {
+    margin-bottom: 0;
+}
+
+/* 参考图：左右结构容器 */
+#image-generation-modal .reference-image-container {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+/* 覆盖原本居中的预览框，使其适应左右结构 */
+#image-generation-modal #image-generation-reference-preview {
+    margin: 0;
+    width: 100px;
+    height: 100px;
+    flex-shrink: 0; /* 确保预览框形状方正，不会被挤压 */
+}
+
+/* 参考图：右侧按钮容器 */
+#image-generation-modal .reference-actions {
+    display: flex;
+    flex-direction: column;
+    justify-content: center; /* 魔法 1：让内部按钮在垂直方向居中对齐 */
+    height: 100px; /* 魔法 2：强制容器高度和左侧图片一模一样(100px) */
+    gap: 12px;
+    flex: 1;
+}
+
+/* 彻底覆盖原本 .btn 笨重的样式，变得精致修长、白底蓝边 */
+#image-generation-modal .reference-actions .btn {
+    margin-bottom: 0;
+    width: 100%;
+    
+    /* 配色：白底蓝字蓝边 (呼应测试按钮) */
+    background-color: var(--white-color);
+    color: var(--accent-color);
+    border: 1px solid var(--accent-color);
+    
+    /* 尺寸与排版 */
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 12px; /* 压缩内边距，让按钮变扁 */
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    
+    /* 确保按钮内的文字完美居中 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+/* 上传按钮点击时的反馈色 */
+#image-generation-modal .reference-actions .btn:active {
+    background-color: var(--bg-color); /* 极浅的主题蓝背景 */
+}
+
+/* 审美优化：将“移除”按钮稍作弱化（灰色边框），避免喧宾夺主及误触 */
+#image-generation-modal .reference-actions #image-generation-reference-clear {
+    color: var(--dgray-color);
+    border-color: var(--dgray-color);
+}
+#image-generation-modal .reference-actions #image-generation-reference-clear:active {
+    background-color: var(--gray-color);
+}
+
+/* 底部主按钮组 */
+#image-generation-modal .btn-group.main-actions {
+    margin-top: 20px;
 }
 

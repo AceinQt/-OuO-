@@ -1,0 +1,94 @@
+/* ============================================================
+   GitHub 仓库设置页
+   ============================================================
+   版式跟 notification-settings-screen 保持一致：灰底 + settings-group-title
+   + settings-card + settings-item，那套类都在 settings_screen.css 里，
+   这里只补这个页面独有的两样东西：
+     · .gh-inline-row  —— 输入框旁边还要挂按钮的那两行
+     · .gh-test-result —— 测试连接的结果块
+   说明文字一律不上页面，收在小标题和 header 的问号里（见 js/settings/github_repos.js）。 */
+#github-repos-screen {
+    background-color: var(--gray-color);  /* 与存储页面一致的浅灰色背景 */
+}
+
+/* header 跟着一起灰，和内容区连成一片（同消息通知页） */
+#github-repos-screen .app-header {
+    background-color: var(--gray-color);
+    border: none;
+}
+
+/* header 右上角的问号：action-btn-group 默认给 svg 上 fill，
+   这个图标是描边款，得把 fill 关掉否则会糊成一个实心圆 */
+#github-repos-screen .app-header .action-btn-group .action-btn svg {
+    fill: none;
+}
+
+#github-repos-screen .content {
+    padding: 0 15px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+/* ── 输入框 + 旁边的小按钮 ────────────────────────────────────── */
+#github-repos-screen .gh-inline-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+}
+
+#github-repos-screen .gh-inline-row .settings-input-text {
+    margin-left: 0;
+    width: auto;
+    flex: 1;
+    min-width: 0;   /* 没这句 flex 子项不肯被压缩，按钮会被挤出卡片 */
+}
+
+/* 仓库下拉里可能是「语音仓库（user/repo）」这种长文本，别把按钮顶出去 */
+#github-repos-screen .gh-inline-row select {
+    text-overflow: ellipsis;
+}
+
+/* 让仓库备注名的标题占满剩余空间，从而把右侧的三个操作按钮挤到最右边 */
+#github-repos-screen .gh-inline-row .item-name {
+    flex: 1;
+}
+
+/* 保存按钮：.bottom-actions 自带 25px 左右内边距，叠上 content 的 15px 会比卡片窄一截，
+   这里把横向那份清掉，让按钮和上面的卡片对齐 */
+#github-repos-screen .bottom-actions {
+    padding: 15px 0 25px;
+}
+
+/* ── 测试连接结果 ──────────────────────────────────────────── */
+.gh-test-result {
+    margin: 0;
+    padding: 14px;
+    border: 1px solid #d9e8ef;
+    border-radius: 12px;
+    background: #fbfdfe;
+    color: #44515a;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-line;
+}
+
+.gh-test-result.is-error {
+    border-color: #f2c7c4;
+    background: #fff8f7;
+    color: #a53a33;
+}
+
+.gh-test-result.is-ok {
+    border-color: #b6e3c4;
+    background: #f6fdf8;
+    color: #2f6b43;
+}
+
+/* 覆盖全局分割线缩进：让本页面的分割线不再避让图标，占满卡片宽度 */
+#github-repos-screen .settings-item::after {
+    left: 20px;
+}

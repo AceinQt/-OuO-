@@ -29,6 +29,9 @@
     text-transform: uppercase;
     letter-spacing: 0.5px;
     flex-shrink: 0;
+    /* 横排是为了让右边能挂一个问号图标；只有文字的标题不受影响 */
+    display: flex;
+    align-items: center;
 }
 
 /* 卡片容器 */
@@ -147,4 +150,101 @@
 /* 使用 ID 选择器 #offline-mode-toggle 提高权重，不影响其他 .switch */
 #dark-mode-toggle:checked+.slider {
     background-color: #FF9C38;
+}
+
+/* =========================================
+   设置类页面通用零件
+   =========================================
+   下面这几条原先只写在 #notification-settings-screen 下面，别的页面想用同一套
+   版式就得整段复制。既然 .settings-card / .settings-item 本来就住在这个文件里
+   且不带 ID，这些配套零件也一并提上来，谁用谁拿。
+   notification_settings.css 里那份 ID 版权重更高，那个页面照旧走它自己的，
+   所以这次上移不改变任何已有页面的样子。 */
+
+/* 分组说明提示图标（小标题右边的问号），点它弹 AppHelp 说明 */
+.settings-group-info-icon {
+    width: 16px;
+    height: 16px;
+    margin-left: 4px;
+    color: #aaa;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+/* 设置项右侧操作区（开关、小按钮、窄输入框） */
+.settings-item-action {
+    display: flex;
+    align-items: center;
+}
+
+/* 纯展示 + 右侧控件的行：整行不可点，别给手型光标 */
+.settings-item.toggle-setting {
+    cursor: default;
+}
+
+/* 纵向排列的设置项：标题在上，输入框占满下面一行 */
+.settings-item.column-layout {
+    cursor: default;
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+.settings-item.column-layout .item-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+.settings-input-text {
+    width: 100%;
+    padding: 10px;
+    box-sizing: border-box;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    font-size: 14px;
+    background-color: #fafafa;
+    color: #333;
+    outline: none;
+}
+
+/* 卡片外的补充说明文字 */
+.settings-item-hint {
+    padding: 6px 16px;
+    font-size: 12px;
+    color: #999;
+    line-height: 1.5;
+}
+
+.settings-item-hint.compact {
+    margin-top: -5px;
+}
+
+/* 设置项里的小号操作按钮（发送 / 测试 / 生成这类） */
+.btn-test {
+    -webkit-appearance: none;
+    appearance: none;
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    white-space: nowrap;   /* 防止按钮文字换行 */
+    color: var(--accent-color);
+    background-color: var(--white-color);
+    border: 1px solid var(--accent-color);
+}
+
+.btn-test:active {
+    color: var(--gray-color);
+    border-color: var(--gray-color);
+}
+
+.btn-test:disabled {
+    background: var(--gray-color);
+    cursor: default;
 }

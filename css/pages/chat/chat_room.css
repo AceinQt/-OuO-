@@ -286,11 +286,10 @@
 }
 
 .image-bubble {
-    max-width: 80%;
+    width: 200px;          /* 与 pv-card 统一：固定宽度，高度随图片比例 */
     border-radius: var(--border-radius);
     margin: 0;
-    padding: 4px;
-    background-color: rgba(255, 255, 255, 0.5);    
+    padding: 0;            /* 去掉白边：不再有 4px 半透明底衬 */
     cursor: pointer;
 }
 
@@ -298,7 +297,7 @@
     width: 100%;
     height: auto;
     display: block;
-    border-radius: calc(var(--border-radius) - 4px);
+    border-radius: var(--border-radius);
 }
 
 /* --- 图片转文字：转化中的等待态 --- */
@@ -314,14 +313,14 @@
 .image-bubble.converting::after {
     content: '转化中…';
     position: absolute;
-    inset: 4px;
+    inset: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
     font-size: 13px;
     letter-spacing: 1px;
-    border-radius: calc(var(--border-radius) - 4px);
+    border-radius: var(--border-radius);
     animation: image-converting-pulse 1.2s ease-in-out infinite;
 }
 
@@ -365,36 +364,182 @@
 
 .message-wrapper.sent .voice-bubble {
     position: relative;
-    flex-direction: row-reverse;
+    flex-direction: row; 
 }
 
 .message-wrapper.received .voice-bubble {
     position: relative;
 }
 
+/* 旧版静态三角，仅气泡外观预览页还在用 */
 .voice-bubble .play-icon {
     width: 22px;
     height: 22px;
     flex-shrink: 0;
-    flex:2;
+    flex: 2;
 }
 
 .voice-bubble .duration {
     font-size: 14px;
     margin: 0 4px;
     white-space: nowrap;
-    flex:3;
+    flex: 0 0 auto;
 }
 
-.message-wrapper.sent .play-icon {
-    transform: scaleX(-1);
+/* ── 播放键 ───────────────────────────────────────────────────
+   真的 <button>：可聚焦、可键盘触发、带 aria-label。
+   四种视觉（播放/停止/失败/转圈）都摆在按钮里，靠 data-voice-state 切显隐，
+   这样切状态不用重建 DOM，也不会闪。 */
+.voice-play-btn {
+    position: relative;
+    flex: 0 0 auto;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(200, 200, 200, 0.28);
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.18s ease, transform 0.12s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.voice-bubble svg {
-    width: 24px;
-    height: 24px;
-    flex-shrink: 0;
-    flex:2;
+.voice-play-btn:active {
+    transform: scale(0.92);
+}
+
+.voice-play-btn:disabled {
+    cursor: default;
+}
+
+.voice-play-btn:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
+.voice-play-btn svg {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    display: none;
+}
+
+/* 扩大语音播放按钮的隐形点击热区 */
+.voice-play-btn::after {
+    content: '';
+    position: absolute;
+    /* 向四周各外扩 10px，将原本 30x30 的点击区域放大到 50x50 */
+    top: -10px;
+    left: -10px;
+    right: -10px;
+    bottom: -10px;
+    /* 确保透明，不影响视觉 */
+    background: transparent; 
+}
+
+/* 三角略微右移，视觉重心才在圆心上（三角形的几何中心偏左） */
+.voice-play-btn .vp-icon-play {
+    margin-left: 2px;
+}
+
+.voice-play-btn[data-voice-state="idle"] .vp-icon-play,
+.voice-play-btn[data-voice-state="ready"] .vp-icon-play { display: block; }
+.voice-play-btn[data-voice-state="playing"] .vp-icon-stop { display: block; }
+.voice-play-btn[data-voice-state="failed"] .vp-icon-fail  { display: block; }
+
+/* 还没合成过：按钮压暗一点，暗示点下去要等（而且要花钱） */
+.voice-play-btn[data-voice-state="idle"] {
+    background: rgba(255, 255, 255, 0.16);
+}
+
+.voice-play-btn[data-voice-state="failed"] {
+    background: rgba(214, 84, 74, 0.22);
+}
+
+.vp-spinner {
+    display: none;
+    width: 15px;
+    height: 15px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: vp-spin 0.7s linear infinite;
+}
+
+.voice-play-btn[data-voice-state="loading"] .vp-spinner { display: block; }
+
+@keyframes vp-spin { to { transform: rotate(360deg); } }
+
+/* ── 波形 / 进度 ──────────────────────────────────────────────
+   原来那个音波 SVG 有两条 path 写错了（H6 应为 H15 和 H3），实际只画出两条竖线。
+   改成 CSS 竖条：好看、能随进度点亮、还省一个 SVG。
+   进度靠 --voice-progress 这个百分比变量驱动，播放器用 rAF 更新它。 */
+.voice-wave {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 18px;
+    min-width: 40px;
+    margin: 0 8px;
+    --voice-progress: 0%;
+}
+
+.voice-wave i {
+    flex: 1 1 auto;
+    min-width: 2px;
+    border-radius: 1px;
+    background: currentColor;
+    opacity: 0.32;
+    transition: opacity 0.15s linear;
+}
+
+/* 高矮错落，看着像真的波形而不是柱状图 */
+.voice-wave i:nth-child(1)  { height: 30%; }
+.voice-wave i:nth-child(2)  { height: 55%; }
+.voice-wave i:nth-child(3)  { height: 85%; }
+.voice-wave i:nth-child(4)  { height: 45%; }
+.voice-wave i:nth-child(5)  { height: 100%; }
+.voice-wave i:nth-child(6)  { height: 65%; }
+.voice-wave i:nth-child(7)  { height: 90%; }
+.voice-wave i:nth-child(8)  { height: 40%; }
+.voice-wave i:nth-child(9)  { height: 70%; }
+.voice-wave i:nth-child(10) { height: 35%; }
+
+/* 已就绪：整条亮一档，跟"还没合成"区分开 */
+.voice-bubble[data-voice-state="ready"] .voice-wave i,
+.voice-bubble[data-voice-state="playing"] .voice-wave i {
+    opacity: 0.5;
+}
+
+/* 播放进度：使用 mask-image 遮罩，让进度只在有柱子(<i>)的地方显示，完美避开缝隙 */
+.voice-bubble[data-voice-state="playing"] .voice-wave {
+    position: relative;
+    /* 核心：用 CSS 遮罩根据进度改变整体透明度。左侧(已播放) 0.85，右侧(未播放) 0.5 */
+    /* 因为缝隙本身没有内容，所以遮罩不会在缝隙处产生任何颜色 */
+    -webkit-mask-image: linear-gradient(to right,
+        rgba(0, 0, 0, 0.85) 0%,
+        rgba(0, 0, 0, 0.85) var(--voice-progress),
+        rgba(0, 0, 0, 0.5) var(--voice-progress),
+        rgba(0, 0, 0, 0.5) 100%
+    );
+    mask-image: linear-gradient(to right,
+        rgba(0, 0, 0, 0.85) 0%,
+        rgba(0, 0, 0, 0.85) var(--voice-progress),
+        rgba(0, 0, 0, 0.5) var(--voice-progress),
+        rgba(0, 0, 0, 0.5) 100%
+    );
+}
+
+/* 播放时，柱子本身设为完全不透明，最终透明度完全由上面的 mask 遮罩控制 */
+.voice-bubble[data-voice-state="playing"] .voice-wave i {
+    opacity: 1 !important; 
+    transition: none; /* 取消原本的渐变过渡效果，让进度切断得更干脆利落 */
 }
 
 .voice-transcript {
@@ -666,6 +811,339 @@
     flex-shrink: 0;
 }
 
+.pv-card-generate {
+    width: 28px;
+    height: 28px;
+    margin-left: auto;
+    padding: 5px;
+    border: 0;
+    border-radius: 50%;
+    color: white;
+    background: rgba(0, 0, 0, 0.38);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.pv-card-generate[hidden] {
+    display: none;
+}
+
+.pv-card-generate:hover {
+    background: rgba(0, 0, 0, 0.62);
+}
+
+.pv-card-generate:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+.pv-card-generate svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+}
+
+/* 图片气泡右上角的放大按钮：纯图片和文字图片共用
+   .image-ocr-btn 是真实图片右下角的"转文字"键，占位对应 pv-card 的生图键，
+   两种图片气泡的右下角动作键因此统一；除了位置以外和放大键完全同一套观感。 */
+.image-zoom-btn,
+.image-ocr-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 4;                             /* 高过 pv-card 的 overlay(2) 和 footer(3) */
+    width: 28px;
+    height: 28px;
+    padding: 5px;
+    border: 0;
+    border-radius: 50%;
+    color: white;
+    background: rgba(0, 0, 0, 0.38);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.image-ocr-btn {
+    top: auto;
+    bottom: 8px;
+}
+
+.image-zoom-btn[hidden],
+.image-ocr-btn[hidden] {
+    display: none;
+}
+
+.image-zoom-btn:hover,
+.image-ocr-btn:hover {
+    background: rgba(0, 0, 0, 0.62);
+}
+
+.image-zoom-btn svg,
+.image-ocr-btn svg {
+    width: 17px;
+    height: 17px;
+    fill: none;
+    stroke: currentColor;
+}
+
+.pv-card-unavailable .pv-card-image-overlay {
+    filter: saturate(0.55);
+}
+
+.image-bubble {
+    position: relative;
+    overflow: hidden;
+}
+
+/* === 图片查看器弹窗：深色遮罩 + 图片区 + 底部固定工具栏 ===
+   复用 .modal-overlay 体系：main.js 负责点遮罩关闭，system_back.js 负责返回键关闭。
+   布局分两层：.image-viewer-stage 弹性占据剩余空间，.image-viewer-toolbar 固定高度。
+   画框紧贴图片（fit-content），所以关闭按钮永远压在图片右上角，不会飘出空隙。 */
+#image-viewer-modal {
+    z-index: 300;
+    background: rgba(0, 0, 0, 0.88);
+    /* 工具栏高度只在这里写一次：图片的高度上限要减掉它，两处必须同步。
+       想调工具栏高矮就改这一个值。 */
+    --viewer-toolbar-h: 60px;
+    --viewer-stage-pad: 12px;
+}
+
+#image-viewer-modal .image-viewer-content {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    padding-top: var(--safe-top, 0px);
+    box-sizing: border-box;
+    /* 空白处穿透给 overlay，让「点黑幕关闭」生效；图片和按钮单独恢复可点 */
+    pointer-events: none;
+}
+
+/* 图片区：拿走工具栏以外的全部高度，图片在其中居中 */
+#image-viewer-modal .image-viewer-stage {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--viewer-stage-pad) 12px;
+    box-sizing: border-box;
+}
+
+/* 画框紧贴内容：正常时等于图片尺寸，图裂时等于占位块尺寸。
+   用 inline-flex + fit-content 让宽高都跟着内容走，按钮才能贴在图片真实边缘上。 */
+#image-viewer-modal .image-viewer-frame {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 100%;
+    max-height: 100%;
+    pointer-events: none;
+}
+
+#image-viewer-modal #image-viewer-img,
+#image-viewer-modal .image-viewer-fallback,
+#image-viewer-modal .image-viewer-btn,
+#image-viewer-modal .image-viewer-toolbar {
+    pointer-events: auto;
+}
+
+/* 用百分比而不是写死像素：手机上能占满宽度，桌面上也会跟着窗口一起放大。
+   生图只有 1024/1792 这些尺寸，恒比屏幕大，所以永远是缩小渲染，不会模糊。
+   高度必须写成绝对表达式：画框是 fit-content（高度 auto），max-height:100%
+   在 auto 父级上会退化成 none，竖图就会按原始 1792px 撑出去顶穿工具栏。 */
+#image-viewer-modal #image-viewer-img {
+    display: block;
+    max-width: 92vw;
+    max-height: calc(100dvh - var(--safe-top, 0px) - var(--viewer-toolbar-h) - var(--safe-bottom, 0px) - var(--viewer-stage-pad) * 2);
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 8px;
+}
+
+#image-viewer-modal #image-viewer-img[hidden] {
+    display: none;
+}
+
+/* 加载失败占位：固定尺寸，替代那个塌成一团的小裂图标 */
+#image-viewer-modal .image-viewer-fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    width: min(78vw, 320px);
+    height: min(52vh, 300px);
+    padding: 24px;
+    box-sizing: border-box;
+    border-radius: 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.72);
+}
+
+#image-viewer-modal .image-viewer-fallback[hidden] {
+    display: none;
+}
+
+#image-viewer-modal .image-viewer-fallback svg {
+    width: 46px;
+    height: 46px;
+    stroke: currentColor;
+    fill: none;
+    opacity: 0.8;
+}
+
+#image-viewer-modal .image-viewer-fallback p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    text-align: center;
+}
+
+/* 右上角关闭：半透明圆底 + 白色描边图标，和气泡上的 .image-zoom-btn 同一套观感 */
+#image-viewer-modal .image-viewer-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 34px;
+    height: 34px;
+    padding: 6px;
+    border: 0;
+    border-radius: 50%;
+    color: white;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(2px);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.18s ease;
+}
+
+#image-viewer-modal .image-viewer-btn:hover {
+    background: rgba(0, 0, 0, 0.68);
+}
+
+#image-viewer-modal .image-viewer-btn svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+}
+
+/* 底部工具栏：固定高度对齐项目底部栏约定（layout.css 用的是 60px + safe-bottom）。
+   按钮靠右排，以后再加工具往左长，图片区高度不受影响。 */
+#image-viewer-modal .image-viewer-toolbar {
+    flex-shrink: 0;
+    min-height: calc(var(--viewer-toolbar-h) + var(--safe-bottom, 0px));
+    padding: 0 14px var(--safe-bottom, 0px);
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#image-viewer-modal .image-viewer-tool {
+    width: 40px;
+    height: 40px;
+    padding: 9px;
+    border: 0;
+    border-radius: 50%;
+    color: white;
+    background: rgba(255, 255, 255, 0.14);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.18s ease, opacity 0.18s ease;
+}
+
+#image-viewer-modal .image-viewer-tool:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.26);
+}
+
+#image-viewer-modal .image-viewer-tool.is-danger:hover:not(:disabled) {
+    background: rgba(231, 76, 60, 0.72);
+}
+
+/* 图片读不出来时下载必然失败，直接置灰；删除保持可用（清理 + 重新生成的入口） */
+#image-viewer-modal .image-viewer-tool:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+#image-viewer-modal .image-viewer-tool svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+}
+
+
+/* 位置卡片：路网是纯 CSS 渐变画的，不联网也不占天气额度 */
+.location-card {
+    width: 220px;
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    background-color: white;
+    margin: 0;
+}
+
+.location-card-map {
+    position: relative;
+    height: 100px;
+    background-color: #e6ecf1;
+    background-image:
+        repeating-linear-gradient(66deg, transparent 0 26px, rgba(120, 140, 160, 0.20) 26px 29px),
+        repeating-linear-gradient(156deg, transparent 0 34px, rgba(120, 140, 160, 0.16) 34px 36px),
+        repeating-linear-gradient(66deg, transparent 0 78px, rgba(255, 255, 255, 0.55) 78px 86px);
+}
+
+.location-card-pin {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 26px;
+    height: 26px;
+    /* 针尖落在中心点上，所以纵向要比 50% 多提一点 */
+    transform: translate(-50%, -62%);
+    fill: #e8503a;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3));
+}
+
+.location-card-info {
+    padding: 8px 10px 10px;
+    background-color: white;
+}
+
+.location-card-name {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color);
+    word-break: break-all;
+}
+
+.location-card-address {
+    margin: 3px 0 0;
+    font-size: 12px;
+    color: #999;
+    line-height: 1.4;
+    word-break: break-all;
+}
+
 .transfer-card {
     width: 240px;
     height: auto;
@@ -744,9 +1222,8 @@
     font-size: 14px;
     margin-top: 10px;
     opacity: 0.9;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    line-height: 1.4;
+    word-break: break-all;
 }
 
 .transfer-status {

@@ -230,3 +230,142 @@
 .api-tab-pane.active {
     display: flex;
 }
+
+/* ── 天气 / 语音 API 配置 ─────────────────────────────────────── */
+/* 两个 tab 形状一样（输入框旁边跟个按钮、底下一块结果、一行用量、一段脚注），
+   所以共用同一套规则。voice-* 单独列出来只是为了 HTML 里语义清楚，样式完全一致。 */
+.weather-inline-row,
+.voice-inline-row {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.weather-inline-row input,
+.weather-inline-row select,
+.voice-inline-row input,
+.voice-inline-row select {
+    min-width: 0;
+    flex: 1;
+}
+
+.weather-inline-btn,
+.voice-inline-btn {
+    width: auto;
+    min-width: 96px;
+    margin: 0;
+    padding: 0 12px;
+    flex-shrink: 0;
+}
+
+/* 生图测试按钮行（生成/下载/取消）。
+   全局 .btn-group 是"固定 50px 高 + 子按钮 width:100%"，三个按钮在手机上直接溢出；
+   且 .btn 的 display:flex 会顶掉 hidden 属性（和预览框同一个坑），必须显式压回去。
+   本行任一时刻只显示两个按钮（生成中=测试生成+取消，否则=测试生成+下载），可见按钮平分宽度。 */
+.image-preview-btns {
+    height: auto;        /* 高度交给按钮内容，不吃全局的 50px */
+    margin-top: 0;
+    gap: 10px;
+}
+
+.image-preview-btns .btn {
+    flex: 1 1 0;         /* 可见按钮等分整行，随屏宽伸缩 */
+    min-width: 0;        /* flex 子项默认 min-width:auto 会导致内容撑破，必须归零 */
+}
+
+.image-preview-btns .btn[hidden] {
+    display: none;
+}
+
+.weather-test-result,
+.voice-test-result {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid #d9e8ef;
+    border-radius: 12px;
+    background: #fbfdfe;
+    color: #44515a;
+    font-size: 13px;
+    line-height: 1.7;
+    white-space: pre-line;
+}
+
+.weather-test-result.is-error,
+.voice-test-result.is-error {
+    border-color: #f2c7c4;
+    background: #fff8f7;
+    color: #a53a33;
+}
+
+.weather-api-footnote,
+.voice-api-footnote {
+    margin: 14px 2px 0;
+    color: #8a9399;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+/* ── 今日请求用量 ──────────────────────────────────────────── */
+.weather-usage-display,
+.voice-usage-display {
+    margin-top: 6px;
+    color: #8a9399;
+    font-size: 12px;
+}
+
+.weather-usage-display.is-over-limit,
+.voice-usage-display.is-over-limit {
+    color: #a53a33;
+    font-weight: 600;
+}
+
+/* 试听播放器：默认藏起来，拿到音频才显形 */
+.voice-preview-player {
+    width: 100%;
+    margin-top: 12px;
+}
+
+/* 分组小标题（语音 tab 字段多，靠它分「合成」「归档」两段） */
+.voice-group-title {
+    margin: 26px 2px 12px;
+    padding-top: 18px;
+    border-top: 1px solid #e7ecef;
+    color: #44515a;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.voice-group-title:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+}
+
+/* 生图测试预览：边框贴着图片走（描边），图多大框多大，不再是固定尺寸的方框 */
+.image-preview-box {
+    margin: 14px auto 0;   /* 水平居中 */
+    width: fit-content;    /* 宽度收缩到图片内容 */
+    max-width: 100%;       /* 但不超出页面可用宽度 */
+    border-radius: 12px;
+    background: #fbfdfe;
+    border: 1px solid #d9e8ef;
+    padding: 8px;          /* 边框与图片之间的一圈衬边 */
+    box-sizing: border-box;
+}
+
+/* ★ 关键：hidden 属性会被上一条规则的 display 覆盖而失效（UA 样式优先级低于作者样式），
+   必须显式压回去，否则这个框会永远杵在页面上 —— 这正是"固定方框"观感的来源。
+   聊天室图片卡用的是同一解法（chat_room.css 的 .pv-card-generate[hidden]）。 */
+.image-preview-box[hidden] {
+    display: none;
+}
+
+.image-preview-box img {
+    display: block;
+    max-width: 100%;       /* 横图(16:9)受容器宽度限制 */
+    max-height: 250px;     /* 竖图(9:16)受高度限制 → 中间一条窄图，不拉伸、不撑满 */
+    width: auto;
+    height: auto;
+    border-radius: 4px;
+    /* 不再有 box-shadow —— 之前图片像"悬浮"在框上就是它造成的 */
+}
