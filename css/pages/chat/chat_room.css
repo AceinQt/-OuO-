@@ -1173,11 +1173,11 @@
 }
 
 .transfer-card.sent-transfer::before {
-    background-image: url('https://i.postimg.cc/sxN893WF/IMG-20250712.png');
+    background-image: url('../../../png/transfer_card_sent.png');
 }
 
 .transfer-card.received-transfer::before {
-    background-image: url('https://i.postimg.cc/FzR8LY7g/IMG-20250712-170703.png');
+    background-image: url('../../../png/transfer_card_recv.png');
 }
 
 .transfer-card .overlay {
@@ -1538,6 +1538,21 @@
     display: flex;
 }
 
+/* 删除 / 转发挤在栏子右端。多选栏本身是 space-between（左边"已选择 N 项"、
+   右边操作区），所以两个按钮必须包在一层里，否则会被拉到两端去。 */
+.multi-select-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.multi-select-actions .btn {
+    padding: 8px 14px;
+    margin: 0;
+    white-space: nowrap;
+}
+
 #chat-room-header-select,
 #chat-room-header-default {
     /* 保持原有的左右和底部内边距 */
@@ -1812,4 +1827,91 @@
 .expanded-call-session-container .chat-time-divider {
     background-color: transparent;
     color: #7A869A;
+}
+
+/* --- 分享卡片（万能：喵坛帖子 / 文件 / 链接 / 商品……）---
+   class 名带 forum- 是历史包袱：这套样式最早只给喵坛分享用，现在 + 号面板手动
+   发的、AI 自己发的都走同一套。改名要连着 chat_bubble_factory.js 和用户可能
+   写过的自定义 CSS 一起动，不值当，先留着。
+   ★ 标题/正文的省略号靠下面的 -webkit-line-clamp —— JS 侧不要再截字符串，
+     消息里存的是全文，截了就点不开完整详情了。
+   ★ 外观刻意跟普通气泡（.message-bubble）看齐：不描边、不投影。原先有
+     1px 描边 + 投影，夹在一串没描边的气泡里像贴了张便利贴。
+   ★ 宽度必须跟着普通气泡走，不能写死：普通气泡是 `max-width: 260px`，
+     外加外层 .message-content-col 的 `70%` 双保险 —— 窄屏（≤375px）上
+     真正生效的是 70%（320px 屏只剩 210px），气泡会跟着缩，卡片写死
+     250px 就顶出去 40px，右边溢出、左边缘也对不齐。实测数据：
+        屏宽   气泡    写死250的卡片
+        320    210     250（+40）
+        360    238     250（+12）
+        375    248.5   250（+1.5）
+        390    259     250（-9）
+     所以这里 width:100% + max-width:260px：宽屏封顶跟气泡一样是 260px，
+     窄屏则被 70% 的父列压住一起缩，两头都对齐。
+   ★ margin 必须是 0：头像和气泡的间距由 .message-bubble-row 的 gap:8px 统一发，
+     这里以前写 margin:0 8px，叠上去变成 16px，比左右的普通气泡多一截，
+     左边缘也对不齐。别加回来。 */
+.forum-share-card {
+    width: 100%;
+    max-width: 260px;
+    /* 跟 .message-bubble 的 max-width 保持一致 */
+    background-color: #ffffff;
+    border-radius: var(--border-radius);
+    padding: 12px 15px;
+    cursor: pointer;
+    margin: 0;
+    transition: transform 0.2s ease;
+}
+
+/* 只留一点抬起当"可点"的暗示（卡片是能点开详情弹窗的），投影不要 */
+.forum-share-card:hover {
+    transform: translateY(-2px);
+}
+
+/* 页头（图标 + 类别）连同底下那道横线一起走主题色，跟点开后的详情弹窗对齐
+   —— chat_modal.css 里 .share-detail-header 的 border-bottom 和
+   .share-detail-category 的文字色都是 var(--accent-color)，两处要一起改。 */
+.forum-share-header {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 13px;
+    color: var(--accent-color);
+    margin-bottom: 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--accent-color);
+}
+
+.forum-share-header svg {
+    width: 18px;
+    height: 18px;
+    /* 跟着上面的 color 走，别再写死颜色 */
+    fill: currentColor;
+    flex-shrink: 0;
+}
+
+.forum-share-content .forum-share-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+    margin: 0 0 5px 0;
+    line-height: 1.4;
+    /* 最多显示两行，超出部分显示省略号 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+}
+
+.forum-share-content .forum-share-summary {
+    font-size: 13px;
+    color: #666;
+    line-height: 1.5;
+    /* 最多显示三行 */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
 }

@@ -578,7 +578,7 @@
     cursor: not-allowed;
 }
 
-/* 面性图标（礼物）：必须和上面 .expansion-item-icon svg 的 fill 一一对应地盖掉，
+/* 面性图标（如转发分享的箭头）：必须和上面 .expansion-item-icon svg 的 fill 一一对应地盖掉，
    svg 上没写 fill 的子元素（如定位图标的圆圈）靠继承拿到同一个灰 */
 .expansion-item.disabled .expansion-item-icon svg {
     fill: var(--expansion-disabled-icon);
@@ -603,22 +603,47 @@
    图像生成设置弹窗专用样式
    ========================================= */
 
-/* 消除多余底边距 */
+/* =========================================
+   统一：图像生成与语音设置弹窗的说明文字
+   ========================================= */
+   
+/* 1. 确保弹窗里的表单元素(包括 select) 底部边距清零，避免双重间距 */
 #image-generation-modal .form-group.mb-0,
 #image-generation-modal textarea.mb-0,
-#image-generation-modal input.mb-0 {
+#image-generation-modal input.mb-0,
+#image-generation-modal select.mb-0,
+#voice-setting-modal .form-group.mb-0,
+#voice-setting-modal textarea.mb-0,
+#voice-setting-modal input.mb-0,
+#voice-setting-modal select.mb-0 {
     margin-bottom: 0;
 }
 
-/* 提示小字说明。
-   ★ margin-top 必须显式归零：reset.css 只重置了滚动条，没有通用 margin reset，
-     而这些说明现在是 <p>，会吃到浏览器默认的 1em 上边距，撑出一道空隙。 */
-#image-generation-modal .field-hint {
+/* UC 预设的「一键填入」按钮排。
+   ★ 布局刻意写在 CSS 里而不是 inline style：inline 的 display:flex 会盖住
+     hidden 属性自带的 display:none，切到不支持负面词的服务商时按钮藏不掉
+     （和忙锁那处「!important 压 inline」是同一个坑）。
+   ★ [hidden] 这条也要显式写：它和上面那条 display:flex 特异度同级，
+     光靠浏览器默认样式压不住。 */
+#image-generation-uc-presets {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+}
+#image-generation-uc-presets[hidden] {
+    display: none;
+}
+
+/* 2. 统一小字提示的排版，向右边那张好看的图看齐 */
+#image-generation-modal .field-hint,
+#voice-setting-modal .field-hint {
     font-weight: normal;
     font-size: 12px;
     color: #888;
     display: block;
-    margin: 0;
+    /* 核心：上方留出 8px 距离(不贴脸)，下方归 0 (由外部容器的 padding 撑开底部留白) */
+    margin: 8px 0 0 0; 
     line-height: 1.6;
 }
 
@@ -698,3 +723,236 @@
     margin-top: 20px;
 }
 
+/* =========================================
+   语音设置弹窗（音色 + 语气要求）
+   —— 结构和图像生成弹窗同构，所以只复用它那几条通用规则，
+      不重抄一遍：抄一遍就一定会有一天只改了其中一个。
+   ========================================= */
+
+#voice-setting-modal .modal-window {
+    max-height: 85vh;
+    overflow-y: auto;
+}
+
+#voice-setting-modal .btn-group.main-actions {
+    margin-top: 20px;
+}
+
+/* --- 分享：发送弹窗 ---
+   用户手机高度不一，弹窗按百分比封顶；四个输入项放进滚动区，按钮钉在外面不滚 */
+#send-share-modal .modal-window {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(85% - var(--safe-top) - var(--safe-bottom));
+    box-sizing: border-box;
+}
+
+#send-share-modal .modal-window h3 {
+    flex: 0 0 auto;
+}
+
+#send-share-form {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.share-form-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+#send-share-form .btn {
+    flex: 0 0 auto;
+}
+
+/* 字段名和它右边的小控件同一行、靠右对齐 —— 省掉独立一行的行高。
+   两处在用：「类别」配快捷标签、「内容」配 AI 补全按钮。 */
+.share-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+#send-share-modal .share-label-row label {
+    margin-bottom: 0;
+}
+
+.share-category-presets {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
+}
+
+.share-category-tag {
+    padding: 3px 8px;
+    font-size: 12px;
+    color: #666;
+    background: #f5f5f5;
+    border: 1px solid #eaeaea;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.share-category-tag:hover,
+.share-category-tag:active {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: #fff;
+}
+
+/* 「AI 补全」：尺寸和类别快捷标签一致，但配色反过来（强调色虚线描边 + 透明底）。
+   故意不长成一个样 —— 类别标签只是往输入框填个词，这个会掏钱调接口。 */
+.share-ai-btn {
+    flex: 0 0 auto;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--accent-color);
+    background: transparent;
+    border: 1px dashed var(--accent-color);
+    border-radius: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.share-ai-btn:hover:not(:disabled),
+.share-ai-btn:active:not(:disabled) {
+    background: var(--accent-color);
+    color: #fff;
+}
+
+/* 补全中：置灰 + 不可点。文案由 JS 换成「补全中…」 */
+.share-ai-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* --- 分享：详情弹窗（点卡片弹出，四项看全） --- */
+#share-detail-modal .modal-window {
+    display: flex;
+    flex-direction: column;
+    /* 正文可能很长（帖子全文、文件内容），弹窗自身不许超出屏幕 */
+    max-height: 80%;
+    box-sizing: border-box;
+    padding: 15px 20px 20px;
+}
+
+/* 页眉：左类别、右 X，底下一道实线；钉在顶上不跟内容滚 */
+.share-detail-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--accent-color);
+}
+
+.share-detail-category {
+    font-size: 13px;
+    color: var(--accent-color);
+    /* 类别太长别顶飞 X */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.share-detail-close {
+    flex: 0 0 auto;
+    background: none;
+    border: none;
+    padding: 0 2px;
+    font-size: 24px;
+    line-height: 1;
+    color: var(--accent-color);
+    cursor: pointer;
+}
+
+/* 标题/内容/附注顺序排，整个区一起滚 */
+.share-detail-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+#share-detail-modal .share-detail-title {
+    margin: 12px 0 10px;
+    font-size: 17px;
+    color: #000;
+    /* 标题在详情里要看全，不截断（卡片上才截） */
+    word-break: break-word;
+}
+
+.share-detail-text {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #444;
+    /* 换行已在 JS 里拆成 <p>，不需要 pre-wrap；对齐和段距跟喵坛正文一个节奏 */
+    white-space: normal;
+    word-break: break-word;
+    text-align: justify;
+    text-justify: inter-ideograph;
+}
+
+/* 12px 跟着喵坛正文（forum.css 的 .post-detail-content-body p）走：两边都是
+   AI 写的大段散文，段距不一致很显眼。样式从 forum.css 搬过来那次曾误改成 8px。 */
+.share-detail-text p {
+    margin: 0 0 12px;
+}
+
+.share-detail-text>*:last-child {
+    margin-bottom: 0;
+}
+
+/* 附注和正文之间虚线隔开；extra 为空时整块（含虚线）藏掉 */
+.share-detail-divider {
+    margin: 10px 0;
+    border-top: 1px dashed var(--dgray-color);
+}
+
+/* --- 转发聊天记录弹窗 --- */
+/* 转发对象列表的滚动框。喵坛那个分享弹窗把这几条写成了内联 style，
+   这边不照抄内联 —— 聊天下的弹窗样式统一收在这个文件里（见 8cb7e45）。
+   列表项本身复用全局的 .binding-list / .binding-list-item（在 forum.css，
+   是通用清单样式，不是论坛专用）。 */
+.forward-target-box {
+    max-height: 250px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid #eee;
+    border-radius: 8px;
+    padding: 5px;
+    margin-bottom: 15px;
+}
+
+/* 头像 + 昵称一行。喵坛那边靠内联 style 撑，这里给个类名 */
+.forward-target-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.forward-target-label img {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.forward-target-empty {
+    color: #888;
+    padding: 12px 5px;
+    font-size: 14px;
+}
