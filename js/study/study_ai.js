@@ -25,43 +25,13 @@ function _getStudyApiConfig() {
 }
 
 /**
- * 读取 SSE 流，每个 delta chunk 调用 onChunk，最终返回完整文本。
- */
-async function _readStream(response, onChunk) {
-  const reader  = response.body.getReader();
-  const decoder = new TextDecoder();
-  let full = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const text = decoder.decode(value, { stream: true });
-    for (const line of text.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed === 'data: [DONE]') continue;
-      if (trimmed.startsWith('data: ')) {
-        try {
-          const json  = JSON.parse(trimmed.slice(6));
-          const chunk = json.choices?.[0]?.delta?.content || '';
-          if (chunk) { full += chunk; onChunk(chunk); }
-        } catch { /* 忽略格式异常行 */ }
-      }
-    }
-  }
-  return full;
-}
-
-/**
  * 统一 AI 调用入口。
  */
 async function callAI(prompt, options = {}) {
   const cfg = _getStudyApiConfig();
-  const url   = cfg.url || cfg.apiUrl || '';
-  const key   = cfg.key || cfg.apiKey || '';
-  const model = cfg.model || '';
-  const temperature = cfg.temperature !== undefined ? Number(cfg.temperature) : 0.8;
-
-  if (!url || !key || !model) throw new Error('API 未配置，请在学习设置中选择预设或前往 API 设置页配置全局默认');
+  if (!(cfg.url || cfg.apiUrl) || !(cfg.key || cfg.apiKey) || !cfg.model) {
+    throw new Error('API 未配置，请在学习设置中选择预设或前往 API 设置页配置全局默认');
+  }
 
   const useStream = cfg.streamEnabled !== false && typeof options.onStream === 'function';
 
@@ -69,26 +39,14 @@ async function callAI(prompt, options = {}) {
   if (options.systemPrompt) messages.push({ role: 'system', content: options.systemPrompt });
   messages.push({ role: 'user', content: prompt });
 
-  const response = await fetch(`${url}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type':  'application/json',
-      'Authorization': `Bearer ${key}`
-    },
-    body: JSON.stringify({ model, messages, temperature, stream: useStream })
+  // 端点/字段/流式协议的两家差异统一由 callLLM 处理（js/api/llm_client.js）
+  return callLLM({
+    cfg,
+    messages,
+    temperature: cfg.temperature !== undefined ? Number(cfg.temperature) : 0.8,
+    stream: useStream,
+    onChunk: useStream ? (delta) => options.onStream(delta) : undefined
   });
-
-  if (!response.ok) {
-    const errText = await response.text().catch(() => '');
-    throw new Error(`API 请求失败 (${response.status})${errText ? ': ' + errText : ''}`);
-  }
-
-  if (useStream) {
-    return _readStream(response, options.onStream);
-  } else {
-    const data = await response.json();
-    return data.choices?.[0]?.message?.content || '';
-  }
 }
 
 // ── 构建角色人设 system prompt（供多处复用）──────────────────────

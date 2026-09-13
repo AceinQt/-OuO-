@@ -109,7 +109,7 @@
                         focusAvatarEl.src = boundChar.avatar;
                     }
                 } else if (focusAvatarEl) {
-                    focusAvatarEl.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; // Fallback
+                    focusAvatarEl.src = './png/avatar_default.jpg'; // Fallback
                 }
 
                 // 新增：如果更换了角色，则清空对话框
@@ -786,10 +786,10 @@ try {
                                     if (boundChar && focusAvatarEl) {
                                         focusAvatarEl.src = boundChar.avatar;
                                     } else if (focusAvatarEl) {
-                                        focusAvatarEl.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; // Fallback
+                                        focusAvatarEl.src = './png/avatar_default.jpg'; // Fallback
                                     }
                                 } else if (focusAvatarEl) {
-                                    focusAvatarEl.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'; // Fallback
+                                    focusAvatarEl.src = './png/avatar_default.jpg'; // Fallback
                                 }
                                 // END NEW
 

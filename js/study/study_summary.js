@@ -481,28 +481,18 @@ async function _bsSaveItem(book, { title, content, chapterRange, startChapterIdx
 }
 
 // ── 公共：发 API 请求，返回 raw 字符串 ───────────────────────
-async function _bsCallApi({ url, key, model, temperature }, systemPrompt, userContent) {
-    const resp = await fetch(`${url.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-            model,
-            messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user',   content: userContent  },
-            ],
-            temperature: temperature ?? 0.5,
-        }),
+// gemini 原生 / openai 兼容两种格式的差异由 callLLM 处理（js/api/llm_client.js）。
+// 固定非流式：上层要对整段结果做格式解析。
+async function _bsCallApi(cfg, systemPrompt, userContent) {
+    return callLLM({
+        cfg,
+        messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user',   content: userContent  },
+        ],
+        temperature: cfg.temperature ?? 0.5,
+        stream: false
     });
-    if (!resp.ok) {
-        const errText = await resp.text().catch(() => '');
-        throw new Error(`API ${resp.status}：${errText.slice(0, 100)}`);
-    }
-    const result = await resp.json();
-    return result?.choices?.[0]?.message?.content || '';
 }
 
 // ══════════════════════════════════════════════════════════════
