@@ -80,27 +80,26 @@ const RPG_SVG_CODE = `<svg class="icon-img" viewBox="0 0 24 24" fill="none" xmln
 
 // 2. 默认设置对象
 const defaultWidgetSettings = {
-    centralCircleImage: 'https://i.postimg.cc/mD83gR29/avatar-1.jpg',
+    // 原先指向 postimg 上的 avatar-1.jpg，那张图在图床上已经被删了 —— 抓下来只拿到
+    // 一张「image not found」占位图，桌面中心圆一直显示的就是它。改用项目自带的默认
+    // 头像。想换成别的：把图片丢进 png/，改这一行即可。
+    centralCircleImage: './png/avatar_default.jpg',
 };
 
 const simulatedMemos = [];
 
 // 3. 应用图标配置表
+// 只列桌面上真实存在的 6 个图标 —— home.js 的 appKeys 和 customize.js 的 iconOrder 都是这 6 个。
+// 曾经还有 api / 壁纸 / 自定义 / 字体 / 教程 / 白昼 / 夜间 / 日记本 / 存钱罐 / 存储分析 十项走
+// png/icon_*.png，但它们的入口早就并进「设置」页的 settings-item 了，桌面上没有对应的
+// app-icon-<id> 元素去消费这些配置，属于纯死配置，已连同图片一起删除。
+// 要再往桌面加图标：index.html 补 app-icon-<id> 元素 + 这里补一条 + home.js 的 appKeys 补 key，
+// 三处齐了才生效，少一处都是白写。
 const defaultIcons = {
     'chat-list-screen': { name: '聊天', url: './icon/chat.svg', svgCode: CHAT_SVG_CODE },
     'study-screen': { name: 'ToDouo', url: './icon/todouo.svg', svgCode: STUDY_SVG_CODE },
     'world-book-screen': { name: '世界书', url: './icon/worldbook.svg', svgCode: WORLDBOOK_SVG_CODE },
     'settings-screen': { name: '设置', url: './icon/settings.svg', svgCode: SETTINGS_SVG_CODE },
     'rpg-title-screen': { name: '传说之旅', url: './icon/rpg.svg', svgCode: RPG_SVG_CODE },
-    'api-settings-screen': { name: 'api', url: 'https://i.postimg.cc/50FqT8GL/chan-125.png' },
-    'wallpaper-screen': { name: '壁纸', url: 'https://i.postimg.cc/VvQB8dQT/chan-143.png' },
-    'customize-screen': { name: '自定义', url: 'https://i.postimg.cc/vZVdC7gt/chan-133.png' },
-    'font-settings-screen': { name: '字体', url: 'https://i.postimg.cc/FzVtC0x4/chan-21.png' },
-    'tutorial-screen': { name: '教程', url: 'https://i.postimg.cc/6QgNzCFf/chan-118.png' },
-    'day-mode-btn': { name: '白昼模式', url: 'https://i.postimg.cc/Jz0tYqnT/chan-145.png' },
-    'night-mode-btn': { name: '夜间模式', url: 'https://i.postimg.cc/htYvkdQK/chan-146.png' },
-    'forum-screen': { name: '喵坛', url: './icon/forum.svg', svgCode: FORUM_SVG_CODE },
-    'diary-screen': { name: '日记本', url: 'https://i.postimg.cc/ydd65txK/1758451018266.png' },
-    'piggy-bank-screen': { name: '存钱罐', url: 'https://i.postimg.cc/3RmWRRtS/chan-18.png' },
-    'storage-analysis-screen': { name: '存储分析', url: 'https://i.postimg.cc/J0F3Lt0T/chan-107.png' }
+    'forum-screen': { name: '喵坛', url: './icon/forum.svg', svgCode: FORUM_SVG_CODE }
 };
