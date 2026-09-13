@@ -288,7 +288,7 @@ async function generatePeekBatch() {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     // 已有单个应用在生成时不允许批量，避免同一份缓存被两边同时写
@@ -320,7 +320,7 @@ async function generatePeekBatch() {
         const systemPrompt = buildPeekBatchPrompt(char, mainChatContext);
 
         const contentStr = await callPeekApi({
-            url, key, model,
+            url, key, model, provider,
             messages: [{ role: 'user', content: systemPrompt }],
             temperature, streamEnabled
         });

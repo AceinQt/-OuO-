@@ -9,7 +9,7 @@ function _buildCartItemHtml(item, isEdit) {
     const isSelected = isEdit && PeekDeleteManager.selectedIds.has(item.id);
     return `
         <li class="cart-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-            <img src="https://i.postimg.cc/wMbSMvR9/export202509181930036600.png" class="cart-item-image" alt="${item.title}">
+            <img src="./png/peek_cart_item.png" class="cart-item-image" alt="${item.title}">
             <div class="cart-item-details">
                 <h3 class="cart-item-title">${item.title} ${item.isNew ? '<span class="new-badge">new!</span>' : ''}</h3>
                 <p class="cart-item-spec">规格：${item.spec}</p>
@@ -145,7 +145,7 @@ async function generateAndRenderPeekCart(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(char.id);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(char.id);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -192,7 +192,7 @@ async function generateAndRenderPeekCart(options = {}) {
 #SECRET_CHAT_EVENING_85%#[19:16|${senderName}发来的照片/视频:耳机的图片][19:15|${senderName}的消息:你觉得黑色的耳机好看还是白色的好看？][19:16|${senderName}的消息:我想换个新耳机，但在颜色上纠结了半天...]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const cartRawText = parts[0] || '';

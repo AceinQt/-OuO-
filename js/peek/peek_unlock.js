@@ -85,7 +85,7 @@ function renderPeekUnlock(data, isAppend = false, resetPage = false) {
     const bio = data.bio || '';
     const posts = data.posts ||[];
 
-    const fixedAvatar = peekSettings.unlockAvatar || 'https://i.postimg.cc/SNwL1XwR/chan-11.png';
+    const fixedAvatar = peekSettings.unlockAvatar || './png/peek_unlock_avatar.png';
 
     const feed = document.getElementById('unlock-post-feed');
     const isEdit = PeekDeleteManager.isEditMode && PeekDeleteManager.currentAppType === 'unlock';
@@ -273,7 +273,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -343,7 +343,7 @@ async function generateAndRenderPeekUnlock(options = {}) {
 #SECRET_CHAT_NIGHT_85%#[23:15|${senderName}的消息:你睡了吗？][23:16|${senderName}的消息:感觉有点丧，不知道该跟谁说...]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const unlockRawText = parts[0] || '';
@@ -412,7 +412,7 @@ function initPeekUnlock() {
             // 数据回显与预览图更新
             const currentAvatar = peekSettings.unlockAvatar || '';
             if(avatarInput) avatarInput.value = currentAvatar;
-            if(avatarPreview) avatarPreview.src = currentAvatar || 'https://i.postimg.cc/SNwL1XwR/chan-11.png';
+            if(avatarPreview) avatarPreview.src = currentAvatar || './png/peek_unlock_avatar.png';
             
             document.getElementById('peek-unlock-fixed-nickname').value = peekSettings.unlockFixedNickname || '';
             document.getElementById('peek-unlock-fixed-handle').value = peekSettings.unlockFixedHandle || '';
@@ -424,7 +424,7 @@ function initPeekUnlock() {
     // 绑定输入框变化实时更新预览图
     if (avatarInput && avatarPreview) {
         avatarInput.addEventListener('input', () => {
-            avatarPreview.src = avatarInput.value.trim() || 'https://i.postimg.cc/SNwL1XwR/chan-11.png';
+            avatarPreview.src = avatarInput.value.trim() || './png/peek_unlock_avatar.png';
         });
     }
 

@@ -158,7 +158,7 @@ async function generateAndRenderPeekTransfer(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -200,7 +200,7 @@ https://example.com/interesting-article
 #SECRET_CHAT_NOON_85%#[12:15|${senderName}的消息:我前阵子看到一篇关于心理学的文章，挺有意思的][12:16|${senderName}的消息:https://example.com/interesting-article]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const transferRawText = parts[0] || '';

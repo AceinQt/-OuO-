@@ -187,7 +187,7 @@ async function generateAndRenderPeekMemos(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -234,7 +234,7 @@ memo_2
 #SECRET_CHAT_AFTERNOON_85%#[15:15|${senderName}的消息:你这周末有空吗？][15:16|${senderName}的消息:我打算去趟超市买点东西，要不要一起？]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const memosRawText = parts[0] || '';

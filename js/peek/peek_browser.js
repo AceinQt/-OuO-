@@ -130,7 +130,7 @@ async function generateAndRenderPeekBrowser(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -177,7 +177,7 @@ www.example.com/tech-review-2026
 #SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:最近有没有什么特别想吃的？][19:16|${senderName}的消息:我刚刚看到一个不错的菜谱，周末我们一起做做看？]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const browserRawText = parts[0] || '';

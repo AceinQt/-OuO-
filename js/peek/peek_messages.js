@@ -38,7 +38,7 @@ function renderPeekChatList(conversations =[], isAppend = false, resetPage = fal
         li.dataset.name = convo.partnerName;
         li.dataset.id = convo.id;
 
-        const avatarUrl = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+        const avatarUrl = './png/avatar_default.jpg';
         
         // 屏蔽标记图标
         const hiddenIcon = convo.isHidden ? 
@@ -105,7 +105,7 @@ function _buildPeekMessageEl(msg, isEdit) {
     } else {
         const avatar = document.createElement('img');
         avatar.className = 'message-avatar';
-        avatar.src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+        avatar.src = './png/avatar_default.jpg';
         bubbleRow.appendChild(avatar);
         bubbleRow.appendChild(bubble);
     }
@@ -494,7 +494,7 @@ async function continuePeekConversation(partnerName) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     const ok = await AppUI.confirm(
@@ -540,7 +540,7 @@ async function continuePeekConversation(partnerName) {
         systemPrompt += `\n输出格式示例：\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\npartner: 对方发送的消息内容\n`;
 
         const contentStr = await callPeekApi({
-            url, key, model,
+            url, key, model, provider,
             messages: [{ role: 'user', content: systemPrompt }],
             temperature, streamEnabled
         });
@@ -590,7 +590,7 @@ async function generateAndRenderPeekMessages(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -626,7 +626,7 @@ async function generateAndRenderPeekMessages(options = {}) {
         systemPrompt += getPeekProactiveFormatPrompt(char);
         systemPrompt += `\n请严格按照以下标签文本格式输出，**每段对话之间使用 ===SEP=== 分隔**。在所有对话结束后，使用 ===PROACTIVE_MESSAGES=== 分割，再输出主动消息。\n\n输出格式示例：\n#PARTNER#\n与Ta对话的人的称呼\n#HISTORY#\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\npartner: 对方发送的消息内容\n===SEP===\n#PARTNER#\n与Ta对话的人的称呼\n#HISTORY#\npartner: 对方发送的消息内容\nchar: ${char.realName}发送的消息内容\n===PROACTIVE_MESSAGES===\n#SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:突然好想吃我妈做的排骨啊(T_T)][19:16|${senderName}的消息:你吃晚饭了吗？]\n`;
 
-        const contentStr = await callPeekApi({ url, key, model, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const messagesRawText = parts[0] || '';

@@ -4,15 +4,15 @@
 // ==========================================
 
 const peekScreenApps = {
-    'messages': { name: '消息', url: 'https://i.postimg.cc/Kvs4tDh5/export202509181826424260.png' },
-    'memos': { name: '备忘录', url: 'https://i.postimg.cc/JzD0xH1C/export202509181829064550.png' },
-    'cart': { name: '购物车', url: 'https://i.postimg.cc/pLwT6VTh/export202509181830143960.png' },
-    'transfer': { name: '中转站', url: 'https://i.postimg.cc/63wQBHCB/export202509181831140230.png' },
-    'browser': { name: '浏览器', url: 'https://i.postimg.cc/SKcsF02Z/export202509181830445980.png' },
-    'drafts': { name: '草稿箱', url: 'https://i.postimg.cc/ZKqC9D2R/export202509181827225860.png' },
-    'album': { name: '相册', url: 'https://i.postimg.cc/qBcdpqNc/export202509221549335970.png' },
-    'steps': { name: '步数', url: 'https://i.postimg.cc/5NndFrq6/export202509181824532800.png' },
-    'unlock': { name: 'unlock！', url: 'https://i.postimg.cc/28zNyYWs/export202509221542593320.png' }
+    'messages': { name: '消息', url: './png/peek_app_messages.png' },
+    'memos': { name: '备忘录', url: './png/peek_app_memos.png' },
+    'cart': { name: '购物车', url: './png/peek_app_cart.png' },
+    'transfer': { name: '中转站', url: './png/peek_app_transfer.png' },
+    'browser': { name: '浏览器', url: './png/peek_app_browser.png' },
+    'drafts': { name: '草稿箱', url: './png/peek_app_drafts.png' },
+    'album': { name: '相册', url: './png/peek_app_album.png' },
+    'steps': { name: '步数', url: './png/peek_app_steps.png' },
+    'unlock': { name: 'unlock！', url: './png/peek_app_unlock.png' }
 };
 
 // ==========================================
@@ -269,10 +269,13 @@ function getPeekApiConfig(charId) {
             .find(p => p.name === presetName);
         if (preset?.data) {
             const d = preset.data;
+            // 展开兜底：projectId 之类的新字段不用回来逐个加
             return {
+                ...d,
                 url:           d.url || d.apiUrl || '',
                 key:           d.key || d.apiKey || '',
                 model:         d.model || '',
+                provider:      d.provider || 'newapi',
                 streamEnabled: d.streamEnabled !== false,
                 temperature:   d.temperature !== undefined ? d.temperature : 0.8
             };
@@ -288,9 +291,11 @@ function getPeekApiConfig(charId) {
         if (preset?.data) {
             const d = preset.data;
             return {
+                ...d,
                 url:           d.url || d.apiUrl || '',
                 key:           d.key || d.apiKey || '',
                 model:         d.model || '',
+                provider:      d.provider || 'newapi',
                 streamEnabled: d.streamEnabled !== false,
                 temperature:   d.temperature !== undefined ? d.temperature : 0.8
             };
@@ -300,9 +305,11 @@ function getPeekApiConfig(charId) {
     // 最终兜底（旧格式兼容）
     const s = db.apiSettings || {};
     return {
+        ...s,
         url:           s.url || s.apiUrl || '',
         key:           s.key || s.apiKey || '',
         model:         s.model || '',
+        provider:      s.provider || 'newapi',
         streamEnabled: s.streamEnabled !== false,
         temperature:   s.temperature !== undefined ? s.temperature : 0.8
     };
@@ -313,55 +320,18 @@ function getPeekApiConfig(charId) {
 // 支持流式（读完再返回）和非流式，对外统一返回 Promise<string>
 // Peek内容需要结构化解析，流式也必须等全部传输完毕
 // ==========================================
-async function callPeekApi({ url, key, model, messages, temperature = 0.85, streamEnabled = false }) {
-    const requestBody = {
-        model,
+async function callPeekApi(opts = {}) {
+    const { messages, temperature = 0.85, streamEnabled = false } = opts;
+    // gemini 原生 / openai 兼容 / vertexExpress 三种形状的差异统一由 callLLM 处理
+    //（js/api/llm_client.js）。Peek 内容要整体结构化解析，所以流式也只在读完后一次性返回。
+    // cfg 整体透传：调用方多带的字段（如 projectId）不会在这里被丢掉。
+    const text = await callLLM({
+        cfg: opts,
         messages,
         temperature,
         stream: !!streamEnabled
-    };
-
-    const response = await fetch(`${url}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify(requestBody)
     });
-
-    if (!response.ok) throw new Error(`API error: ${response.status}`);
-
-    if (!streamEnabled) {
-        const result = await response.json();
-        return result.choices[0].message.content.trim();
-    }
-
-    // 流式：逐行读取SSE，累积完整文本后返回
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let fullText = '';
-    let buffer = '';
-
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop(); // 最后一行可能不完整，留给下次
-
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed.startsWith('data: ')) continue;
-            const data = trimmed.slice(6);
-            if (data === '[DONE]') continue;
-            try {
-                const parsed = JSON.parse(data);
-                const delta = parsed.choices?.[0]?.delta?.content;
-                if (delta) fullText += delta;
-            } catch (_) { /* 忽略格式异常行 */ }
-        }
-    }
-
-    return fullText;
+    return text.trim();
 }
 
 // ==========================================
