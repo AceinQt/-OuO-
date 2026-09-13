@@ -19,12 +19,24 @@ const CHAT_PROVIDER_URLS = {
     newapi:   '',
     deepseek: 'https://api.deepseek.com',
     claude:   'https://api.anthropic.com',
-    gemini:   'https://generativelanguage.googleapis.com'
+    gemini:   'https://generativelanguage.googleapis.com',
+    vertexExpress: 'https://aiplatform.googleapis.com'
 };
+// 注意：embedding 没有 vertexExpress —— Express Mode 的 REST 面只有
+// countTokens / generateContent / streamGenerateContent，没有 embedding 端点。
 const EMB_PROVIDER_URLS = {
     newapi: '',
     openai:  'https://api.openai.com',
     gemini:  'https://generativelanguage.googleapis.com'
+};
+// 生图：vertexExpress 走的是和文字同一个 generateContent 面（生图模型就在那上面），
+// 所以域名与 CHAT_PROVIDER_URLS 一致。openai 那档是任意 OpenAI 兼容中转站。
+const IMAGE_PROVIDER_URLS = {
+    openai: 'https://api.openai.com',
+    vertexExpress: 'https://aiplatform.googleapis.com',
+    // NAI 官方。和 Vertex 一样在切换服务商时强制覆盖（填完还能手改成中转站）——
+    // 留着上一家的地址去拼 /ai/generate-image 必然 404，比覆盖更坑。
+    nai: 'https://image.novelai.net'
 };
 
 // ============================================================
@@ -37,10 +49,12 @@ const EMB_PROVIDER_URLS = {
 //   nameBase         新增预设时的默认名前缀
 //   modelRequiredMsg 未选模型时的提示语
 //   providerUrls     服务商 → 自动填入的 URL
+//   providerFields   仅对特定服务商显示的整行：[{ rowId, providers: [...] }]
+//                    由 _syncApiProviderFields() 按当前 provider 切 hidden
 // 字段级（fields）：
 //   key         预设 data 里的字段名
 //   id          元素 id 后缀（省略则用 key）
-//   kind        text | check | range | modelSelect，决定读写用哪种 DOM 操作
+//   kind        text | check | range | modelSelect | modelList，决定读写用哪种 DOM 操作
 //   blank       "新增空白预设"时填的值
 //   get(src)    从预设 data 或裸 db 配置里取值（含旧字段名兼容与默认值）
 //   getLegacy(src)  仅当"没有 activePreset、直接读裸 db 配置"这条路径口径不同才需要写
@@ -53,10 +67,22 @@ const API_TAB_DEFS = {
         nameBase: 'api预设',
         modelRequiredMsg: '请选择模型后保存！',
         providerUrls: CHAT_PROVIDER_URLS,
+        providerFields: [
+            { rowId: 'api-chat-project-row', providers: ['vertexExpress'] }
+        ],
         fields: [
             { key: 'provider', kind: 'text',        blank: 'newapi', get: s => s.provider || 'newapi' },
             { key: 'url',      kind: 'text',        blank: '',       get: s => s.url || s.apiUrl || '' },
             { key: 'key',      kind: 'text',        blank: '',       get: s => s.key || s.apiKey || '' },
+            // 仅 vertexExpress 用：留空则区域由 Google 后端自选（部分模型会 404），
+            // 填了就钉定 projects/{id}/locations/global/...
+            { key: 'projectId', id: 'project', kind: 'text', blank: '', get: s => s.projectId || '' },
+            // modelList 必须排在 model 前面：写表单是按这个顺序来的，
+            // 先铺好 option 清单，model 才有得选（反过来会被清单覆盖掉）
+            {
+                key: 'modelList', id: 'model', kind: 'modelList', blank: [],
+                get: s => _seedModelList(s)
+            },
             { key: 'model',    kind: 'modelSelect', blank: '',       get: s => s.model || '' },
             {
                 key: 'streamEnabled', id: 'stream', kind: 'check', blank: false,
@@ -88,12 +114,120 @@ const API_TAB_DEFS = {
             { key: 'provider', kind: 'text',        blank: 'newapi', get: s => s.provider || 'newapi' },
             { key: 'url',      kind: 'text',        blank: '',       get: s => s.url || s.apiUrl || '' },
             { key: 'key',      kind: 'text',        blank: '',       get: s => s.key || s.apiKey || '' },
+            { key: 'modelList', id: 'model', kind: 'modelList', blank: [], get: s => _seedModelList(s) },
             { key: 'model',    kind: 'modelSelect', blank: '',       get: s => s.model || '' }
         ]
     }
 };
 
 const API_TAB_TYPES = Object.keys(API_TAB_DEFS);
+
+// ============================================================
+// 模型清单（select 里的候选项，跟着预设走）
+// ============================================================
+// 以前 select 里的 option 是"拉一次接口临时填进去"的，不落库：换个预设再回来
+// 就只剩当前 model 一项。企业接口拉不动 /models（Vertex Express 的列模型端点
+// 还要 OAuth），于是清单只能内置在代码里，加个模型得改代码。
+// 现在每条预设自带 modelList 数组，可以在 select 右边那个方块按钮里手动编辑。
+
+/** 清洗一份模型清单：去空白、去重、保序 */
+function _normalizeModelList(list) {
+    const out = [];
+    const seen = new Set();
+    (Array.isArray(list) ? list : []).forEach(raw => {
+        const m = String(raw == null ? '' : raw).trim();
+        if (!m || seen.has(m)) return;
+        seen.add(m);
+        out.push(m);
+    });
+    return out;
+}
+
+/**
+ * 从一份配置里推出初始清单。
+ * 老预设没有 modelList 字段，就用它已选的 model 兜一条，别让下拉框变空。
+ * vertexExpress 额外并上 llm_client.js 的内置清单（那边拉不动接口，内置是唯一来源）。
+ */
+function _seedModelList(src) {
+    const s = src || {};
+    const saved = _normalizeModelList(s.modelList);
+    if (saved.length) return saved;
+    const seed = [];
+    if (s.provider === 'vertexExpress' && typeof VERTEX_EXPRESS_MODELS !== 'undefined') {
+        seed.push(...VERTEX_EXPRESS_MODELS);
+    }
+    if (s.model) seed.unshift(s.model);
+    return _normalizeModelList(seed);
+}
+
+/** 读 select 里现有的候选项（select 就是清单的唯一现场状态，不另存一份内存副本） */
+function _readModelListFromSelect(selectId) {
+    const el = document.getElementById(selectId);
+    if (!el) return [];
+    return _normalizeModelList(Array.from(el.options).map(o => o.value));
+}
+
+/**
+ * 用一份清单重铺 select 的 option，并尽量保住当前选中值。
+ * @param {string} selectId
+ * @param {string[]} list
+ * @param {string} [preferred] 想选中的值；不在清单里就并进清单开头（别把用户存着的模型弄丢）
+ */
+function _fillModelSelect(selectId, list, preferred) {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+    const want = String(preferred == null ? '' : preferred).trim();
+    let models = _normalizeModelList(list);
+    if (want && !models.includes(want)) models = [want, ...models];
+
+    el.innerHTML = '';
+    if (!models.length) {
+        el.innerHTML = '<option value="">请先拉取或手动编辑模型列表</option>';
+        return;
+    }
+    models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        el.appendChild(opt);
+    });
+    el.value = want && models.includes(want) ? want : models[0];
+}
+
+/**
+ * 「编辑模型列表」弹窗：一行一个模型，回车换行，Ctrl/Cmd + Enter 提交。
+ * 保存后清单直接落进 select，随本条预设一起 saveGlobalKeys（点底部保存按钮才写库）。
+ */
+async function editModelList(selectId, { title = '编辑模型列表', hint = '' } = {}) {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+
+    const current = _readModelListFromSelect(selectId);
+    const selected = el.value;
+
+    const text = await AppUI.promptMultiline(
+        '一行一个模型名，回车换行。空行会被忽略，重复的自动去掉。'
+        + '\n保存后记得点底部的保存按钮，清单才会随这条预设存进库里。'
+        + (hint ? '\n' + hint : ''),
+        {
+            value: current.join('\n'),
+            placeholder: 'gemini-3-pro-preview\ngemini-2.5-flash',
+            title,
+            rows: 10,
+            confirmText: '确定',
+            cancelText: '取消'
+        }
+    );
+    if (text === null) return;                       // 用户取消
+
+    const list = _normalizeModelList(text.split('\n'));
+    // 清空清单是合法操作（比如想重新拉一次），但别顺手把当前选中的模型也删了却不告知
+    _fillModelSelect(selectId, list, list.includes(selected) ? selected : '');
+
+    // 代码改的值不触发事件，手动派发让 _watchDirty 点亮保存提示
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    showToast(list.length ? `模型列表已更新（${list.length} 个）` : '模型列表已清空');
+}
 
 /** 取描述符；未知类型返回 null（调用方一律先判空） */
 function _apiDef(type) {
@@ -245,6 +379,7 @@ function populateApiSelect(type) {
 function _readApiField(def, f) {
     const id = _apiFieldId(def, f);
     if (f.kind === 'check') return _getChecked(id);
+    if (f.kind === 'modelList') return _readModelListFromSelect(id);
     if (f.kind === 'range') {
         // 用 isNaN 判而不是 ||：温度 0 是合法值，0 || 0.8 会变成 0.8
         const n = parseFloat(_getVal(id));
@@ -257,14 +392,25 @@ function _readApiField(def, f) {
 function _writeApiField(def, f, value) {
     const id = _apiFieldId(def, f);
     if (f.kind === 'check') { _setChecked(id, value); return; }
+    if (f.kind === 'modelList') {
+        // 只铺清单，不传 preferred —— 这里 select 里还是上一条预设的值，
+        // 传进去会把上一条预设的模型混进这条预设的清单。选中项由后面的
+        // modelSelect 字段负责（fields 里 modelList 必须排在 model 前面）。
+        _fillModelSelect(id, value);
+        return;
+    }
     if (f.kind === 'modelSelect') {
-        // 模型下拉的选项是拉取来的，这里只塞一个当前值；没值就别动它
+        // 清单已由 modelList 字段铺好，这里只负责选中；值不在清单里就补一条再选
         if (!value) return;
         const el = document.getElementById(id);
-        if (el) {
-            el.innerHTML = `<option value="${value}">${value}</option>`;
-            el.value = value;
+        if (!el) return;
+        if (!Array.from(el.options).some(o => o.value === value)) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = value;
+            el.insertBefore(opt, el.firstChild);
         }
+        el.value = value;
         return;
     }
     _setVal(id, value);
@@ -288,6 +434,21 @@ function _apiDataFromSource(def, src) {
 }
 
 /**
+ * 按当前 provider 显示/隐藏专属字段行（如 vertexExpress 的 Project ID）。
+ * 用 hidden 属性而非 style.display —— .form-group 只声明 margin-bottom，不会盖掉它。
+ * def 没写 providerFields 的 tab（如 embedding）直接跳过。
+ */
+function _syncApiProviderFields(type) {
+    const def = _apiDef(type);
+    if (!def || !def.providerFields) return;
+    const provider = _getVal(_apiId(def, 'provider'));
+    def.providerFields.forEach(pf => {
+        const row = document.getElementById(pf.rowId);
+        if (row) row.hidden = !pf.providers.includes(provider);
+    });
+}
+
+/**
  * 把数据写进表单字段（纯数据，不动 select / name input）
  * @param {boolean} legacy true = 来源是裸 db 配置（无 activePreset 的回落路径），
  *                         写了 getLegacy 的字段按那个口径取值
@@ -300,6 +461,7 @@ function _applyDataToForm(type, src, { legacy = false } = {}) {
         const get = (legacy && f.getLegacy) ? f.getLegacy : f.get;
         _writeApiField(def, f, get(src));
     });
+    _syncApiProviderFields(type);
 }
 
 /** 清空表单字段 */
@@ -309,11 +471,13 @@ function _clearFormFields(type) {
     def.fields.forEach(f => {
         if (f.kind === 'modelSelect') {
             const el = document.getElementById(_apiFieldId(def, f));
-            if (el) el.innerHTML = '<option value="">请先拉取模型列表</option>';
+            if (el) el.innerHTML = '<option value="">请先拉取或手动编辑模型列表</option>';
             return;
         }
+        if (f.kind === 'modelList') return;   // 和 modelSelect 是同一个元素，上面已经清了
         _writeApiField(def, f, f.blank);
     });
+    _syncApiProviderFields(type);
 }
 
 // ── 应用预设到表单（对外接口，含 name input + 默认开关同步） ──
@@ -619,7 +783,7 @@ function importApiPresets(type) {
 }
 
 // ============================================================
-// 拉取模型列表 (已适配自定义 AppUI.prompt 手动输入机制)
+// 拉取模型列表（拉不动时改走多行清单编辑弹窗）
 // ============================================================
 async function fetchModels(type) {
     const def = _apiDef(type);
@@ -630,9 +794,24 @@ async function fetchModels(type) {
     const provider = _getVal(_apiId(def, 'provider'));
     const btn      = document.getElementById(_apiId(def, 'fetch-btn'));
     const modelSel = document.getElementById(_apiId(def, 'model'));
+    const modelId  = _apiId(def, 'model');
 
     if (!url || !key) return showToast('请先填写 API 地址和密钥！');
     if (url.endsWith('/')) url = url.slice(0, -1);
+
+    // Vertex Express 的列模型端点要 OAuth 而不是 API Key，拉不动。
+    // 直接并上 llm_client.js 里的内置清单，不发任何网络请求。
+    // 内置清单会过期，所以这里是"并入"而不是"替换"——用户自己编辑加的模型要留着。
+    if (provider === 'vertexExpress') {
+        const cur = modelSel.value;
+        const builtin = (typeof VERTEX_EXPRESS_MODELS !== 'undefined' ? VERTEX_EXPRESS_MODELS : []);
+        const merged = _normalizeModelList([..._readModelListFromSelect(modelId), ...builtin]);
+        _fillModelSelect(modelId, merged, cur);
+        // 代码改的值不触发事件，手动派发让 _watchDirty 点亮保存按钮
+        modelSel.dispatchEvent(new Event('change', { bubbles: true }));
+        showToast('已并入内置 Vertex Express 模型清单');
+        return;
+    }
 
     let endpoint;
     if (provider === 'gemini') {
@@ -665,18 +844,14 @@ async function fetchModels(type) {
         } else if (provider === 'gemini' && json.models) {
             models = json.models.map(e => e.name.replace('models/', ''));
         }
+        models = _normalizeModelList(models);
+        if (!models.length) throw new Error('接口未返回任何模型数据');
 
-        modelSel.innerHTML = '';
-        if (models.length > 0) {
-            models.forEach(m => {
-                const opt = document.createElement('option');
-                opt.value = m; opt.textContent = m;
-                modelSel.appendChild(opt);
-            });
-            showToast('模型列表拉取成功！');
-        } else {
-            throw new Error('接口未返回任何模型数据');
-        }
+        // 拉取是"以接口为准"地重铺清单，但当前选中的模型要保住：
+        // 中转站的 /models 常常漏报可用模型，不该因为拉了一次就把用户选的模型弄丢
+        _fillModelSelect(modelId, models, modelSel.value);
+        modelSel.dispatchEvent(new Event('change', { bubbles: true }));
+        showToast('模型列表拉取成功！');
 
         // 成功时恢复按钮状态
         btn.classList.remove('loading');
@@ -687,34 +862,18 @@ async function fetchModels(type) {
         btn.classList.remove('loading');
         btn.disabled = false;
 
-        // 使用你封装的 AppUI.prompt 组件
-        const manualModel = await AppUI.prompt(
-            `自动拉取失败: ${ex.message}\n企业级接口通常不支持拉取，请直接手动填写。`,
-            "例如: GLM-5.2", // placeholder
-            "手动输入模型", // title
-            "确定添加",     // confirmText
-            "取消"        // cancelText
-        );
+        const before = _readModelListFromSelect(modelId);
+        // 拉不动就直接进清单编辑弹窗，一次能填多个（企业接口/Vertex 基本都走这条路）
+        await editModelList(modelId, {
+            title: '手动编辑模型列表',
+            hint: `（自动拉取失败：${ex.message}）`
+        });
 
-        if (manualModel && manualModel.trim() !== '') {
-            const m = manualModel.trim();
-            // 将输入的模型加入下拉菜单并选中
-            modelSel.innerHTML = `<option value="${m}">${m}</option>`;
-            modelSel.value = m;
-
-            // 重要：因为是通过代码修改的值，必须手动触发 change 事件，
-            // 让 _watchDirty 监听到，从而触发保存按钮亮起
-            modelSel.dispatchEvent(new Event('change', { bubbles: true }));
-
-            showToast('已手动添加模型：' + m);
-        } else {
-            // 用户点击取消或未输入
-            if (typeof showApiError === 'function') {
-                showApiError(ex);
-            } else {
-                showToast('拉取失败，且未输入模型');
-            }
-            modelSel.innerHTML = '<option value="">拉取失败，请重新获取或手动填写</option>';
+        // 弹窗里什么都没改就把原始错误报出来，别让失败被静默吃掉
+        const after = _readModelListFromSelect(modelId);
+        if (!after.length && !before.length) {
+            if (typeof showApiError === 'function') showApiError(ex);
+            else showToast('拉取失败，且未填写模型');
         }
     }
 }
@@ -1102,16 +1261,20 @@ function initWeatherApiTab() {
 }
 
 // ============================================================
-// 语音 API 设置 Tab（豆包音频生成）
+// 语音 API 设置 Tab（多服务商 TTS）
 // ============================================================
-// 凭据、请求、错误码转人话、按秒配额记账都在 js/api/doubao_tts_api.js，
+// 凭据、请求、错误码转人话、按秒配额记账都在 js/api/tts_api.js，
 // 本段只管这个 tab 的表单读写和试听。聊天里怎么用语音见
 // js/chat/chat_voice_service.js —— 两边都只依赖 api 层，互不依赖。
 //
 // 这个 tab 不走 API_TAB_DEFS 那套预设引擎（那是给"URL + Key + 模型"三件套设计的），
 // 但它自己有一套音色预设，形状和天气的地点预设一模一样，所以照天气那份手写。
 //
-// ★ 音频格式 / 采样率 / 并发不在这里 —— 它们是 doubao_tts_api.js 里的常量。
+// ★ 服务商 / API 地址 / Key / Group ID / 模型 / 音色 / 语速全部**属于单条预设** ——
+//   和生图预设同一套路。所以两把不同的 Key、甚至两家服务商可以并存。
+// ★ 服务商不同则表单形状不同（模型行与 Group ID 行的显隐、语速范围与提示文案、
+//   地址自动填充），切换由 _applyVoiceProviderToForm 统一处理，别在别处再判 provider。
+// ★ 音频格式 / 采样率 / 并发不在这里 —— 它们是 tts_api.js 里的常量。
 // ★ 总开关和「收到就自动合成」不在这里 —— 在聊天列表侧边栏的语音弹窗里。
 //   但它们的数据同样存在 db.voiceSettings，所以 _readVoiceForm 必须把这两个字段
 //   从现有配置原样带过去，否则保存这个 tab 会把总开关关掉。
@@ -1144,13 +1307,14 @@ function _readVoiceForm() {
     return _normalizeVoiceSettings({
         enabled: current.enabled,
         autoSynthesize: current.autoSynthesize,
-        apiKey: _getVal('api-voice-key').trim(),
         maxTextChars: parseInt(_getVal('api-voice-max-chars'), 10),
         dailySecondLimit: parseInt(_getVal('api-voice-daily-limit'), 10),
         cacheLimitMB: parseInt(_getVal('api-voice-cache-limit'), 10),
         dailySecondUsed: quota.used,
         dailyCountDate: quota.used > 0 ? quota.today : '',
         voicePresets: (_voiceDraft && _voiceDraft.voicePresets) || []
+        // ★ 刻意不带顶层 apiKey：它是老数据的迁移入口。第一次保存时把它丢掉，
+        //   Key 就彻底只存在预设里了（迁移已在 _normalizeVoiceSettings 里做完）。
     });
 }
 
@@ -1159,12 +1323,115 @@ function _readVoiceForm() {
 function _populateVoiceProviderSelect() {
     const select = document.getElementById('api-voice-provider');
     if (!select || select.options.length) return;   // 只填一次
-    VOICE_PROVIDERS.forEach(p => {
+    TTS_PROVIDERS.forEach(p => {
         const option = document.createElement('option');
         option.value = p.value;
         option.textContent = p.label;
         select.appendChild(option);
     });
+}
+
+/** 模型下拉：选项来自服务商定义；这家没模型可选就整行藏掉 */
+function _populateVoiceModelSelect(provider, selectedModel) {
+    const row = document.getElementById('api-voice-model-row');
+    const select = document.getElementById('api-voice-model');
+    const def = ttsProviderDef(provider);
+    if (row) row.hidden = !def.models.length;
+    if (!select) return;
+
+    select.innerHTML = '';
+    def.models.forEach(m => {
+        const option = document.createElement('option');
+        option.value = m;
+        option.textContent = m;
+        select.appendChild(option);
+    });
+    // 预设里存的模型可能不在列表里（用户手改过库，或我们删掉了某个旧模型）——
+    // 补一个选项，否则 select.value 会被静默吞掉，一保存就把它改成列表第一项。
+    const want = String(selectedModel || def.defaultModel).trim();
+    if (want && !def.models.includes(want)) {
+        const option = document.createElement('option');
+        option.value = want;
+        option.textContent = `${want}（自定义）`;
+        select.appendChild(option);
+    }
+    select.value = want;
+}
+
+/**
+ * 把一个数值旋钮（语速 / 音调）的输入框按服务商刻度重设。
+ *
+ * ★ 必须连 min/max/step 一起改，不能只改提示文案 —— 光改文案会让用户填出越界值，
+ *   而越界值会被 api 层夹掉，表现成"我填了但没生效"。
+ *
+ * @param {string} inputId / hintId  输入框和提示 span 的 id
+ * @param {object} spec   TTS_PROVIDERS 里那份 { min, max, step, default, integer }
+ * @param {*} value       要显示的值；undefined/null/'' 用该服务商的默认值
+ * @param {Function} hintText  spec → 提示文案（两个旋钮措辞不同，所以传进来）
+ */
+function _applyVoiceKnobToForm(inputId, hintId, spec, value, hintText) {
+    const el = document.getElementById(inputId);
+    if (el) {
+        el.min = spec.min;
+        el.max = spec.max;
+        el.step = spec.step;
+        el.placeholder = spec.default;
+        el.value = value === undefined || value === null || value === ''
+            ? spec.default : value;
+    }
+    const hint = document.getElementById(hintId);
+    if (hint) hint.textContent = hintText(spec);
+}
+
+/**
+ * 按服务商刷新表单形状：模型行与 Group ID 行的显隐、语速/音调的 min/max/step 与提示、
+ * 音色的占位符。
+ *
+ * ★ 语速两家刻度不同（豆包 -50~100 偏移，MiniMax 0.5~2 倍率），所以切服务商时
+ *   必须同时改 input 的属性。音调两家目前同刻度，但仍然照样走 spec ——
+ *   哪天有一家不一样了，这里不用改。
+ *
+ * @param {number} [speed]  要显示的语速；不传则用该服务商的默认值
+ * @param {string} [model]  要选中的模型
+ * @param {object} [opts]
+ *   autofillUrl=true  把地址框改写成该服务商的官方地址（**仅切服务商时传**，
+ *                     照文字 API 那边的做法：点一下就填好，用户可以再改成中转）。
+ *                     加载预设时绝不能传 —— 那会把用户存好的中转地址冲掉。
+ *   pitch             要显示的音调；不传则用该服务商的默认值
+ */
+function _applyVoiceProviderToForm(provider, speed, model, { autofillUrl = false, pitch } = {}) {
+    const def = ttsProviderDef(provider);
+
+    const urlEl = document.getElementById('api-voice-url');
+    if (urlEl) {
+        urlEl.placeholder = def.defaultUrl;
+        if (autofillUrl) urlEl.value = def.defaultUrl;
+    }
+
+    // Group ID 只有 MiniMax 有。切到没有这个概念的服务商时把值也清掉，
+    // 否则它会被静默存进预设，将来切回来看到一个不知从哪来的 ID。
+    const groupRow = document.getElementById('api-voice-group-row');
+    if (groupRow) groupRow.hidden = !def.needsGroupId;
+    if (!def.needsGroupId) _setVal('api-voice-group', '');
+
+    _populateVoiceModelSelect(def.value, model);
+
+    _applyVoiceKnobToForm('api-voice-speed', 'api-voice-speed-hint', def.speed, speed,
+        spec => spec.integer
+            ? `${spec.min} 到 ${spec.max}，${spec.default} 是原速`
+            : `${spec.min} 到 ${spec.max} 倍，${spec.default} 是原速`);
+    _applyVoiceKnobToForm('api-voice-pitch', 'api-voice-pitch-hint', def.pitch, pitch,
+        spec => `${spec.min} 到 ${spec.max} 半音，${spec.default} 是原调`);
+
+    const speakerEl = document.getElementById('api-voice-speaker');
+    const speakerHint = document.getElementById('api-voice-speaker-hint');
+    if (def.value === 'minimax') {
+        if (speakerEl) speakerEl.placeholder = '例如：female-shaonv';
+        if (speakerHint) speakerHint.textContent = '系统音色 ID 或自己克隆的音色';
+    } else {
+        if (speakerEl) speakerEl.placeholder = '例如：zh_female_vv_uranus_bigtts';
+        if (speakerHint) speakerHint.textContent = '官方预置音色或自己复刻的 S_xxx';
+    }
 }
 
 function _populateVoicePresetSelect(selectedId) {
@@ -1175,38 +1442,83 @@ function _populateVoicePresetSelect(selectedId) {
         const option = document.createElement('option');
         option.value = preset.id;
         // 带上服务商，否则一堆预设分不清哪个是哪家的
-        option.textContent = `${preset.name} · ${voiceProviderLabel(preset.provider)}`;
+        option.textContent = `${preset.name} · ${ttsProviderLabel(preset.provider)}`;
         select.appendChild(option);
     });
     select.value = selectedId || _voiceLoadedPresetId || (_voiceDraft.voicePresets[0] || {}).id || '';
 }
 
+/**
+ * 下拉里那一行是「名称 · 服务商」拼出来的，两者都能在表单上改 ——
+ * 改完要当场把那一行的文案改掉。
+ *
+ * ★ 不做这件事的后果：改了服务商（或改了名字）之后下拉还挂着旧文案，
+ *   连保存完都不变，得退出页面再进来（`_refreshVoiceTabUI`）才更新，
+ *   看起来像是没保存成功。
+ * ★ 只改**当前那一个 option 的文字**，不走 `_syncVoicePresetFromForm` +
+ *   整体重画。两个原因：
+ *   1. sync 在"还没挂到任何预设但填了音色"时会顺手新建一条预设 —— 这条路
+ *      本该由保存/切预设触发，不该由"在名字框里敲了一个字"触发；
+ *   2. 重画会重建所有 option，选中项闪一下，而这函数是逐字符调的。
+ * ★ 还没挂到预设时（_voiceLoadedPresetId 为空）什么都不做：那时下拉里
+ *   压根没有对应的 option，等保存时自然会建好并重画。
+ */
+function _refreshVoicePresetLabel() {
+    if (!_voiceLoadedPresetId) return;
+    const select = document.getElementById('api-voice-preset-select');
+    if (!select) return;
+    const option = [...select.options].find(o => o.value === _voiceLoadedPresetId);
+    if (!option) return;
+    // 名字留空时下拉显示草稿里的旧名字（和 _syncVoicePresetFromForm 的口径一致：
+    // 空名字不会覆盖已有名字），这样清空输入框的瞬间不会看到一个「· 豆包」孤儿
+    const draft = _voiceDraft
+        && _voiceDraft.voicePresets.find(p => p.id === _voiceLoadedPresetId);
+    const name = _getVal('api-voice-preset-name').trim()
+        || (draft && draft.name) || '未命名音色';
+    const provider = _getVal('api-voice-provider') || TTS_PROVIDERS[0].value;
+    option.textContent = `${name} · ${ttsProviderLabel(provider)}`;
+}
+
 function _applyVoicePresetToForm(presetId) {
     const preset = _voiceDraft && _voiceDraft.voicePresets.find(p => p.id === presetId);
     _voiceLoadedPresetId = preset ? preset.id : '';
+    const provider = preset ? preset.provider : TTS_PROVIDERS[0].value;
+
     _setVal('api-voice-preset-name', preset ? preset.name : '');
-    _setVal('api-voice-provider', preset ? preset.provider : 'doubao');
+    _setVal('api-voice-provider', provider);
+    // 地址框永远是填好的：预设存了就用它（可能是中转），没存就显示官方地址。
+    // ★ 老预设 / 新建的空白预设 apiUrl 是空的，这里补上默认值让用户直接看到该填什么，
+    //   而不是只有一个灰色占位符。api 层同样会对空值回落默认，两边一致。
+    _setVal('api-voice-url',
+        (preset && preset.apiUrl) || ttsProviderDef(provider).defaultUrl);
+    _setVal('api-voice-key', preset ? preset.apiKey : '');
+    _setVal('api-voice-group', preset ? preset.groupId : '');
     _setVal('api-voice-speaker', preset ? preset.speakerId : '');
-    _setVal('api-voice-desc', preset ? preset.description : '');
-    _setVal('api-voice-rate-speech', preset ? preset.rates.speech : 0);
-    _setVal('api-voice-rate-pitch', preset ? preset.rates.pitch : 0);
-    _setVal('api-voice-rate-loudness', preset ? preset.rates.loudness : 0);
+    // 模型行 / Group ID 行 / 语速音调属性 / 各种占位符都跟着服务商变。
+    // ★ 不传 autofillUrl —— 上面已经按预设填好地址了，再自动填一次会把中转地址冲掉。
+    _applyVoiceProviderToForm(provider, preset ? preset.speed : undefined,
+        preset ? preset.model : undefined, { pitch: preset ? preset.pitch : undefined });
+
     _populateVoicePresetSelect(_voiceLoadedPresetId);
 }
 
 /** 从表单读出当前正在编辑的那条预设（不落库，只是取值） */
 function _readVoicePresetFromForm() {
+    const provider = _getVal('api-voice-provider') || TTS_PROVIDERS[0].value;
     return _normalizeVoicePreset({
         id: _voiceLoadedPresetId,
         name: _getVal('api-voice-preset-name').trim(),
-        provider: _getVal('api-voice-provider'),
+        provider,
+        apiUrl: _getVal('api-voice-url').trim(),
+        apiKey: _getVal('api-voice-key').trim(),
+        // Group ID 行藏起来时（豆包）读到的是空串，正是想要的
+        groupId: _getVal('api-voice-group').trim(),
+        // 模型行藏起来时（豆包）读不到值，交给归一化回落成该服务商的默认模型
+        model: _getVal('api-voice-model').trim(),
         speakerId: _getVal('api-voice-speaker').trim(),
-        description: _getVal('api-voice-desc').trim(),
-        rates: {
-            speech: parseInt(_getVal('api-voice-rate-speech'), 10),
-            pitch: parseInt(_getVal('api-voice-rate-pitch'), 10),
-            loudness: parseInt(_getVal('api-voice-rate-loudness'), 10)
-        }
+        // 空字符串会被归一化成该服务商的默认语速/音调，所以不用在这里判空
+        speed: _getVal('api-voice-speed'),
+        pitch: _getVal('api-voice-pitch')
     });
 }
 
@@ -1275,10 +1587,22 @@ async function _deleteVoicePreset() {
     _markDirty('voice');
 }
 
-function exportVoicePresets() {
+/**
+ * 导出音色预设。
+ * ★ 预设现在带 API Key，所以导出前必须先警告 —— 同生图预设的导出（那边先做的）。
+ *   老版本的预设里没有 Key（Key 是全局字段），直接导出是安全的；现在不是了。
+ */
+async function exportVoicePresets() {
     _syncVoicePresetFromForm();
     const presets = (_voiceDraft && _voiceDraft.voicePresets) || [];
     if (!presets.length) return showToast('暂无音色预设可导出');
+    const confirmed = await AppUI.confirm(
+        '导出的预设文件会包含 API Key。请只保存在可信设备上，不要公开分享。',
+        '导出音色预设',
+        '继续导出',
+        '取消'
+    );
+    if (!confirmed) return;
     const blob = new Blob([JSON.stringify(presets, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1336,11 +1660,11 @@ function importVoicePresets() {
 function _refreshVoiceTabUI() {
     _voiceDraft = _normalizeVoiceSettings(db.voiceSettings);
     _populateVoiceProviderSelect();
-    _setVal('api-voice-key', _voiceDraft.apiKey);
     _setVal('api-voice-max-chars', _voiceDraft.maxTextChars);
     _setVal('api-voice-daily-limit', _voiceDraft.dailySecondLimit);
     _setVal('api-voice-cache-limit', _voiceDraft.cacheLimitMB);
     _refreshVoiceUsageUI();
+    // Key / 地址 / 模型都在预设里，由 _applyVoicePresetToForm 一并铺进表单
     _applyVoicePresetToForm((_voiceDraft.voicePresets[0] || {}).id);
     _setVoiceTestResult('', false, true);
     _clearDirty('voice');
@@ -1384,18 +1708,19 @@ function _clearVoicePreviewAudio() {
  *   内部那道闸门，这里不自己扣。
  */
 async function previewVoiceSynthesis() {
+    // 试听用表单上正在编辑的那条预设，不要求先保存，改完立刻能听。
+    // 凭据全在预设里，settings 只是为了让老数据的全局 Key 还能被继承。
     const settings = _readVoiceForm();
-    // 试听用表单上正在编辑的那条预设，不要求先保存，改完立刻能听
     const preset = _readVoicePresetFromForm();
     const text = _getVal('api-voice-preview-text').trim();
 
-    if (!settings.apiKey) return showToast('请先填写语音 API Key');
+    if (!preset.apiKey) return showToast('请先填写这条预设的 API Key');
     if (!preset.speakerId) return showToast('请先填写音色 ID');
     if (!text) return showToast('请先填写试听文本');
 
     _clearVoicePreviewAudio();
     _setVoiceButtonLoading('api-voice-preview-btn', true);
-    _setVoiceTestResult('正在合成，一次要 20 秒以上，请稍等…');
+    _setVoiceTestResult('正在合成，请稍等…');
 
     try {
         const result = await synthesizeVoice({ text, profile: preset, settings });
@@ -1403,7 +1728,8 @@ async function previewVoiceSynthesis() {
         const kb = (result.bytes.byteLength / 1024).toFixed(1);
         _setVoiceTestResult(
             `合成成功：${result.originalDuration.toFixed(2)} 秒 / ${kb} KB\n` +
-            `实际发给模型的提示词：\n${result.prompt}`
+            `服务商：${ttsProviderLabel(preset.provider)} · 模型 ${preset.model}\n` +
+            `实际发给服务商的文本：\n${result.prompt}`
         );
 
         _voicePreviewUrl = URL.createObjectURL(new Blob([result.bytes], { type: result.mime }));
@@ -1428,12 +1754,16 @@ async function saveVoiceApiSettings() {
     _syncVoicePresetFromForm();
     const settings = _readVoiceForm();
 
-    if (!settings.apiKey) return showToast('请填写语音 API Key');
-    // 允许零预设保存（用户可能只想先把 Key 存下来），但有预设就必须填音色 ID，
-    // 否则会存下一条永远合成失败的预设，而失败要等到聊天里才暴露
-    const broken = settings.voicePresets.filter(p => !p.speakerId);
-    if (broken.length) {
-        return showToast(`音色预设「${broken[0].name}」还没填音色 ID`);
+    // 允许零预设保存（只想先调用量上限也是合理的），但有预设就必须配齐 ——
+    // 否则会存下一条永远合成失败的预设，而失败要等到聊天里才暴露。
+    // Key 和音色 ID 分开报，因为它们要去的地方完全不同。
+    const noKey = settings.voicePresets.filter(p => !p.apiKey);
+    if (noKey.length) {
+        return showToast(`音色预设「${noKey[0].name}」还没填 API Key`);
+    }
+    const noSpeaker = settings.voicePresets.filter(p => !p.speakerId);
+    if (noSpeaker.length) {
+        return showToast(`音色预设「${noSpeaker[0].name}」还没填音色 ID`);
     }
 
     db.voiceSettings = settings;
@@ -1441,7 +1771,13 @@ async function saveVoiceApiSettings() {
     await saveGlobalKeys(['voiceSettings']);
     _refreshVoiceUsageUI();
     _clearDirty('voice');
-    // 填了 Key / 建了预设都会改变聊天列表侧边栏那一行的状态文案（"缺 API Key" → "自动合成"）
+    // 下拉里那行是「名称 · 服务商」，两者都可能刚被改过 —— 重画一次，
+    // 否则保存完下拉还挂着旧文案（比如新建时叫「音色预设1 · 豆包」，
+    // 改成 MiniMax 存完仍显示豆包），得退出页面再进来才更新。
+    // ★ 这里要整体重画而不是只改一行：上面的 sync 可能刚新建了一条预设，
+    //   那条在下拉里还没有对应的 option。
+    _populateVoicePresetSelect(_voiceLoadedPresetId);
+    // 建了预设会改变聊天列表侧边栏那一行的状态文案（"缺音色预设" → "自动合成"）
     if (typeof refreshChatSidebarVoiceDisplay === 'function') refreshChatSidebarVoiceDisplay();
     showToast('语音配置已保存');
 }
@@ -1469,10 +1805,39 @@ function initVoiceApiTab() {
         _clearDirty('voice');
     });
 
+    // 切服务商：地址自动填成新服务商的官方地址（同文字 API 那边，填完还能改），
+    // 模型行 / Group ID 行的显隐、语速音调范围、占位符也都要跟着换。
+    // ★ 语速一律重置成新服务商的默认值（不传第二个参数）—— 两家刻度不同，
+    //   把豆包的 -20 原样留给 MiniMax 会变成"0.5 倍以下被夹回 0.5"，
+    //   用户看到的数字和实际生效的对不上。宁可回默认让他重填。
+    // ★ 音调则**新刻度装得下就原样保留**：调音调是为了把某个克隆音色的基频掰正
+    //   那么一点点，换个服务商它还是同一个音色、同样需要那点偏移，重置等于白调。
+    //   判据是"当前这个值在新范围内"，不是"两家刻度相同"—— 前者不需要知道旧服务商
+    //   是谁，也不会因为将来加了一家刻度不同的就悄悄失效。
+    const providerSelect = document.getElementById('api-voice-provider');
+    if (providerSelect) providerSelect.addEventListener('change', () => {
+        const spec = ttsProviderDef(providerSelect.value).pitch;
+        const current = Number(_getVal('api-voice-pitch'));
+        const keepPitch = Number.isFinite(current)
+            && current >= spec.min && current <= spec.max;
+        _applyVoiceProviderToForm(providerSelect.value, undefined, undefined, {
+            autofillUrl: true,
+            pitch: keepPitch ? current : undefined
+        });
+        _markDirty('voice');
+        // 下拉那行的「· 豆包」后缀当场跟着变，不用等保存
+        _refreshVoicePresetLabel();
+    });
+
+    // 改名字也当场反映到下拉里。用 input 而不是 change：change 要等失焦，
+    // 而用户改完名字往往直接去点保存，中间没有失焦事件。
+    const nameInput = document.getElementById('api-voice-preset-name');
+    if (nameInput) nameInput.addEventListener('input', _refreshVoicePresetLabel);
+
     _watchDirty('voice', [
-        'api-voice-key', 'api-voice-preset-name',
-        'api-voice-provider', 'api-voice-speaker', 'api-voice-desc',
-        'api-voice-rate-speech', 'api-voice-rate-pitch', 'api-voice-rate-loudness',
+        'api-voice-preset-name', 'api-voice-provider',
+        'api-voice-url', 'api-voice-key', 'api-voice-group', 'api-voice-model',
+        'api-voice-speaker', 'api-voice-speed', 'api-voice-pitch',
         'api-voice-max-chars', 'api-voice-daily-limit', 'api-voice-cache-limit'
     ]);
 }
@@ -1609,14 +1974,121 @@ function _applyImagePresetToForm(presetId) {
     // API URL 和 Key 直接从预设里读出，赋给表单
     _setVal('api-image-url', preset ? preset.apiUrl : '');
     _setVal('api-image-key', preset ? preset.apiKey : '');
+    _setVal('api-image-project', preset ? (preset.projectId || '') : '');
 
     _setImageModelSelectValue(preset ? preset.model : 'dall-e-3');
-    _setVal('api-image-size', preset ? preset.size : '1024x1024');
+
+    // ★ 顺序不能反：_syncImageProviderFields 会按服务商重铺整套尺寸选项，
+    //   先写尺寸再 sync 的话，刚写进去的值会被重铺冲掉、select 静默回落到第一项，
+    //   用户一保存尺寸就被悄悄改了。
+    _syncImageProviderFields();
+    _setImageSizeValue(preset ? preset.size : '1024x1024');
     _setVal('api-image-quality', preset ? preset.quality : 'standard');
     _setVal('api-image-style', preset ? preset.style : 'vivid');
 
     _updateImageDefaultToggle();
     _populateImagePresetSelect(_imageLoadedPresetId);
+}
+
+/**
+ * 按当前服务商切换只对某一家有意义的行与提示语。
+ * 与文字 tab 的 _syncApiProviderFields 同一个套路，只是图像 tab 是手写表单、
+ * 没有那张描述符表可用，所以单独写一份。
+ */
+function _syncImageProviderFields() {
+    const provider = _getVal('api-image-provider') || 'openai';
+    const isVertex = provider === 'vertexExpress';
+    const isNai = provider === 'nai';
+
+    const projectRow = document.getElementById('api-image-project-row');
+    if (projectRow) projectRow.hidden = !isVertex;
+
+    // quality / style 是 DALL-E 3 专属的枚举，NAI 和 Vertex 都不认。
+    // 留着只会让用户以为调了有用，所以直接藏起来。
+    const qualityCol = document.getElementById('api-image-quality-col');
+    if (qualityCol) qualityCol.hidden = isNai;
+    const styleRow = document.getElementById('api-image-style-row');
+    if (styleRow) styleRow.hidden = isNai;
+
+    _fillImageSizeOptions(provider);
+
+    // 测试负面词只对认这个字段的服务商显示（目前只有 NAI），
+    // 免得在 DALL-E 下摆一个填了也不会发送的框
+    const previewNegativeRow = document.getElementById('api-image-preview-negative-row');
+    if (previewNegativeRow) {
+        previewNegativeRow.hidden = !(typeof imageProviderSupportsNegativePrompt === 'function'
+            && imageProviderSupportsNegativePrompt(provider));
+    }
+
+    const urlHint = document.getElementById('api-image-url-hint');
+    if (urlHint) {
+        urlHint.textContent = isVertex
+            ? '固定 https://aiplatform.googleapis.com'
+            : isNai
+                ? '官方 https://image.novelai.net；中转站填站点根即可，/ai/generate-image 会自动补'
+                : 'OpenAI格式，不含 /v1';
+    }
+
+    // Vertex 的列模型端点要 OAuth 而不是 API Key，拉不动（同文字 tab），
+    // 所以按钮改成从内置清单填，而不是让用户点了之后撞一个 401。
+    // NAI 同理：官方压根没有列模型端点，中转站的 /v1/models 实测返回空数组。
+    const fetchBtn = document.getElementById('api-image-fetch-btn');
+    if (fetchBtn) {
+        const label = fetchBtn.querySelector('.btn-text');
+        if (label) label.textContent = (isVertex || isNai) ? '填入内置生图模型' : '点击拉取模型';
+    }
+
+    const modelHint = document.querySelector('label[for="api-image-model"] .field-hint');
+    if (modelHint) {
+        modelHint.textContent = isVertex
+            ? '必须是生图模型，名字里带 image'
+            : isNai
+                ? 'nai-diffusion-5-full 等；V3 只吃 tag，V4 起才懂自然语言'
+                : 'dall-e-3, dall-e-2, midjourney等';
+    }
+
+    const keyHint = document.querySelector('label[for="api-image-key"] .field-hint');
+    if (keyHint && isNai) keyHint.textContent = '官方用 pst- 开头的持久令牌；中转站用它自己签发的 Key';
+}
+
+/**
+ * 按服务商铺整套尺寸选项。
+ * ★ NAI 的尺寸必须是 64 的倍数，和 DALL-E 那几档（1792x1024 之类）完全不通用，
+ *   所以是「换整套」而不是「混在一个下拉里」——混着放，用户迟早选到一个
+ *   对当前服务商非法的值，然后对着一个 400 猜半天。
+ */
+function _fillImageSizeOptions(provider) {
+    const sel = document.getElementById('api-image-size');
+    if (!sel) return;
+    const options = provider === 'nai' ? NAI_IMAGE_SIZES : OPENAI_IMAGE_SIZES;
+    const current = sel.value;
+    sel.innerHTML = '';
+    options.forEach(([value, label]) => {
+        const opt = document.createElement('option');
+        opt.value = value;
+        opt.textContent = label;
+        sel.appendChild(opt);
+    });
+    if (current && options.some(([v]) => v === current)) sel.value = current;
+}
+
+/**
+ * 把尺寸写进下拉框；值不在当前清单里就先补一条。
+ * 同 _setImageModelSelectValue 的路数：不补的话 select 会静默回落到第一项，
+ * 用户一保存，存了很久的尺寸就被悄悄改掉了，而且毫无提示。
+ */
+function _setImageSizeValue(size) {
+    const sel = document.getElementById('api-image-size');
+    if (!sel) return;
+    const wanted = String(size || '').trim();
+    if (!wanted) return;
+    if (!Array.from(sel.options).some(o => o.value === wanted)) {
+        const opt = document.createElement('option');
+        opt.value = wanted;
+        opt.textContent = `${wanted} (自定义)`;
+        sel.appendChild(opt);
+    }
+    sel.value = wanted;
 }
 
 function _readImagePresetFromForm() {
@@ -1627,6 +2099,7 @@ function _readImagePresetFromForm() {
         // URL 和 Key 一并保存进预设里
         apiUrl: _getVal('api-image-url').trim(),
         apiKey: _getVal('api-image-key').trim(),
+        projectId: _getVal('api-image-project').trim(),
         model: _getVal('api-image-model').trim(),
         size: _getVal('api-image-size'),
         quality: _getVal('api-image-quality'),
@@ -1716,11 +2189,70 @@ function _setImageTestResult(message, isError = false, hidden = false) {
  * 注意：预设里已选的模型即使不在拉取结果中也保留并维持选中，
  *       防止"拉一次列表"就把当前预设的模型悄悄换成了列表第一项。
  */
+// Vertex Express 的生图模型。列模型端点要 OAuth 而不是 API Key，拉不动，
+// 所以只能内置一份 —— 同 llm_client.js 的 VERTEX_EXPRESS_MODELS。
+const VERTEX_IMAGE_MODELS = [
+    'gemini-3-pro-image',
+    'gemini-3.1-flash-image',
+    'gemini-3.1-flash-lite-image'
+];
+
+// NovelAI 的模型。官方没有列模型端点，中转站的 /v1/models 实测也是空数组
+// （penguinsama 返回 {"object":"list","data":[]}），所以同样只能内置。
+// ID 以 docs.novelai.net 的机型表 + 两个 2026 年仍在维护的社区客户端交叉核对为准。
+const NAI_IMAGE_MODELS = [
+    'nai-diffusion-5-full',
+    'nai-diffusion-5-curated',
+    'nai-diffusion-4-5-full',
+    'nai-diffusion-4-5-curated',
+    'nai-diffusion-4-full',
+    'nai-diffusion-4-curated-preview',
+    'nai-diffusion-3',
+    'nai-diffusion-furry-3'
+];
+
+// 尺寸按服务商分两套：NAI 要求 64 的倍数，DALL-E 那几档它一概不收。
+const NAI_IMAGE_SIZES = [
+    ['832x1216', '832x1216 (竖图・最常用)'],
+    ['1216x832', '1216x832 (横图)'],
+    ['1024x1024', '1024x1024 (方图)'],
+    ['1024x1536', '1024x1536 (大竖图)'],
+    ['1536x1024', '1536x1024 (大横图)'],
+    ['512x768', '512x768 (小竖图・省 Anlas)']
+];
+const OPENAI_IMAGE_SIZES = [
+    ['1024x1024', '1024x1024 (1:1)'],
+    ['1024x1792', '1024x1792 (9:16)'],
+    ['1792x1024', '1792x1024 (16:9)'],
+    ['512x512', '512x512 (适用于 DALL-E 2)']
+];
+
 async function fetchImageModels() {
     let url = _getVal('api-image-url').trim();
     const key = _getVal('api-image-key').trim();
     const btn = document.getElementById('api-image-fetch-btn');
     const modelSel = document.getElementById('api-image-model');
+
+    // Vertex / NAI：都拉不动列模型端点（一个要 OAuth，一个压根没这个接口），
+    // 直接把内置清单铺进下拉框，别让用户白撞一次 401 或者拿到一个空列表。
+    const builtinModels = _getVal('api-image-provider') === 'vertexExpress' ? VERTEX_IMAGE_MODELS
+        : _getVal('api-image-provider') === 'nai' ? NAI_IMAGE_MODELS
+        : null;
+    if (builtinModels) {
+        const current = modelSel.value;
+        const models = builtinModels.slice();
+        if (current && !models.includes(current)) models.push(current);
+        modelSel.innerHTML = '';
+        models.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m; opt.textContent = m;
+            modelSel.appendChild(opt);
+        });
+        modelSel.value = current && models.includes(current) ? current : models[0];
+        modelSel.dispatchEvent(new Event('change', { bubbles: true }));
+        showToast('已填入内置生图模型清单');
+        return;
+    }
 
     if (!url || !key) return showToast('请先填写 API 地址和密钥！');
     if (url.endsWith('/')) url = url.slice(0, -1);
@@ -1817,6 +2349,10 @@ async function previewImageGeneration() {
         const result = await generateImage({
             prompt: prompt,
             preset: preset,
+            // 测试生成只用这一页上填的东西。聊天里的「画面风格」和「负面提示词」
+            // 是按聊天存的，这里拿不到也不该乱猜——所以负面词单独给了个测试框，
+            // 不然调负面词就只能去聊天里真烧一张图，还容易误判成"没生效"。
+            negativePrompt: _getVal('api-image-preview-negative').trim(),
             signal: requestController.signal,
             slowAfterMs: 120000,
             onSlow: ({ elapsedMs }) => {
@@ -1840,6 +2376,15 @@ async function previewImageGeneration() {
         const stillCurrent = _imagePreviewAbortController === requestController;
         if (stillCurrent && error && error.name !== 'AbortError') {
             _setImageTestResult(`生图失败: ${error.message}`, true);
+            // 结果框里那行字一切页面就没了，同时进「设置 > 系统日志」留个底。
+            // 只记预设的名字/服务商/模型 —— 那一页会被截图，绝不能带上 Key。
+            // 刻意不把 error 对象一起传：日志面板会展开成整段堆栈，而生图的报错
+            // message 本身已经写清了原因（HTTP 码、被安全策略拦下之类）
+            console.error(
+                `[图片] 测试生成失败 · 预设「${preset.name || '未命名'}」`
+                + `（${imageProviderLabel(preset.provider)} / ${preset.model || '未填模型'}）：`
+                + (error.message || '未知错误')
+            );
         }
     } finally {
         if (_imagePreviewAbortController === requestController) {
@@ -1975,19 +2520,29 @@ function initImageApiTab() {
     const providerSelect = document.getElementById('api-image-provider');
     if (providerSelect) providerSelect.addEventListener('change', () => {
         const urlInput = document.getElementById('api-image-url');
-        if (urlInput && !urlInput.value.trim()) {
-            if (providerSelect.value === 'openai') {
-                urlInput.value = 'https://api.openai.com';
-            }
+        const provider = providerSelect.value;
+        // Vertex / NAI 都覆盖式填官方地址，openai 那档只在框空时填。
+        // 理由：openai 档本来就是"任意中转站"，没有一个能算默认的地址，
+        // 覆盖等于把用户填的站点抹掉；而切到 Vertex/NAI 时框里留着的一定是
+        // 上一家的地址（拿它去拼 /ai/generate-image 或 Google 的路径必然 404），
+        // 留着比换掉更坑。NAI 用中转站的人在填完地址后不会再动服务商下拉，
+        // 而且这里只在 change 事件里覆盖 —— 加载已存好的 NAI 预设走
+        // _applyImagePresetToForm，读的是预设里的地址，不会被这条覆盖。
+        const forceFill = provider === 'vertexExpress' || provider === 'nai';
+        if (urlInput && (forceFill || !urlInput.value.trim())) {
+            const url = IMAGE_PROVIDER_URLS[provider];
+            if (url) urlInput.value = url;
 
             // 触发脏数据标记
             urlInput.dispatchEvent(new Event('input', { bubbles: true }));
         }
+        _syncImageProviderFields();
     });
 
     // 监控表单改动，点亮底部的未保存提示
     _watchDirty('image', [
         'api-image-url', 'api-image-key', 'api-image-preset-name', 'api-image-set-default', 'api-image-provider',
+        'api-image-project',
         'api-image-model', 'api-image-size', 'api-image-quality', 'api-image-style', 'api-image-cache-limit'
     ]);
 
@@ -2036,15 +2591,19 @@ function _initApiTab(type) {
     if (!def) return;
     _refreshApiTabUI(type);
 
-    // 服务商切换 → 自动填 URL
+    // 服务商切换 → 自动填 URL + 切换该服务商专属字段的显隐
     const providerEl = document.getElementById(_apiId(def, 'provider'));
     if (providerEl) providerEl.addEventListener('change', () => {
         const autoUrl = def.providerUrls[providerEl.value];
         if (autoUrl !== undefined) _setVal(_apiId(def, 'url'), autoUrl);
+        _syncApiProviderFields(type);
     });
 
     // 拉取模型
     _on(_apiId(def, 'fetch-btn'), () => fetchModels(type));
+
+    // 模型 select 旁边的方块按钮：手动编辑候选清单
+    _on(_apiId(def, 'model-edit'), () => editModelList(_apiId(def, 'model')));
 
     // 选择预设 → 应用到表单
     const presetSel = document.getElementById(_apiId(def, 'preset-select'));
@@ -2074,10 +2633,11 @@ function _initApiTab(type) {
     _on(_apiId(def, 'save-btn'), () => _savePreset(type));
 
     // 监听表单变化 → 标记脏数据
-    _watchDirty(type, [
+    // 去重：modelList 和 model 是同一个 select，不去重会给它挂两个一样的监听
+    _watchDirty(type, [...new Set([
         _apiId(def, 'preset-name'),
         ...def.fields.map(f => _apiFieldId(def, f))
-    ]);
+    ])]);
 }
 
 // ============================================================

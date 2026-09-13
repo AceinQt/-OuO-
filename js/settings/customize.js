@@ -274,7 +274,7 @@ function renderCustomizeForm() {
 
 /* 步骤一：为扳机键设置背景图，这将成为你的新图标 */
 #sticker-bar {
-  background-image: url('https://i.postimg.cc/9QZd6mhp/ji-lichan-110.png') !important;
+  background-image: url('./png/sample_avatar.png') !important;
   background-size: 28px 22px !important;
   background-repeat: no-repeat !important;
   background-position: center !important;

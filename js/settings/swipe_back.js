@@ -39,6 +39,11 @@
 
     // ── 核心：双层同步动画 ───────────────────────────────────
 function triggerBackAction() {
+    // 忙锁：长操作进行中不许返回。必须在这里就拦住 ——
+    // 下面是"先播飞出动画、动画结束才 click"，等到 click 被 main.js 的闸挡掉时
+    // 页面已经飞出去了，只能弹回来，看着像卡了一下。
+    if (typeof window.isUiBusy === 'function' && window.isUiBusy()) return;
+
     const activeScreen = document.querySelector('.screen.active');
     if (!activeScreen || activeScreen.id === 'home-screen') return;
 

@@ -282,15 +282,21 @@ if (typeof getImageCacheStats === 'function') {
 
 window.refreshStorageScreen = async function() {
     const contentEl = document.querySelector('#storage-analysis-screen .content');
-    
+
     // 1. 开始计算前：立即隐藏内容并禁用点击
     if (contentEl) {
         contentEl.style.transition = 'none';
         contentEl.style.opacity = '0';
         contentEl.style.pointerEvents = 'none'; // <--- 新增：加载时禁用点击
-        void contentEl.offsetWidth; 
+        void contentEl.offsetWidth;
         contentEl.style.transition = 'opacity 0.3s ease';
     }
+
+    // ★ 统计要遍历 messages / 论坛 / 学习几张大表，重度用户能跑好几秒。
+    //   这期间返回按钮也一起锁上（置灰）：统计跑在后台，中途返回不会中断它，
+    //   页面已经不在了却还在读表，看着像"点了没反应"。
+    const endBusy = (typeof window.beginUiBusy === 'function')
+        ? window.beginUiBusy('storage-analysis-screen') : () => {};
 
     let hideLoading = () => {};
     if (typeof showLoadingToast === 'function') {
@@ -323,7 +329,8 @@ window.refreshStorageScreen = async function() {
     } catch (e) {
         console.error("加载存储分析数据异常:", e);
     } finally {
-        // 3. 计算完成：隐藏 Toast，内容淡入，恢复点击
+        // 3. 计算完成：解锁，隐藏 Toast，内容淡入，恢复点击
+        endBusy();
         hideLoading();
         if (contentEl) {
             contentEl.style.opacity = '1';
@@ -341,77 +348,197 @@ function formatBytes(bytes, decimals = 2) {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
 }
 
+// 存储分布环形图：手写 SVG，不依赖 echarts。
+// 背景：之前为这个单一饼图常驻引入 echarts 全量包（1.03 MB），代价太大。
+// 它只用了「环形 + 分段配色 + 悬浮 tooltip」这一档，手写完全够用。
+// 目标是换实现但用户看不出区别，所以尺寸和角度都照着被替掉的那份 echarts
+// 配置调：radius:['60%','85%'] → 内径 48 / 外径 68，startAngle 90° → 从 12 点
+// 顺时针起，borderWidth:0 → 分段之间不留缝，emphasis → hover 外扩 5px。
+//
+// ★ 用 <path> 算几何扇区（describeArc），不是 <circle> + stroke-dasharray。
+//   dasharray 那版写过又废了，别看它短就改回去：环厚度只能靠 stroke-width，
+//   内外径没法各自控制，hover 放大时内边缘跟着往外退、把中间的圆孔啃掉一圈，
+//   看着像"从中心放大"而不是向外鼓。现在内径焊死、hover 只推外径，圆孔不动。
+//
+// 替换约定：外部调用方仍走 renderStorageChart(container, info)，signature 不变。
+// ★ 顺序/配色仍统一走 dataStorage.orderedEntries()，与右侧详情列表共用一份。
 let myStorageChart = null;
 function renderStorageChart(container, info) {
     if (!container) return;
-    if (typeof echarts === 'undefined') {
-        container.innerHTML = '<div style="text-align:center; padding-top:20px; color:#999;">图表组件未加载</div>';
+
+    const entries = dataStorage.orderedEntries(info.categorizedSizes);
+    const total = entries.reduce((sum, item) => sum + item.value, 0);
+    if (!entries.length || total <= 0) {
+        container.innerHTML = '<div style="text-align:center; padding-top:20px; color:#999;">暂无数据</div>';
         return;
     }
 
-    if (!myStorageChart) {
-        myStorageChart = echarts.init(container);
+    container.innerHTML = '';
+
+    // --- 几何常量：动之前先看上面「照着 echarts 配置调」那段 ---
+    const W = 160, H = 160;   // viewBox 尺寸，用正方形（宽向不被 letterbox 压扁）
+    const cx = 80, cy = 80;   // 圆心
+    const INNER_R = 48;       // 内径焊死：hover 时只动外径，中间圆孔不许跟着变
+    const OUTER_R = 68;       // 外径（48/68 对应旧 echarts 的 radius:['60%','85%']）
+    const HOVER_OUTER_R = 73; // hover 外扩 5px，对齐 echarts emphasis 默认幅度
+
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '100%');
+    svg.style.display = 'block';
+
+    // 辅助函数：将极坐标转为笛卡尔坐标 (默认 0 度在 12 点钟方向)
+    function polarToCartesian(centerX, centerY, radius, angleInDegrees) {
+        const angleInRadians = (angleInDegrees - 90) * Math.PI / 180.0;
+        return {
+            x: centerX + (radius * Math.cos(angleInRadians)),
+            y: centerY + (radius * Math.sin(angleInRadians))
+        };
     }
 
-    // ★ 饼图与详情列表共用 dataStorage.orderedEntries()：
-    //   扇区顺序 = 列表顺序 = 配色深浅顺序。
-    const chartData = dataStorage.orderedEntries(info.categorizedSizes)
-        .map(item => ({
-            name: dataStorage.categoryNames[item.key] || item.key,
-            value: item.value,
-            itemStyle: {
-                color: dataStorage.categoryColors[item.key] || '#999'
-            }
-        }));
+    // 辅助函数：根据角度和内外半径，生成精准的环形扇区 SVG 路径
+    function describeArc(x, y, innerR, outerR, startAngle, endAngle) {
+        // 防止出现 360 度首尾端点重合 SVG 画不出的情况
+        if (endAngle - startAngle >= 359.99) endAngle = startAngle + 359.99; 
 
-    const option = {
-        tooltip: { 
-            trigger: 'item',
-            confine: true, // 关键配置：限制tooltip在图表容器内
-            position: function (point, params, dom, rect, size) {
-                // 自适应位置计算，防止超出屏幕
-                const x = point[0];
-                const y = point[1];
-                const viewWidth = size.viewSize[0];
-                const viewHeight = size.viewSize[1];
-                const boxWidth = size.contentSize[0];
-                const boxHeight = size.contentSize[1];
-                
-                let posX = x + 10;
-                let posY = y + 10;
-                
-                // 如果右侧空间不够，显示在左侧
-                if (x + boxWidth + 10 > viewWidth) {
-                    posX = x - boxWidth - 10;
-                }
-                
-                // 如果下方空间不够，显示在上方
-                if (y + boxHeight + 10 > viewHeight) {
-                    posY = y - boxHeight - 10;
-                }
-                
-                return [posX, posY];
-            },
-            formatter: function(params) {
-                // 格式化显示内容，使其更紧凑
-                return `${params.name}<br/>${formatBytes(params.value)} (${params.percent}%)`;
-            }
-        },
-        series: [{
-            name: '存储分布',
-            type: 'pie',
-            radius: ['60%', '85%'],
-            center: ['50%', '50%'],
-            avoidLabelOverlap: false,
-            label: { show: false },
-            data: chartData 
-        }]
+        const outerStart = polarToCartesian(x, y, outerR, endAngle);
+        const outerEnd = polarToCartesian(x, y, outerR, startAngle);
+        const innerStart = polarToCartesian(x, y, innerR, endAngle);
+        const innerEnd = polarToCartesian(x, y, innerR, startAngle);
+        
+        const largeArcFlag = endAngle - startAngle <= 180 ? "0" : "1";
+
+        return [
+            "M", outerStart.x, outerStart.y,
+            "A", outerR, outerR, 0, largeArcFlag, 0, outerEnd.x, outerEnd.y,
+            "L", innerEnd.x, innerEnd.y,
+            "A", innerR, innerR, 0, largeArcFlag, 1, innerStart.x, innerStart.y,
+            "Z"
+        ].join(" ");
+    }
+
+    const ringGroup = document.createElementNS(svgNS, 'g');
+    svg.appendChild(ringGroup);
+
+    const tip = document.createElement('div');
+    tip.className = 'storage-chart-tooltip';
+    container.appendChild(tip);
+
+    let activeSegInfo = null; // 保存当前激活的扇区对象和角度信息
+
+    const hideTip = () => { 
+        tip.style.display = 'none'; 
+        if (activeSegInfo) {
+            // 恢复外圈正常半径
+            activeSegInfo.path.setAttribute("d", describeArc(cx, cy, INNER_R, OUTER_R, activeSegInfo.start, activeSegInfo.end));
+            activeSegInfo = null;
+        }
+    };
+
+    const showTip = (e, item, frac, path, startAngle, endAngle) => {
+        if (activeSegInfo && activeSegInfo.path !== path) {
+            activeSegInfo.path.setAttribute("d", describeArc(cx, cy, INNER_R, OUTER_R, activeSegInfo.start, activeSegInfo.end));
+        }
+        activeSegInfo = { path, start: startAngle, end: endAngle };
+        
+        // ★ 只扩张外圈半径，内圈牢牢固定，保持无缝对齐！
+        path.setAttribute("d", describeArc(cx, cy, INNER_R, HOVER_OUTER_R, startAngle, endAngle));
+
+        const pct = (item.value / total * 100);
+        tip.innerHTML = `${item.name}<br/>${formatBytes(item.value)} (${pct.toFixed(0)}%)`;
+        tip.style.display = 'block';
+
+        let clientX = e.clientX;
+        let clientY = e.clientY;
+        if (e.touches && e.touches.length > 0) {
+            clientX = e.touches[0].clientX;
+            clientY = e.touches[0].clientY;
+        }
+
+        const rect = container.getBoundingClientRect();
+        // 初始计算局部坐标
+        let localX = clientX - rect.left + 12;
+        let localY = clientY - rect.top + 12;
+
+        const tw = tip.offsetWidth, th = tip.offsetHeight;
+        
+        // ★ 核心修复：把坐标转换为屏幕绝对坐标，做严格的防溢出碰撞检测
+        let globalX = clientX + 12;
+        let globalY = clientY + 12;
+
+        if (globalX + tw > window.innerWidth - 10) { // 越过屏幕右边界
+            localX = clientX - rect.left - tw - 12;
+        }
+        if (globalY + th > window.innerHeight - 10) { // 越过屏幕下边界
+            localY = clientY - rect.top - th - 12;
+        }
+        
+        // 兜底保障：不能越过屏幕左侧和上侧
+        if (rect.left + localX < 10) localX = 10 - rect.left;
+        if (rect.top + localY < 10) localY = 10 - rect.top;
+
+        tip.style.left = localX + 'px';
+        tip.style.top = localY + 'px';
+    };
+
+    let currentAngle = 0; // 从 12 点钟开始画
+    entries.forEach((item) => {
+        const frac = item.value / total;
+        const sliceAngle = frac * 360;
+        const startAngle = currentAngle;
+        const endAngle = currentAngle + sliceAngle;
+        
+        const color = dataStorage.categoryColors[item.key] || '#999';
+        const name = dataStorage.categoryNames[item.key] || item.key;
+
+        // 改用 path 而不是 circle 拼线，这是完美切分图的关键
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute("d", describeArc(cx, cy, INNER_R, OUTER_R, startAngle, endAngle));
+        path.setAttribute("fill", color);
+        path.className.baseVal = 'storage-chart-slice'; 
+        
+        ringGroup.appendChild(path);
+
+        const itemData = { name, value: item.value };
+        
+        // --- 鼠标与触摸交互 ---
+        path.addEventListener('mouseenter', (e) => showTip(e, itemData, frac, path, startAngle, endAngle));
+        path.addEventListener('mousemove', (e) => { 
+            if (activeSegInfo && activeSegInfo.path === path) showTip(e, itemData, frac, path, startAngle, endAngle);
+        });
+        path.addEventListener('mouseleave', hideTip);
+
+        const handleInteraction = (e) => {
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            if (activeSegInfo && activeSegInfo.path === path) hideTip(); 
+            else showTip(e, itemData, frac, path, startAngle, endAngle); 
+        };
+        path.addEventListener('click', handleInteraction);
+        path.addEventListener('touchstart', handleInteraction, { passive: false });
+
+        currentAngle += sliceAngle;
+    });
+
+    container.appendChild(svg);
+    myStorageChart = svg;
+
+    // 手机端点其他空白处收起提示框
+    const handleOutsideInteraction = (e) => {
+        if (!svg.contains(e.target)) {
+            hideTip();
+        }
     };
     
-    myStorageChart.setOption(option);
-    setTimeout(() => { 
-        try { myStorageChart.resize(); } catch(e){} 
-    }, 200);
+    if (container._cleanupChartListeners) container._cleanupChartListeners();
+    document.addEventListener('touchstart', handleOutsideInteraction, { passive: true });
+    document.addEventListener('click', handleOutsideInteraction);
+    container._cleanupChartListeners = () => {
+        document.removeEventListener('touchstart', handleOutsideInteraction);
+        document.removeEventListener('click', handleOutsideInteraction);
+    };
 }
 
 // 重点修改：调整了HTML结构，将 Size 移到了右侧
@@ -486,6 +613,12 @@ function setupStorageAnalysisScreen() {
         const originalText = cleanupBtn.innerText;
         cleanupBtn.innerText = "扫描中...";
         cleanupBtn.style.opacity = "0.7";
+
+        // 忙锁：全盘扫描要把 messages 整表读进内存，重度用户几秒起步。
+        // 这期间别让人去点导出/导入，也别让人返回（扫描不会因为换页停下）。
+        // 中间那几个 AppUI.confirm/alert 挂在 .screen 之外，锁着照样点得动。
+        const endBusy = (typeof window.beginUiBusy === 'function')
+            ? window.beginUiBusy('storage-analysis-screen') : () => {};
 
         // 引入你 utils.js 中的加载提示动画
         const hideLoading = typeof showLoadingToast === 'function' ? showLoadingToast("正在全盘扫描数据库...") : () => {};
@@ -595,6 +728,7 @@ function setupStorageAnalysisScreen() {
             await AppUI.alert("扫描过程中出现异常：" + err.message, "操作失败");
         } finally {
             // 恢复按钮状态
+            endBusy();
             cleanupBtn.disabled = false;
             cleanupBtn.innerText = originalText;
             cleanupBtn.style.opacity = "1";

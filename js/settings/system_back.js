@@ -122,6 +122,14 @@
     function handleBack() {
         if (closeTopOverlay()) return;
 
+        // 忙锁：长操作进行中（备份导出/导入等）不响应返回键。
+        // 记录已经被浏览器弹掉了，得补压一条回去，否则解锁后按返回键会少一层
+        // ——直接穿透退出 app。（同 Peek 多选模式那段，无手势期间的补压是尽力而为）
+        if (typeof window.isUiBusy === 'function' && window.isUiBusy()) {
+            pushEntry();
+            return;
+        }
+
         const active = document.querySelector('.screen.active');
         if (!active || active.id === 'home-screen') return; // 主屏残留记录：静默排掉
 
