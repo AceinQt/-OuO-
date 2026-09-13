@@ -44,78 +44,49 @@
 
                     const postTitle = modal.dataset.postTitle;
                     const postRawContent = modal.dataset.postRawContent || "";
-                    // 这里我们需要重新构建 context，因为之前的 dataset 可能只存了部分
-                    // 为了确保实时性和自定义条数，最好重新从 DB 读 post
-                    const currentPost = db.forumPosts.find(p => p.title.includes(postTitle) || p.content === postRawContent);
-                    // 简单的查找方式，实际上 openSharePostModal 应该存 ID
-                    // 这里简化逻辑，利用 dataset 里的 ID 更好
+                    // 按 ID 取帖（openSharePostModal 存的）。以前这里用
+                    // title.includes(...) 模糊找，标题重复或被改过就会分享错帖子。
+                    const targetPost = db.forumPosts.find(p => p.id === modal.dataset.postId);
 
-                    // 修正：openSharePostModal 需要存 ID
-                    // 假设 modal.dataset.postId 存在 (需要在 openSharePostModal 增加一行)
-
-                    let targetPost = currentPost;
-                    // 如果上面没找到，尝试模糊匹配
-
-                    let richContext = "";
-                    let visibleSnippet = postRawContent.substring(0, 50);
-                    if (postRawContent.length > 50) visibleSnippet += "...";
+                    // 正文存**全文**，不在这里截断 —— 卡片上的省略交给渲染层。
+                    // 以前先截 50 字再存，那条消息里的正文就永久只有 50 字了。
+                    let shareBody = targetPost ? (targetPost.content || "") : postRawContent;
+                    let shareExtra = "";
 
                     if (targetPost) {
                         const postTime = new Date(targetPost.timestamp || Date.now()).toLocaleString();
                         let commentsText = "暂无评论";
 
                         if (targetPost.comments && targetPost.comments.length > 0) {
-                            // --- 关键修改：按顺序切片 ---
-                            // 需求：分享评论20-30给角色，角色看到的顺序是20,21...
-                            // slice(-N) 获取最后N个。由于数组是按时间push的，所以顺序本身就是旧->新
-                            // 直接 slice(-commentCount) 即可保持顺序
-                            const sliceCount = commentCount === 0 ? 0 : commentCount;
+                            // 数组本身是按时间 push 的，slice(-N) 取最后 N 条即保持旧→新顺序
                             let recentComments = [];
-                            if (sliceCount > 0) {
-                                recentComments = targetPost.comments.slice(-sliceCount);
+                            if (commentCount > 0) {
+                                recentComments = targetPost.comments.slice(-commentCount);
                             }
-
-                            commentsText = recentComments.map(c => `${c.username}: ${c.content}`).join('\n');
+                            commentsText = recentComments.length
+                                ? recentComments.map(c => `${c.username}: ${c.content}`).join('\n')
+                                : "（本次未附带评论）";
                         }
 
-                        richContext = `\n\n=== 帖子详情 ===\n发帖人：${targetPost.username}\n发布时间：${postTime}\n\n【完整正文】\n${targetPost.content}\n\n【最新 ${commentCount} 条评论】\n${commentsText}`;
+                        shareExtra = `发帖人：${targetPost.username}\n发布时间：${postTime}\n\n【最新 ${commentCount} 条评论】\n${commentsText}`;
                     } else {
-                        richContext = modal.dataset.postRichContext || "";
+                        shareExtra = modal.dataset.postRichContext || "";
                     }
 
-                    const buildShareMessage = () => {
-                        const messageContent = `[喵坛分享]标题：${postTitle}\n内容：${visibleSnippet}<span style="display:none;">${richContext}</span>`;
-                        return {
-                            id: `msg_${Date.now()}_${Math.random()}`,
-                            role: 'user',
-                            content: messageContent,
-                            parts: [{ type: 'text', text: messageContent }],
-                            timestamp: Date.now()
-                        };
-                    };
-
-                    selectedCharIds.forEach(charId => {
-                        const character = db.characters.find(c => c.id === charId);
-                        if (character) {
-                            const message = buildShareMessage();
-                            character.history.push(message);
-                            saveSingleChat(charId, 'private');
-                            saveMessageToDB(message, charId, 'private');
-                        }
+                    // 和 + 号面板手动分享、AI 自己发、转发聊天记录共用一套格式和
+                    // 投递口径。构建/投递都在 js/chat/chat_feature_share.js ——
+                    // 这里别再写一遍循环，两份迟早分叉（发送者昵称取哪个字段、
+                    // 群聊要不要补 senderId 这类事）。
+                    await deliverShareToChats({
+                        charIds: selectedCharIds,
+                        groupIds: selectedGroupIds,
+                    }, {
+                        title: postTitle,
+                        category: (typeof SHARE_FORUM_CATEGORY !== 'undefined')
+                            ? SHARE_FORUM_CATEGORY : '来自喵坛的分享',
+                        body: shareBody,
+                        extra: shareExtra,
                     });
-
-                    selectedGroupIds.forEach(groupId => {
-                        const group = db.groups.find(g => g.id === groupId);
-                        if (group) {
-                            const message = buildShareMessage();
-                            message.senderId = 'user_me'; // 群聊消息需要标记发送者
-                            if (!group.history) group.history = [];
-                            group.history.push(message);
-                            saveSingleChat(groupId, 'group');
-                            saveMessageToDB(message, groupId, 'group');
-                        }
-                    });
-
 
                     try { if (typeof renderChatList === 'function') renderChatList(); } catch (e) { }
 
@@ -138,22 +109,20 @@
                 const groupList = document.getElementById('share-group-list');
                 const detailsElement = modal.querySelector('details');
 
-                // --- 1. 清理标题中的 [New!] 标记 ---
-                let cleanTitle = post.title || "无标题";
-                if (cleanTitle.startsWith('[New!] ')) {
-                    cleanTitle = cleanTitle.substring(7);
-                } else if (cleanTitle.startsWith('【新】')) {
-                    cleanTitle = cleanTitle.substring(3);
-                }
+                // --- 1. 清理标题中的遗留 [New!] 前缀（旧备份导入的数据可能还带着） ---
+                const cleanTitle = forumCleanTitle(post.title) || "无标题";
 
                 // --- 2. 将数据存入 dataset ---
+                // ID 是发送时取帖的唯一依据，别删（以前只存标题，靠模糊匹配找帖）
+                modal.dataset.postId = post.id;
+
                 // 存入清理后的标题
                 modal.dataset.postTitle = cleanTitle;
 
-                // 存入原始正文（用于生成卡片上显示的50字摘要）
+                // 原始正文：发送时若按 ID 取不到帖（比如懒加载窗口外）就用这份兜底
                 modal.dataset.postRawContent = post.content || "";
 
-                // --- 3. 构建完整上下文（隐藏在卡片里，给AI看） ---
+                // --- 3. 兜底用的附加信息（正常路径下发送时会按实际条数重新拼） ---
                 const postTime = new Date(post.timestamp || Date.now()).toLocaleString();
                 let commentsText = "";
                 if (post.comments && post.comments.length > 0) {
@@ -164,10 +133,7 @@
                     commentsText = "暂无评论";
                 }
 
-                // 组合成AI能读懂的格式
-                const richContext = `\n\n=== 帖子详情 (系统后台数据) ===\n发帖人：${post.username}\n发布时间：${postTime}\n\n【完整正文】\n${post.content}\n\n【最新评论】\n${commentsText}`;
-
-                modal.dataset.postRichContext = richContext;
+                modal.dataset.postRichContext = `发帖人：${post.username}\n发布时间：${postTime}\n\n【最新评论】\n${commentsText}`;
 
                 // --- 4. 渲染分享对象列表 ---
                 charList.innerHTML = '';

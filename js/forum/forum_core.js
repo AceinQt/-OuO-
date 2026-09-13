@@ -17,6 +17,16 @@ function _forumContiguousCount() {
     const idx = posts.findIndex(p => (p.timestamp || 0) < boundary);
     return idx === -1 ? posts.length : idx;
 }
+
+// ★ New! 标记的语义是「你还没看过」，实现是帖子上的 isNew 字段，点开详情即已读（照 peek 的做法）。
+//   标题里不再写任何标记。这个函数只为兼容遗留数据而留：
+//   Dexie v17 升级已把库里的 "[New!] xxx" 前缀洗干净了，但导入旧备份会把带前缀的标题
+//   重新写进表（backup_data.js 的 forumPosts 分支是直接 bulkPut 备份里的原始对象），
+//   所以所有「拿标题去显示 / 喂给 AI」的地方都过一遍这里。
+function forumCleanTitle(title) {
+    if (typeof title !== 'string') return '';
+    return title.replace(/^\[New!\]\s*/, '').replace(/^【新】/, '');
+}
             
                                     // --- 新增：获取匿名名字 (喵叽+4位代号) ---
             function getAnonymousName() {
@@ -115,11 +125,6 @@ const scrollableArea = document.querySelector('#forum-screen .forum-content-area
                                 window._forumOldestContiguousTs = Number.NEGATIVE_INFINITY; // DB 到底
                                 break;
                             }
-                            // 洗掉过期的 [New!] 标记：清标记的循环只扫得到内存窗口，
-                            // 窗口外的老帖可能还带着（只是没被重新保存过），别让老帖顶着 New! 徽章出现
-                            older.forEach(p => {
-                                if (p.title) p.title = p.title.replace(/^\[New!\]\s*/, '').replace(/^【新】/, '');
-                            });
                             db.forumPosts.push(...older);
                             // 帖子排序铁律：只按 timestamp 倒序（散点老帖会落到正确位置）
                             db.forumPosts.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
@@ -200,28 +205,17 @@ const scrollableArea = document.querySelector('#forum-screen .forum-content-area
 
                         // 如果不是匿名，标记为本人并保存头像
                         if (!isAnon) {
-                            postAvatar = myIdentity.avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+                            postAvatar = myIdentity.avatar || './png/avatar_default.jpg';
                             isUserPost = true;
                         }
 
-                        // 1. 清除旧标记
-                        if (db.forumPosts) {
-                            db.forumPosts.forEach(p => {
-                                if (p.title) {
-                                    p.title = p.title.replace(/^\[New!\]\s*/, '').replace(/^【新】/, '');
-                                }
-                            });
-                        } else {
-                            db.forumPosts = [];
-                        }
+                        if (!db.forumPosts) db.forumPosts = [];
 
-                        // 2. 新帖
-                        const finalTitle = '[New!] ' + titleInput;
-
+                        // 自己发的帖不标 New! —— 那个标记的意思是「你还没看过」
                         const newPost = {
                             id: `post_${Date.now()}_${Math.random()}`,
                             username: selectedAuthor,
-                            title: finalTitle,
+                            title: titleInput,
                             content: content,
                             likeCount: Math.floor(Math.random() * 9000) + 50,
                             comments: [],
@@ -253,6 +247,11 @@ renderForumPosts(db.forumPosts);
                             const postId = card.dataset.id;
                             const post = db.forumPosts.find(p => p.id === postId);
                             if (post) {
+                                // 从详情页返回时 observer 走「已有内容就不重绘」分支，卡片 DOM 不会刷新，
+                                // 所以徽章得在这里当场摘掉（renderPostDetail 只改数据）
+                                const badge = card.querySelector('.new-badge');
+                                if (badge) badge.remove();
+
                                 renderPostDetail(post);
                                 switchScreen('forum-post-detail-screen');
                                 const detailContent = document.getElementById('detail-content-area');

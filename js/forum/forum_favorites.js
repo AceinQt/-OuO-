@@ -67,7 +67,7 @@
                         const contentDiv = document.createElement('div');
                         contentDiv.className = 'fav-post-content';
 
-                        const title = post.title ? post.title.replace(/^\[New!\]\s*/, '').replace(/^【新】/, '') : '无标题';
+                        const title = forumCleanTitle(post.title) || '无标题';
                         const timeStr = post.timestamp ? new Date(post.timestamp).toLocaleString() : '未知时间';
                         contentDiv.innerHTML = `
                 <div class="fav-post-title">${title}</div>

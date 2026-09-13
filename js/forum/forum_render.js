@@ -51,7 +51,7 @@
                     };
 
                     const rankClass = `rank-${index + 1}`;
-                    const cleanTitle = post.title.replace(/^\[New!\]\s*/, '').replace(/^【新】/, '');
+                    const cleanTitle = forumCleanTitle(post.title);
                     // 修改：精确到秒
                     const timeStr = new Date(post.timestamp).toLocaleString();
 
@@ -120,14 +120,11 @@ function renderForumPosts(posts, isAppend = false) {
         const titleEl = document.createElement('h3');
         titleEl.className = 'post-title';
 
-        if (post.title && post.title.startsWith('[New!] ')) {
-            const realTitle = post.title.substring(7);
-            titleEl.innerHTML = `<span class="new-badge">New!</span>${realTitle}`;
-        } else if (post.title && post.title.startsWith('【新】')) {
-            const realTitle = post.title.substring(3);
-            titleEl.innerHTML = `<span class="new-badge">New!</span>${realTitle}`;
-        } else {
-            titleEl.textContent = post.title || '无标题';
+        // 标题走 textContent，再把徽章插到最前面 —— 别改回 innerHTML 拼接，
+        // 那样帖子标题里的 HTML 会被当标签解析
+        titleEl.textContent = forumCleanTitle(post.title) || '无标题';
+        if (post.isNew) {
+            titleEl.insertAdjacentHTML('afterbegin', '<span class="new-badge">New!</span>');
         }
 
         const metaEl = document.createElement('div');

@@ -41,7 +41,7 @@ function setupMePageFeature() {
     function loadMeData() {
         const identity = db.forumUserIdentity || {
             nickname: '新用户',
-            avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+            avatar: './png/avatar_default.jpg',
             persona: '',
             realName: '',
             anonCode: '0311',
@@ -51,7 +51,7 @@ function setupMePageFeature() {
         if (nicknameInput) nicknameInput.value = identity.nickname || '';
         if (anonCodeInput) anonCodeInput.value = identity.anonCode || '0311';
         
-        const currentAvatar = identity.avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+        const currentAvatar = identity.avatar || './png/avatar_default.jpg';
         if (avatarInputHidden) avatarInputHidden.value = currentAvatar;
         if (avatarImg) avatarImg.src = currentAvatar;
 
@@ -347,7 +347,7 @@ function setupMePageFeature() {
                 // 更新内存中的数据
                 db.forumUserIdentity = {
                     nickname: currentNickname?.value.trim() || '新用户',
-                    avatar: currentHiddenInput?.value.trim() || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+                    avatar: currentHiddenInput?.value.trim() || './png/avatar_default.jpg',
                     persona: currentPersona?.value.trim() || '',
                     realName: currentRealName?.value.trim() || '',
                     anonCode: finalCode,
@@ -360,7 +360,7 @@ function setupMePageFeature() {
     await saveForumMeta();
     console.log("✅ 论坛设置已精准保存");
             } else {
-                    console.error("❌ saveData 函数不存在");
+                    console.error("❌ saveForumMeta 函数不存在");
                 }
 
                 if (typeof showToast === 'function') {
