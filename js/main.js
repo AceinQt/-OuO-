@@ -9,6 +9,14 @@
     const logQueue =[];
     let outputElement = null;
 
+    // 日志只保留最近 MAX_LINES 条。这个面板原本无上限地 appendChild，
+    // 长时间挂机（含 60 秒一轮的主动消息轮询）会让 DOM 行数只增不减，
+    // 内存跟着涨，安卓上更容易在切后台时被系统回收整个页面。
+    const MAX_LINES = 300;
+    // 单条日志的字符上限。formatArgs 对象走 JSON.stringify(obj,null,2)，
+    // 打印一次大对象就能往 DOM 里钉进几百 KB（实测 20 次 → 0.58MB）。
+    const MAX_MSG_CHARS = 2000;
+
     // 格式化输出参数
     function formatArgs(args) {
         return Array.from(args).map(arg => {
@@ -40,14 +48,23 @@
             const line = document.createElement('div');
             line.className = 'output-item';
             line.style.color = color;
-            line.textContent = `${timeStr} [${type.toUpperCase()}] ${msg}`;
+            const shown = (msg && msg.length > MAX_MSG_CHARS)
+                ? msg.slice(0, MAX_MSG_CHARS) + `\n…（已截断，原长 ${msg.length} 字符）`
+                : msg;
+            line.textContent = `${timeStr} [${type.toUpperCase()}] ${shown}`;
             outputElement.appendChild(line);
+
+            // 超出上限就从头部丢掉最旧的几行，保证 DOM 不无限增长
+            while (outputElement.children.length > MAX_LINES) {
+                outputElement.removeChild(outputElement.firstElementChild);
+            }
 
             // 自动滚动到最新一条
             outputElement.scrollTop = outputElement.scrollHeight;
         } else {
-            // 如果 DOM 还没准备好，加入队列
+            // 如果 DOM 还没准备好，加入队列（队列同样要有上限，否则 DOM 迟迟不就绪时会堆积）
             logQueue.push({ type, msg, color });
+            if (logQueue.length > MAX_LINES) logQueue.shift();
         }
     }
 
@@ -86,9 +103,19 @@
         }
     });
 })();
-// ⭐ 创建广播频道(放在最顶部)
+// 跨窗口同步频道。
+// 日常数据改动现在全部走精准保存（改内存的同时就把那一条/那一张表落盘），
+// 不再有"用本窗口内存整个覆盖库"的全量保存，所以窗口之间不会互相覆盖，
+// 也就不需要每次保存都互相通知了。
+// 现在唯一的生产者是「备份恢复」——那是真正会把整个库换掉的操作，
+// 其他窗口必须重新载入，否则它们的内存还是旧库的内容。
 const syncChannel = new BroadcastChannel('qchat_sync');
-let shouldSaveOnHide = true;
+
+// 供 database.js 的 restoreAllTablesToDB 在全量写回后调用（它拿不到脚本级的 syncChannel）
+window.notifyDataWritten = () => {
+    try { syncChannel.postMessage({ type: 'DATA_SAVED', timestamp: Date.now() }); }
+    catch (e) { console.warn('跨窗口通知失败（忽略）:', e); }
+};
 
 // --- 核心修复：重新加载数据后，自动刷新当前页面 UI ---
 function refreshUIAfterSync() {
@@ -108,24 +135,21 @@ function refreshUIAfterSync() {
     }
 }
 
-// ⭐ 监听其他标签页的消息
+// 监听其他窗口的「整库已被替换」通知（目前只有备份恢复会发）
 syncChannel.onmessage = (event) => {
-    if (event.data.type === 'DATA_SAVED') {
-        console.log('⚠️ 其他标签页保存了数据,标记本地数据为过期');
-        window.dbLoadTimestamp = 0; // 标记为过期
-        shouldSaveOnHide = false; // 暂时禁止自动保存
-        
-        // 如果当前页面可见,自动重新加载数据
+    if (event.data && event.data.type === 'DATA_SAVED') {
+        console.log('⚠️ 其他窗口替换了整个数据库，本窗口内存已过期');
+        window.dbLoadTimestamp = 0; // 标记为过期，下次切回前台会重新载入
+
+        // 当前就在前台的话，立刻重载
         if (document.visibilityState === 'visible') {
             loadData().then(() => {
                 if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
                 if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
                 refreshUIAfterSync();
                 showToast('已同步最新数据');
-                shouldSaveOnHide = true;
             }).catch(e => {
                 console.error('重新加载数据失败:', e);
-                shouldSaveOnHide = true;
             });
         }
     }
@@ -199,12 +223,10 @@ const pageActions = {
 function navigateTo(targetId) {
     if (!targetId) return;
 
-    // 开发中的页面提示
-    if (['screen', 'diary-screen', 'piggy-bank-screen'].includes(targetId)) {
-        showToast('该应用正在开发中，敬请期待！');
-        return;
-    }
-    
+    // 这里原先有个「该应用正在开发中」的拦截，挡的是 diary-screen / piggy-bank-screen
+    // （日记本 / 存钱罐）和一个空占位 'screen'。这三个目标在 index.html 里都没有对应的
+    // screen 元素，桌面上也没有能点出它们的入口，属于永远走不到的分支，已随图标一起删掉。
+
 if (targetId === 'chat-list-screen') {
     try {
         currentChatId = null;
@@ -293,6 +315,14 @@ window.init = async () => {
         const navTarget = e.target.closest('[data-target]');
         if (navTarget) {
             e.preventDefault();
+
+            // === 忙锁：长操作进行中（备份导出/导入等）一律不许换页 ===
+            // CSS 的 pointer-events 只挡得住页面内部的点击，这里是第二道闸：
+            // 底部导航栏在 .screen 之外，滑动返回和安卓返回键也都是合成 .back-btn 点击。
+            // 程序自己调 switchScreen（导入完成后的跳转/刷新）不走这里，不受影响。
+            if (typeof window.isUiBusy === 'function' && window.isUiBusy()) {
+                return;
+            }
 
             // === 修复1：拦截 Peek 编辑模式下的返回操作 ===
             // 如果处于多选删除模式，且点击的是返回按钮，则优先退出多选，不跳转页面
@@ -389,8 +419,9 @@ window.init = async () => {
         if (typeof setupPhotoVideoSystem === 'function') setupPhotoVideoSystem();
         if (typeof setupImageRecognition === 'function') setupImageRecognition();
         if (typeof setupWalletSystem === 'function') setupWalletSystem();
-        if (typeof setupGiftSystem === 'function') setupGiftSystem();
         if (typeof setupLocationSystem === 'function') setupLocationSystem();
+        if (typeof setupShareFeature === 'function') setupShareFeature();
+        if (typeof setupForwardMessagesModal === 'function') setupForwardMessagesModal();
         if (typeof setupTimeSkipSystem === 'function') setupTimeSkipSystem();
         if (typeof setupWorldBookApp === 'function') setupWorldBookApp();
         if (typeof setupFontSettingsApp === 'function') setupFontSettingsApp();
@@ -602,70 +633,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     } catch (e) { console.log('通知冷启动跳转解析失败（忽略）:', e); }
 
-    // ⭐⭐⭐ C. 【核心】改进的防数据丢失逻辑
+    // ⭐⭐⭐ C. 切后台 / 回前台的处理
+    //
+    // ★ 这里过去在「切后台」时调 saveData() 做全量保存，是丢数据和卡顿的根源，已彻底移除：
+    //     - 全量 bulkPut 十几张表，而切后台那一刻正是系统在决定要不要回收页面，
+    //       在这时制造内存与 IO 尖峰等于主动提高被杀概率；
+    //     - 多窗口下会用本窗口的内存整个盖掉库，另一个窗口的改动就没了；
+    //     - 消息数上万后每次切后台都要卡一下。
+    //   现在所有数据改动都在发生时就精准落盘，切后台不需要做任何保存工作。
     document.addEventListener('visibilitychange', async () => {
-        if (document.visibilityState === 'hidden' && shouldSaveOnHide) {
-            try {
-                // 保存前检查数据新鲜度(可选,额外保险)
-                if (typeof window.dexieDB !== 'undefined') {
-    try {
-        const storedMeta = await window.dexieDB.globalSettings.get('app_metadata');
-                        if (storedMeta?.lastUpdateTime > (window.dbLoadTimestamp || 0)) {
-                            console.warn('⚠️ 检测到远程数据更新,跳过保存避免覆盖');
-                            return;
-                        }
-                    } catch (e) {
-                        console.log('元数据检查跳过:', e.message);
-                    }
-                }
-                
-                // 执行保存
-                await saveData();
-                console.log('✅ 后台保存成功');
-                
-                // 通知其他标签页
-                syncChannel.postMessage({ 
-                    type: 'DATA_SAVED', 
-                    timestamp: Date.now() 
-                });
-            } catch (e) {
-                console.error("❌ 后台保存出错:", e);
-                // 生产环境建议注释掉 alert
-                await AppUI.alert("后台保存出错: " + e.message);
+        if (document.visibilityState !== 'visible') return;
+
+        // 回到前台：补投主动消息，并检查库是否被别的窗口整体替换过（备份恢复）
+        console.log('📱 页面重新可见，检查数据同步...');
+        if (typeof checkAndDeliverProactiveMessages === 'function') {
+            checkAndDeliverProactiveMessages();
+        }
+
+        if (typeof window.dexieDB === 'undefined') return;
+        try {
+            // app_metadata.lastUpdateTime 现在只由 restoreAllTablesToDB（备份恢复）写，
+            // 所以这里只会在「另一个窗口恢复了备份」时命中，不会像以前那样被普通刷新误触。
+            const storedMeta = await window.dexieDB.globalSettings.get('app_metadata');
+            if (storedMeta?.lastUpdateTime > (window.dbLoadTimestamp || 0)) {
+                console.log('🔄 检测到数据库已被替换，重新加载...');
+                await loadData();
+                if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
+                if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
+                refreshUIAfterSync();
+                showToast('已加载最新数据');
             }
- } else if (document.visibilityState === 'visible') {
-            // 页面重新可见时,检查是否需要重新加载
-            console.log('📱 页面重新可见,检查数据同步...');
-            shouldSaveOnHide = true;
-            if (typeof checkAndDeliverProactiveMessages === 'function') {
-                checkAndDeliverProactiveMessages();
-            }
-            
-            if (typeof window.dexieDB !== 'undefined') {
-    try {
-        const storedMeta = await window.dexieDB.globalSettings.get('app_metadata');
-                    if (storedMeta?.lastUpdateTime > (window.dbLoadTimestamp || 0)) {
-                        console.log('🔄 检测到新数据,重新加载...');
-                        await loadData();
-                        if (typeof applySafeAreaSettings === 'function') applySafeAreaSettings();
-                        if (typeof applyScreenAdaptation === 'function') applyScreenAdaptation();
-                        
-                        // 🌟 【修复代码】：调用重新渲染UI
-                        refreshUIAfterSync();
-                        
-                        showToast('已加载最新数据');
-                    }
-                } catch (e) {
-                    console.error('数据同步检查失败:', e);
-                }
-            }
+        } catch (e) {
+            console.error('数据同步检查失败:', e);
         }
     });
 
-    // 页面关闭时的最后保险
-    window.addEventListener('pagehide', () => {
-        if (typeof saveData === 'function') {
-            saveData();
-        }
-    });
+    // ★ 这里过去有一个 pagehide 兜底全量保存，已彻底移除。它有三重问题：
+    //   1. 完全绕过了上面那套多窗口保护（既不看开关也不比时间戳），
+    //      是"两个窗口互相覆盖"这个老 bug 唯一还没堵上的口子；
+    //   2. saveData 是一长串 await，pagehide 之后浏览器随时可能销毁页面，
+    //      结果往往是"表写了一半、末尾的时间戳没更新"的半保存状态，
+    //      反而让其他窗口以为库没变；
+    //   3. 它做的事本来就没必要——数据在改动的那一刻已经精准落盘了。
+    //   （chat_image_store.js 里另有一个 pagehide，那是回收 objectURL，与保存无关，保留。）
 });

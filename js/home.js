@@ -34,9 +34,9 @@ function setupHomeScreen() {
     // 1. 确保数据存在
     if (!db.insWidgetSettings) {
         db.insWidgetSettings = {
-            avatar1: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+            avatar1: './png/avatar_default.jpg',
             bubble1: '„- ω -„',
-            avatar2: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
+            avatar2: './png/avatar_default_me.jpg',
             bubble2: 'ｷ...✩'
         };
     }

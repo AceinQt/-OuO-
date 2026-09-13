@@ -10,6 +10,34 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                 worldBookSelectionModal = document.getElementById('world-book-selection-modal'),
                 worldBookSelectionList = document.getElementById('world-book-selection-list'),
                 saveWorldBookSelectionBtn = document.getElementById('save-world-book-selection-btn');
+
+            // 删除世界书后，角色/群的 worldBookIds 里会残留已删除的 id。
+            // 过去只写了 worldBooks 表，这份级联清理仅存在于内存，靠切后台的全量
+            // saveData 兜底；App 被系统杀掉就不会落盘，角色会继续绑着已删除的 id。
+            // 这里按 saveSingleChat 的既有口径落盘：剥掉 history 与记忆字段，
+            // 避免把独立存储的记忆副本重新写回 characters/groups 行。
+            async function saveWorldBookRefsForChats() {
+                try {
+                    if (typeof dexieDB === 'undefined') return;
+                    const strip = (src) => {
+                        const o = { ...src };
+                        delete o.history;
+                        delete o.memorySummaries;
+                        delete o.memoryJournals;
+                        delete o.longTermSummaries;
+                        if (window.isChunkMigrated) delete o.memoryChunks;
+                        return o;
+                    };
+                    if (dexieDB.characters && db.characters && db.characters.length) {
+                        await dexieDB.characters.bulkPut(db.characters.map(strip));
+                    }
+                    if (dexieDB.groups && db.groups && db.groups.length) {
+                        await dexieDB.groups.bulkPut(db.groups.map(strip));
+                    }
+                } catch (e) {
+                    console.error('❌ 世界书引用清理保存失败:', e);
+                }
+            }
             
                                     function setupWorldBookApp() {
                 addWorldBookBtn.addEventListener('click', () => {
@@ -212,7 +240,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                                 db.groups.forEach(group => {
                                     if (group.worldBookIds) group.worldBookIds = group.worldBookIds.filter(id => id !== bookIdToDelete);
                                 });
-                                await dexieDB.worldBooks.delete(bookIdToDelete);
+                                await saveWorldBookRefsForChats();
                                 renderWorldBookList();
                                 showToast('世界书条目已删除');
                             });
@@ -379,7 +407,7 @@ const worldBookListContainer = document.getElementById('world-book-list-containe
                         }
                     });
 
-                    await dexieDB.worldBooks.delete(bookIdToDelete);
+                    await saveWorldBookRefsForChats();
                     showToast(`已成功删除 ${count} 个条目`);
                     exitWorldBookMultiSelectMode();
                 }

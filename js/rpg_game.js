@@ -765,12 +765,15 @@ function rpgGetApiConfig() {
     const chatPresets = (db.apiPresets || []).filter(p => !p.type || p.type === 'chat');
     
     // 优先用RPG专属选择
+    // 各分支都展开兜底：projectId 之类的新字段不用回来逐个加
     if (window.rpgSelectedApiPreset) {
         const p = chatPresets.find(p => p.name === window.rpgSelectedApiPreset);
         if (p?.data) return {
+            ...p.data,
             url:   p.data.url || p.data.apiUrl || '',
             key:   p.data.key || p.data.apiKey || '',
             model: p.data.model || '',
+            provider: p.data.provider || 'newapi',
             temperature: p.data.temperature ?? 0.8,
             stream: p.data.streamEnabled !== false
         };
@@ -780,18 +783,22 @@ function rpgGetApiConfig() {
     if (activeName) {
         const p = chatPresets.find(p => p.name === activeName);
         if (p?.data) return {
+            ...p.data,
             url:   p.data.url || p.data.apiUrl || '',
             key:   p.data.key || p.data.apiKey || '',
             model: p.data.model || '',
+            provider: p.data.provider || 'newapi',
             temperature: p.data.temperature ?? 0.8,
             stream: p.data.streamEnabled !== false
         };
     }
     // 最终兜底旧版 db.apiSettings
     return {
+        ...(db.apiSettings || {}),
         url:   db.apiSettings?.url || '',
         key:   db.apiSettings?.key || '',
         model: db.apiSettings?.model || '',
+        provider: db.apiSettings?.provider || 'newapi',
         temperature: 0.8,
         stream: false
     };
@@ -859,42 +866,10 @@ function rpgShowApiPickerDialog() {
 
 /**
  * 统一 AI 请求：支持流式和非流式，均返回完整 content 字符串
+ * gemini 原生 / openai 兼容两种格式的差异由 callLLM 处理（js/api/llm_client.js）
  */
-async function rpgFetchAI(url, key, model, messages, temperature, stream) {
-    const body = { model, messages, temperature };
-    if (stream) body.stream = true;
-
-    const response = await fetch(`${url}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
-        body: JSON.stringify(body)
-    });
-
-    if (!response.ok) throw new Error(`API 请求失败 (${response.status})`);
-
-    if (stream) {
-        const reader  = response.body.getReader();
-        const decoder = new TextDecoder();
-        let full = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const lines = decoder.decode(value, { stream: true }).split('\n');
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const raw = line.slice(6).trim();
-                if (raw === '[DONE]') break;
-                try {
-                    const delta = JSON.parse(raw).choices?.[0]?.delta?.content;
-                    if (delta) full += delta;
-                } catch { /* 忽略非法行 */ }
-            }
-        }
-        return full;
-    } else {
-        const data = await response.json();
-        return data.choices[0].message.content;
-    }
+async function rpgFetchAI(cfg, messages, temperature, stream) {
+    return callLLM({ cfg, messages, temperature, stream: !!stream });
 }
 
 
@@ -1249,7 +1224,7 @@ if (!url || !key || !model) return showToast('请先配置API');
 #ENDING# 通关后的感言 (5句以上，用|分隔，例如：终于结束了...|我们是冠军！|该回家了。|谢谢你一直陪着我。|再见，朋友。)`;
 
         try {
-            const content = await rpgFetchAI(url, key, model,
+            const content = await rpgFetchAI(cfg,
     [{ role: "user", content: prompt }], cfg.temperature, cfg.stream);
 
             const parseTag = (tag) => {
@@ -2624,7 +2599,7 @@ prompt += `\n关系：两人是共同冒险的搭档。请确保台词符合伙�
 
 
                 try {
-                    const content = await rpgFetchAI(url, key, model,
+                    const content = await rpgFetchAI(cfg,
     [{ role: "user", content: prompt }], cfg.temperature, cfg.stream);
 
                     // 5. 解析结果
@@ -4040,7 +4015,7 @@ ${p2GameName}：台词...
         }
 
         // --- API 请求 ---
-        const rawContent = await rpgFetchAI(url, key, model,
+        const rawContent = await rpgFetchAI(cfg,
     [{ role: "user", content: prompt }], Math.max(cfg.temperature, 1.0), cfg.stream);
 
 // ==========================================
