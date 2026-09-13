@@ -34,6 +34,23 @@
     animation: none !important;
 }
 
+/* ── 页面忙锁（配合 utils.js 的 beginUiBusy）──────────────────────
+   长操作进行中：整页控件不可点、返回按钮置灰。
+   拦在容器上而不是逐个按钮上，页面里新加的控件自动被覆盖；
+   加载 toast 和全局弹窗都挂在 body 下（不在 .screen 里），照样能转、能点。
+   !important 是必须的：存储页会给 .content 写 inline 的 pointer-events:auto
+   （统计完淡入时恢复点击），不加权重就会把这里的锁捅开。 */
+.screen.ui-busy .app-header,
+.screen.ui-busy .content,
+.screen.ui-busy .bottom-actions {
+    pointer-events: none !important;
+}
+
+.screen.ui-busy .app-header .back-btn {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
 .app-header {
     display: flex;
     justify-content: space-between;
@@ -131,9 +148,14 @@
 .online-indicator {
     width: 8px;
     height: 8px;
+    max-width: 8px;
+    max-height: 8px;
+    min-width: 8px;
+    min-height: 8px;
     border-radius: 50%;
     background-color: var(--online-status-color);
     margin-right: 5px;
+    flex-shrink: 0;
 }
 
 .app-header .placeholder {
@@ -553,6 +575,16 @@ label.btn-primary {
     visibility: visible;
 }
 
+/* 带 chatId 的新消息通知条可点击跳转，给个手势和按下反馈 */
+.toast.clickable {
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.toast.clickable:active {
+    transform: translateX(-50%) scale(0.97);
+}
+
 .toast-spinner {
     width: 20px;
     height: 20px;
@@ -899,4 +931,20 @@ input[type="range"]::-moz-range-thumb {
     color: #8a9399;
     font-size: 12px;
     line-height: 1.6;
+}
+
+/* ── AppUI.promptMultiline 的 textarea ─────────────────────────── */
+/* 弹窗里的 input-container 是 .form-group，全局已给 textarea 上了宽度/边框，
+   这里只补 form-group 没管的：可读的行高、禁掉手动拖拽（弹窗高度是算好的）。 */
+.appui-textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    resize: none;
+    line-height: 1.6;
+    font-size: 14px;
+    max-height: 40vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
