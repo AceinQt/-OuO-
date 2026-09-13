@@ -103,8 +103,8 @@ function createContextMenu(items, x, y) {
                 // 2. 编辑功能
                 menuItems.push({label: '编辑', action: () => startMessageEdit(messageId)});
 
-                // 3. 删除功能
-                menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
+                // 3. 多选（进去以后可删可转发）
+                menuItems.push({label: '多选', action: () => enterMultiSelectMode(messageId)});
 
             } else if (isTimeSkip) {
         // --- 新增：时间跳过/剧情显示消息 ---
@@ -117,8 +117,8 @@ function createContextMenu(items, x, y) {
         });
             // 允许编辑
         menuItems.push({label: '编辑', action: () => startMessageEdit(messageId)});
-        menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
-            
+        menuItems.push({label: '多选', action: () => enterMultiSelectMode(messageId)});
+
           } else {
                 // --- 普通消息菜单 (保持原有) ---
                 const isImageRecognitionMsg = message.parts && message.parts.some(p => p.type === 'image');
@@ -185,7 +185,7 @@ function createContextMenu(items, x, y) {
                     // 图片消息的"转文字"不在这里 —— 已挪到图片气泡右下角的按钮
                     // （chat_bubble_factory.js 的 .image-ocr-btn），和生图键同一个位置。
                 }
-                menuItems.push({label: '删除', action: () => enterMultiSelectMode(messageId)});
+                menuItems.push({label: '多选', action: () => enterMultiSelectMode(messageId)});
             }
 
             if (menuItems.length > 0) {
@@ -379,6 +379,15 @@ async function saveMessageEdit() {
     chat.history[messageIndex].content = newContent;
     chat.history[messageIndex].parts = [{ type: 'text', text: newContent }];
 
+    // 双语照片描述：用户改了中文，之前那份英文提示词就过时了，必须清掉。
+    // 留着的话下次点生成会拿旧英文去画，画出来和眼前的描述对不上 ——
+    // 宁可退回用新的中文（效果差一点），也不要画一张明显不对的图。
+    // 用户若把英文连括号一起手写进来，紧接着的 strip 会重新摘出去。
+    delete chat.history[messageIndex].imagePromptEn;
+    if (typeof stripBilingualImagePrompt === 'function') {
+        stripBilingualImagePrompt(chat.history[messageIndex]);
+    }
+
     await saveMessageToDB(chat.history[messageIndex], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
     
@@ -433,6 +442,9 @@ function enterMultiSelectMode(initialMessageId) {
                 multiSelectBar.classList.add('visible');
                 chatRoomScreen.classList.add('multi-select-active');
                 selectedMessageIds.clear();
+                selectCount.textContent = '已选择 0 项';
+                deleteSelectedBtn.disabled = true;
+                if (forwardSelectedBtn) forwardSelectedBtn.disabled = true;
                 if (initialMessageId) {
                     toggleMessageSelection(initialMessageId);
                 }
@@ -464,11 +476,25 @@ function enterMultiSelectMode(initialMessageId) {
                 }
                 selectCount.textContent = `已选择 ${selectedMessageIds.size} 项`;
                 deleteSelectedBtn.disabled = selectedMessageIds.size === 0;
+                if (forwardSelectedBtn) forwardSelectedBtn.disabled = selectedMessageIds.size === 0;
             }
 
             async function deleteSelectedMessages() {
                 if (selectedMessageIds.size === 0) return;
+
+                // ★ 二次确认是必需的，不是礼貌：删除键旁边就是转发键，两个都在
+                //   多选栏右下角、指头底下差几毫米，误触一次就是不可恢复的删除。
+                const ok = await AppUI.confirm(
+                    `将删除选中的 ${selectedMessageIds.size} 条消息，删掉就找不回来了。`,
+                    '删除消息', '删除', '取消'
+                );
+                if (!ok) return;
+
+                // 条数在弹窗关掉之后再数一遍：等确认那会儿后台投递主动消息可能
+                // 走过 resetChatRoomState 把选中集清了，拿旧数字会报错数量。
+                if (selectedMessageIds.size === 0) return;
                 const deletedCount = selectedMessageIds.size;
+
                 const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
                 chat.history = chat.history.filter(m => !selectedMessageIds.has(m.id));
                 await deleteMessagesFromDB(Array.from(selectedMessageIds));

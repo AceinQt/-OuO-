@@ -124,7 +124,7 @@
                                 };
                                 imageReader.onerror = () => {
                                     // 即使头像转换失败，也用默认头像创建角色
-                                    createCharacterFromData(charaData, 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg');
+                                    createCharacterFromData(charaData, './png/avatar_default.jpg');
                                     resolve();
                                 };
                             } else {
@@ -151,7 +151,7 @@
                         try {
                             const data = JSON.parse(e.target.result);
                             // JSON卡没有内置头像，使用默认头像
-                            createCharacterFromData(data, 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg');
+                            createCharacterFromData(data, './png/avatar_default.jpg');
                             resolve();
                         } catch (error) {
                             reject(new Error(`解析JSON失败: ${error.message}`));
@@ -180,11 +180,11 @@
                     realName: charData.name || '未命名',
                     remarkName: charData.name || '未命名',
                     persona: charData.description || charData.persona || '',
-                    avatar: avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+                    avatar: avatar || './png/avatar_default.jpg',
                     myName: '',
                     myNickname: '',
                     myPersona: '',
-                    myAvatar: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
+                    myAvatar: './png/avatar_default_me.jpg',
                     boundPersonaId: null,
                     theme: 'white_blue',
                     maxMemory: 10,

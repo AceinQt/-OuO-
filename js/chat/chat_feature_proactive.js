@@ -164,6 +164,13 @@ async function applyAwaySettings(chat, mode, dailyLimit, frequency, timerInterva
 // 迟到多久以内仍算“到点送达”(据此决定是否弹系统通知):10 分钟
 const ON_TIME_NOTIFY_WINDOW_MS = 10 * 60 * 1000;
 
+// 槽位 ID(noon_0 / noon_1 / afternoon_0)里 '_' 之前那截就是它属于哪个时段。
+// 生成端一次产出两个时段、每个时段可能有多组，所以「同一时段」必须按这个前缀判定，
+// 不能拿整个 slotId 当时段用 —— 那会把"只发一组"误伤成"整轮只发一组"。
+function paWindowOfSlot(slotId) {
+    return String(slotId).toLowerCase().split('_')[0];
+}
+
 // 由时段 ID(如 noon / noon_0)与锚点时间,推出该时段最近一次的 [start, end) 绝对区间。
 // 生成端(paFreezeScheduledAt)与配信端共用同一套换算,保证冻结值与回退值一致。
 function getRecentSlotInterval(slotId, anchorTime) {
@@ -344,6 +351,10 @@ async function checkAndDeliverProactiveMessages() {
                         const matched = chat.members.find(m => m.realName === sName || m.groupNickname === sName);
                         newMsg.senderId = matched ? matched.id : chat.members[0].id;
                     }
+                    // 双语照片描述：与实时回复路径(chat_ai_service.js)对齐，英文摘到
+                    // imagePromptEn、content 只留中文。主动消息同样会产出照片(见 1238 行示例格式)，
+                    // 漏掉这里就会在通知和气泡里漏出英文
+                    if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(newMsg);
                     chat.history.push(newMsg);
                     putMsgs.push(newMsg);
                     if (typeof currentChatId !== 'undefined' && currentChatId === chat.id && typeof addMessageBubble === 'function') {
@@ -387,8 +398,12 @@ async function checkAndDeliverProactiveMessages() {
             msgIndex = chat.proactiveMessageQueue.findIndex(m => m.type === 'time_window_idle');
         }
         if (msgIndex === -1) {
+            // 【既定规则】peek 只在随机模式投递。
+            //   peek 是“没话可说时补充话题”的存货；fixed 模式自己会付费预生成 idle 池，
+            //   两者叠加就成了双份主动消息 → 从此只让 random 吃 peek。
+            //   fixed/timer 池里已有的 peek 话题不清除，留着切回 random 还能用(3 天自然过期)。
             const isOfflineMode = (type === 'private' && chat.offlineModeEnabled);
-            if (!isOfflineMode) {
+            if (!isOfflineMode && (chat.proactiveMode || 'random') === 'random') {
                 msgIndex = chat.proactiveMessageQueue.findIndex(m => m.type === 'time_window_peek');
                 if (msgIndex !== -1) isPeekSource = true;
             }
@@ -436,9 +451,14 @@ async function checkAndDeliverProactiveMessages() {
         }
 
         const minTimeGap = isPeekSource ? 60 * 60 * 1000 : 5 * 60 * 1000;
-        if (tNow - lastInteractTime < minTimeGap) continue; 
-        
-        if (hasSentProactiveSinceLastReal) continue;
+        if (tNow - lastInteractTime < minTimeGap) continue;
+
+        // 【不连投·仅 peek】“上一条主动消息还没被回复就不再发”这条守卫是为 peek 加的
+        //   (曾出现 peek 连续轰炸)。它原先无条件生效，把预生成的 idle/summary 也拦了:
+        //   生成端一次产出两个时段(getTargetSlots)，第一个时段发出后第二个就永远发不出去,
+        //   只能等 12h expireAt 过期或被用户发言作废 → 表现为“发完一个时段就重新生成”。
+        //   同时段内仍只发一组(见下方发送成功后销毁本轮候选)，跨时段续投由此放开。
+        if (isPeekSource && hasSentProactiveSinceLastReal) continue;
 
         let candidates =[];
 
@@ -647,6 +667,8 @@ async function checkAndDeliverProactiveMessages() {
                         else newMsg.senderId = chat.members[0].id;
                     }
 
+                    // 双语照片描述：与实时回复路径(chat_ai_service.js)对齐，英文摘走、content 只留中文
+                    if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(newMsg);
                     chat.history.push(newMsg);
                     msgsToPut.push(newMsg);
                     
@@ -674,9 +696,14 @@ async function checkAndDeliverProactiveMessages() {
                     console.log(`[顺风车] ${chat.realName || chat.name} 迟到补投约 ${Math.round(_lateMs / 60000)} 分钟,按“过去已发送”处理,不弹通知。`);
                 }
 
-                // 【修复 2 续】发成功后销毁其余所有候选，只发一组
+                // 【修复 2 续】发成功后销毁**同一时段**其余候选，同时段只发一组。
+                //   曾经这里是「销毁本轮全部候选」，跨时段一起误伤：App 睡着错过第一个时段，
+                //   用户几小时后打开时两个时段都已过点、双双进了 candidates，
+                //   发掉一组、另一组当场陪葬 → 池子空了 → 5 分钟后又付费生成一轮。
+                //   跨时段的候选留在池里，下一轮轮询(60s)按「过去已发送」静默补投，不弹通知。
+                const winWindow = paWindowOfSlot(candidate.slotId);
                 for (const rest of candidates) {
-                    delete draft.content[rest.slotId];
+                    if (paWindowOfSlot(rest.slotId) === winWindow) delete draft.content[rest.slotId];
                 }
                 break;
 
@@ -1119,17 +1146,23 @@ async function triggerIdleProactiveGeneration() {
 
 async function generateBackgroundProactiveMessages(chat, maxCalls, type, queueType = 'time_window_idle') {
     try {
-        // ── 新增：读取主动消息专用API配置 ──────────────────────
+        // ── 读取主动消息 API 配置 ──────────────────────────────
+        // 优先级同 getAiReply：主动消息专用预设 > 聊天自己的预设 > 全局默认。
+        // 选「和聊天一致」时 proactiveApiPresetName 为空，必须回落到 chatApiPreset。
         let effectiveApi = db.apiSettings || {};
-        if (chat.proactiveApiPresetName) {
+        const _overrideName = chat.proactiveApiPresetName || chat.chatApiPreset || null;
+        if (_overrideName) {
             const preset = (db.apiPresets || []).find(p =>
-                p.name === chat.proactiveApiPresetName && (!p.type || p.type === 'chat')
+                p.name === _overrideName && (!p.type || p.type === 'chat')
             );
             if (preset && preset.data) effectiveApi = { ...db.apiSettings, ...preset.data };
         }
-        const { url, key, model, provider } = effectiveApi;
+        const { url, key, model } = effectiveApi;
         const temperature = effectiveApi.temperature !== undefined ? effectiveApi.temperature : 0.85;
-        const streamEnabled = !!effectiveApi.streamEnabled;
+        // 与 getAiReply 对齐：预设没显式关流式就当开（?? true，不是 !!），
+        // 否则同一个预设在聊天里走流式、后台生成却退回非流式。
+        const streamEnabled = effectiveApi.streamEnabled ?? true;
+        if (!url || !key || !model) return;   // 配置不全直接放弃这次后台生成
         // ────────────────────────────────────────────────────────
 
         let systemPrompt = '';
@@ -1258,62 +1291,21 @@ const memoryLength = chat.maxMemory || 15;
 
         let textBlock = "";
 
-        // 🌟【双轨制安全网】：哪怕用户没选 API，硬生生用 Gemini，这里也做好了兼容！
-        if (provider === 'gemini') {
-            // Gemini API 发送逻辑
-            const endpoint = `${url}/v1beta/models/${model}:generateContent?key=${typeof getRandomValue === 'function' ? getRandomValue(key) : key}`;
-            const response = await fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [ { role: 'user', parts: [{ text: systemPrompt + '\n\n' + userMessage }] } ],
-                    generationConfig: { temperature: temperature }
-                })
-            });
-
-            if (!response.ok) return;
-            const result = await response.json();
-            textBlock = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
-        } else {
-            // OpenAI 兼容 API 发送逻辑 (采用 Claude 提供的 SSE 流式解析防超时)
-            const response = await fetch(`${url}/v1/chat/completions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-                body: JSON.stringify({
-                    model: model,
-                    messages:[{ role: 'system', content: systemPrompt }, { role: 'user', content: userMessage }],
-                    temperature: temperature,
-                    stream: streamEnabled
-                })
-            });
-
-            if (!response.ok) return;
-
-            if (streamEnabled) {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                while (true) {
-                    const { value, done } = await reader.read();
-                    if (done) break;
-                    buffer += decoder.decode(value, { stream: true });
-                    const lines = buffer.split('\n');
-                    buffer = lines.pop(); // 保留不完整行
-                    for (const line of lines) {
-                        if (!line.startsWith('data: ') || line === 'data: [DONE]') continue;
-                        try {
-                            const chunk = JSON.parse(line.slice(6));
-                            const delta = chunk.choices?.[0]?.delta?.content;
-                            if (delta) textBlock += delta;
-                        } catch {}
-                    }
-                }
-                textBlock = textBlock.trim();
-            } else {
-                const result = await response.json();
-                textBlock = result.choices[0].message.content.trim();
-            }
+        // 端点/字段/流式协议的两家差异统一由 callLLM 处理（js/api/llm_client.js）。
+        // 这里固定拿完整文本，下面要按 #SECRET_CHAT_...# 标签整体解析。
+        try {
+            textBlock = (await callLLM({
+                cfg: effectiveApi,
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userMessage }
+                ],
+                temperature,
+                stream: streamEnabled
+            })).trim();
+        } catch (e) {
+            console.error('[主动消息] API 调用失败:', e);
+            return;
         }
 
         let proactiveOptions = {};

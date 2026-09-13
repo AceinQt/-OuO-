@@ -228,7 +228,7 @@ if (ownerAvatarEl) {
                 nickname: oldNick,
                 persona: group.me.persona || '',
                 status: '在线',
-                avatar: group.me.avatar || 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg'
+                avatar: group.me.avatar || './png/avatar_default_me.jpg'
             };
             if (!db.userPersonas) db.userPersonas = [];
             db.userPersonas.push(persona);
@@ -322,13 +322,13 @@ async function _createAndBindMemberPersona(group, member) {
         realName: member.realName || displayName,
         remarkName: member.groupNickname || member.realName || displayName,
         persona: member.persona || '',
-        avatar: member.avatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+        avatar: member.avatar || './png/avatar_default.jpg',
 
         // 我方身份沿用群里已有的设定，省得再配一遍
         myName: me.realName || '',
         myNickname: me.nickname || '',
         myPersona: me.persona || '',
-        myAvatar: me.avatar || 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
+        myAvatar: me.avatar || './png/avatar_default_me.jpg',
         boundPersonaId: me.boundPersonaId || null,
 
         theme: 'white_blue',

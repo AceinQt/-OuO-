@@ -82,6 +82,13 @@ async function performSearch(dateStr, keyword) {
 
     if (!chat || !chat.history) return;
 
+    // ★ 搜索一开始就收起配置弹窗，只留居中的加载 toast。
+    //   以前是等搜完才收，弹窗和加载圈叠在一起 —— 看着像还能改条件重新搜，
+    //   实际点了也没用（结果已经在查了）。
+    //   出错时再放回来：输入框内容还在（reset 只发生在 openSearchModal），
+    //   用户可以改条件重试，不用从聊天室菜单重新点一遍。
+    searchConfigModal.classList.remove('visible');
+
     // ★ Step 4：懒加载时改查 IndexedDB（能搜到窗口外的老消息）
     if (window.LAZY_LOAD) {
         const hideLoading = (typeof showLoadingToast === 'function')
@@ -96,7 +103,6 @@ async function performSearch(dateStr, keyword) {
             searchEmptyEl.style.display = 'none';
             searchNoMoreEl.style.display = 'none';
             searchLoadingEl.style.display = 'none';
-            searchConfigModal.classList.remove('visible');
             switchScreen('search-results-screen');
             if (allMatchedResults.length === 0) {
                 searchEmptyEl.style.display = 'block';
@@ -106,6 +112,7 @@ async function performSearch(dateStr, keyword) {
         } catch (e) {
             if (hideLoading) hideLoading();
             console.error('❌ [搜索] DB 搜索失败:', e);
+            searchConfigModal.classList.add('visible'); // 失败：放回弹窗供改条件重试
             if (typeof showToast === 'function') showToast('搜索失败');
         }
         return;
@@ -170,7 +177,7 @@ const invisibleRegex = /\[.*?更新状态为[:：].*?\]|\[system:.*?\]|\[.*?(?:�
     searchNoMoreEl.style.display = 'none';
     searchLoadingEl.style.display = 'none';
 
-    searchConfigModal.classList.remove('visible');
+    // 弹窗已在函数开头收起
     switchScreen('search-results-screen');
 
     // 5. 开始渲染第一批

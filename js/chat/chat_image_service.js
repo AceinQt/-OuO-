@@ -10,11 +10,83 @@ const _imageGenerationInflight = new Map();
 let _imageGenerationQueueTail = Promise.resolve();
 let _imageLocalModeNoticeShown = false;
 
+// ============================================================
+// 双语照片描述：[张三发来的照片/视频：夕阳下的海边（1girl, sunset, ocean）]
+// ============================================================
+// 中文给用户看，英文喂生图模型。两种都由聊天模型一次产出，不额外走翻译调用
+// （用户按次计费，多一次不划算）。英文是必要的不是可选的：中文喂生图模型实测
+// 会跑偏（水蜜桃画成西瓜），而 NAI 那套控制用的 tag（no humans、animal focus）
+// 压根只存在于英文 danbooru 词表里，中文自然语言够不着。
+//
+// ★ 顺序是「中文在前、英文在括号里」，和普通消息的「双语模式」
+//   （[X的消息：{外语原文}（中文翻译）]，见 private_prompt.js）**刻意相反**。
+//   理由是降级安全——模型只写一半的情况一定会发生：
+//     中文在前 → 退化成纯中文，和没有这个功能时一模一样，用户无感
+//     英文在前 → 退化成一串英文直接甩给用户看，当场坏掉
+//   按"坏掉时长什么样"来选，不按"哪个更整齐"来选。
+//
+// ★ 中文描述自己就爱用全角括号（"她在笑（有点害羞）"），所以不能见括号就切。
+//   判据只有一条、只写在 _looksLikeEnglishPrompt 里：括号内不含汉字/全角标点，
+//   且至少有一个三字母以上的单词。不满足就整条当中文，退回老行为。
+const IMAGE_BILINGUAL_REGEX = /^([\s\S]*?)[（(]([^（）()]*)[）)]\s*$/;
+
+function _looksLikeEnglishPrompt(text) {
+    const t = String(text || '').trim();
+    if (t.length < 3) return false;
+    // 汉字、CJK 标点、全角字符任意出现 → 这是中文补充说明，不是提示词
+    if (/[　-〿一-鿿！-｠]/.test(t)) return false;
+    // 纯数字/颜文字（"2024"、">_<"）也挡掉：要求至少有一个成词的字母串
+    return /[A-Za-z]{3,}/.test(t);
+}
+
+/**
+ * 把「中文（English）」拆成两段。拆不动就原样当中文返回，绝不抛错——
+ * 这个函数在每条照片消息上都会跑，坏一次就是一条消息显示异常。
+ * @returns {{description: string, promptEn: string}} promptEn 为空表示没有英文
+ */
+function splitBilingualImageDescription(raw) {
+    const text = String(raw || '').trim();
+    const match = text.match(IMAGE_BILINGUAL_REGEX);
+    if (!match) return { description: text, promptEn: '' };
+    const description = match[1].trim();
+    const promptEn = match[2].trim();
+    if (!description || !_looksLikeEnglishPrompt(promptEn)) return { description: text, promptEn: '' };
+    return { description, promptEn };
+}
+
+/**
+ * 把英文提示词从 content 里摘出来，挪到 message.imagePromptEn。
+ *
+ * ★ 必须在消息对象造好、push 进 history / 画气泡**之前**调用。
+ *   摘干净之后 content 的形状和今天完全一致，全项目另外 10 处解析
+ *   [X发来的照片/视频：…] 的正则（气泡渲染、聊天列表预览、转发卡片、
+ *   编辑消息、主动消息…）一个都不用改，也不会漏出英文给用户看。
+ *
+ * ★ 英文放 message 上而不是 message.media 上：normalizeImageMedia 是严格白名单，
+ *   且 state 默认就是 'ready'——往 media 里塞东西会让气泡误以为图已经生成好了，
+ *   转头去读字节、显示"图片暂不可用"。imagePromptEn 和消息上已有的
+ *   transferStatus / giftStatus / quote 一样是随手字段，跟着消息入库。
+ */
+function stripBilingualImagePrompt(message) {
+    if (!message || typeof message.content !== 'string') return message;
+    const match = message.content.match(IMAGE_DESCRIPTION_REGEX);
+    if (!match) return message;
+    const { description, promptEn } = splitBilingualImageDescription(match[2]);
+    if (!promptEn) return message;
+    message.imagePromptEn = promptEn;
+    // 刻意不调 chat_image_store.js 的 setImageMessageDescription：本体就这两行，
+    // 内联换来一个自包含、不依赖加载顺序、测试里不用额外打桩的函数
+    const next = `[${match[1].trim()}发来的照片/视频：${description}]`;
+    message.content = next;
+    message.parts = [{ type: 'text', text: next }];
+    return message;
+}
+
 function parseImageDescriptionMessage(content) {
     const match = String(content || '').match(IMAGE_DESCRIPTION_REGEX);
     if (!match) return null;
-    const description = match[2].trim();
-    return description ? { sender: match[1].trim(), description } : null;
+    const { description, promptEn } = splitBilingualImageDescription(match[2]);
+    return description ? { sender: match[1].trim(), description, promptEn } : null;
 }
 
 function isImageDescriptionMessage(message) {
@@ -109,6 +181,45 @@ function _noticeImageLocalOnly(localOnly) {
     if (!localOnly || _imageLocalModeNoticeShown) return;
     _imageLocalModeNoticeShown = true;
     if (typeof showToast === 'function') showToast('图片仅保存在当前浏览器，不能随备份恢复，缓存超限后可能被清理');
+}
+
+/**
+ * 生图失败的统一日志出口。
+ *
+ * ★ 为什么非要写日志：失败时界面上只有一句 toast（预生成连 toast 都没有），
+ *   划走就没了，事后问"这张为什么没出图"手上一点线索都没有。console.error
+ *   会被 main.js 的控制台拦截器收进「设置 > 系统日志」，可以事后翻、可以截图。
+ * ★ 只记预设的名字/服务商/模型，**绝不记 apiKey** —— 那一页正是用来截图外发的。
+ * ★ 同一个 error 只记一次（记在 WeakSet 里，不往 error 上挂属性，免得跟着
+ *   消息被序列化进库）：内层手里有预设，先记；外层兜网时自动跳过。
+ *   所以可以放心在多层各加一句，不会刷出重复日志。
+ */
+const _loggedImageFailures = new WeakSet();
+
+function _logImageFailure(scene, error, { chatId = '', chatType = '', messageId = '', preset = null } = {}) {
+    if (error && typeof error === 'object') {
+        if (_loggedImageFailures.has(error)) return;
+        _loggedImageFailures.add(error);
+    }
+
+    const where = [`[图片] ${scene}失败`];
+    if (preset) {
+        const provider = typeof imageProviderLabel === 'function'
+            ? imageProviderLabel(preset.provider)
+            : (preset.provider || '未知服务商');
+        where.push(`预设「${preset.name || preset.id || '未命名'}」（${provider} / ${preset.model || '未填模型'}）`);
+    }
+    if (chatId) where.push(`聊天 ${chatType || '?'}:${chatId}`);
+    if (messageId) where.push(`消息 ${messageId}`);
+
+    const code = error && error.code ? `[${error.code}] ` : '';
+    const reason = (error && error.message) || String(error || '未知错误');
+    // 落地失败那类错误会把真正的起因挂在 cause 上（如 GitHub 上传的报错）
+    const cause = error && error.cause && error.cause.message ? `｜起因：${error.cause.message}` : '';
+    // 带 code 的都是我们自己抛的业务错误，message 已经写清了原因，堆栈只是噪音；
+    // 没 code 的可能是代码 bug（TypeError 之类），那种情况堆栈才是唯一有用的东西
+    const stack = !code && error && error.stack ? `\n${error.stack}` : '';
+    console.error(`${where.join(' · ')}：${code}${reason}${cause}${stack}`);
 }
 
 async function _saveImageMessage(message, chatId, chatType) {
@@ -315,15 +426,18 @@ async function archiveUploadedImageMessage(message, {
  * @throws 生成或落地失败时抛错，error.code 为失败原因；error.imageMime/imageSize
  *   在「图片拿到了但存不下」时带上，便于调用方把尺寸信息一起写进 failed 状态。
  */
-async function _produceImageMedia({ description, messageId, chat, chatId, chatType, preset, availability }) {
+async function _produceImageMedia({ description, promptEn = '', messageId, chat, chatId, chatType, preset, availability }) {
     const localCacheKey = computeImageCacheKey(chatType, chatId, messageId);
 
     // 风格文本按聊天存，和画面比例一起在 API 层并进提示词。
     // 参考图同样按聊天存：给了它，API 层会自动改走对话式生图（只有那条路能带图）。
+    // ★ 有英文就用英文：中文喂生图模型会跑偏（水蜜桃→西瓜），这对 NAI 和
+    //   DALL-E/Gemini 都成立，所以不按 provider 区分。没英文才退回中文描述。
     const generated = await generateImage({
-        prompt: description,
+        prompt: promptEn || description,
         preset,
         stylePrompt: (chat && chat.imageStylePrompt) || '',
+        negativePrompt: (chat && chat.imageNegativePrompt) || '',
         referenceImage: (chat && chat.imageReference) || ''
     });
 
@@ -435,6 +549,9 @@ async function _generateImageForMessage(message, { chatId, chatType, auto = fals
     try {
         produced = await _produceImageMedia({
             description: parsed.description,
+            // 消息进 history 时英文已经被 stripBilingualImagePrompt 摘到 imagePromptEn 上，
+            // 所以先看它；parsed.promptEn 兜的是没走过摘取那条路的消息
+            promptEn: targetMessage.imagePromptEn || parsed.promptEn,
             messageId: targetMessage.id,
             chat, chatId, chatType, preset, availability
         });
@@ -444,6 +561,11 @@ async function _generateImageForMessage(message, { chatId, chatType, auto = fals
             ...(error && error.imageMime ? { mime: error.imageMime, size: error.imageSize } : {}),
             cloudState: availability.cloudTarget ? 'failed' : 'none',
             errorCode: (error && error.code) || 'image-generation-failed'
+        });
+        // 在这里记：本层手里有预设，日志能写出"哪个预设、哪个模型"，
+        // 比外层兜网只能写一句错误信息有用得多
+        _logImageFailure(auto ? '自动生成' : '生成', error, {
+            chatId, chatType, messageId: targetMessage.id, preset
         });
         await _saveImageMessage(targetMessage, chatId, chatType);
         _refreshImageMessageBubble(targetMessage, chatId, chatType);
@@ -466,7 +588,11 @@ function generateImageForMessage(message, options = {}) {
     const chatId = options.chatId || (typeof currentChatId !== 'undefined' ? currentChatId : '');
     const chatType = options.chatType || (typeof currentChatType !== 'undefined' ? currentChatType : '');
     const target = _imageChatMessage(message, chatId, chatType) || message;
-    if (!target || !target.id) return Promise.reject(new Error('图片消息无有效 ID'));
+    if (!target || !target.id) {
+        const error = Object.assign(new Error('图片消息无有效 ID'), { code: 'image-message-missing' });
+        _logImageFailure('生成', error, { chatId, chatType });
+        return Promise.reject(error);
+    }
     const key = _imageTaskKey(chatId, target.id);
     if (_imageGenerationInflight.has(key)) return _imageGenerationInflight.get(key);
 
@@ -477,6 +603,12 @@ function generateImageForMessage(message, options = {}) {
     task.finally(() => {
         if (_imageGenerationInflight.get(key) === task) _imageGenerationInflight.delete(key);
     }).catch(() => {});
+    // 兜网：接口失败已经在内层记过（带预设信息），这里补的是那些还没走到接口就
+    // 退出的情况——没预设、没保存位置、找不到聊天。调用方只会弹 toast，
+    // 不在这里记就彻底没有痕迹。重复记会被 _logImageFailure 的标记挡掉。
+    task.catch(error => _logImageFailure(options.auto ? '自动生成' : '生成', error, {
+        chatId, chatType, messageId: target.id
+    }));
     return task;
 }
 
@@ -529,7 +661,9 @@ function queueAutoImageGeneration(messages, chat, chatId, chatType) {
     const message = messages.find(item => isImageDescriptionMessage(item) && !isImageMediaMessage(item));
     if (!message) return null;
     const promise = generateImageForMessage(message, { chatId, chatType, auto: true });
-    promise.catch(error => console.warn('[图片] 自动生成失败：', error.message));
+    // 失败原因已由 generateImageForMessage 内部记进系统日志，这里只是接住
+    // rejection 免得变成 unhandled，别再重复打一遍
+    promise.catch(() => {});
     return promise;
 }
 
@@ -563,6 +697,7 @@ function _reconcilePreparedImage(task, { messageId, chatId, chatType, preset, av
                 cloudState: availability.cloudTarget ? 'failed' : 'none',
                 errorCode: (error && error.code) || 'image-generation-failed'
             });
+            _logImageFailure('超时后补写的预生成', error, { chatId, chatType, messageId, preset });
         }
         await _saveImageMessage(message, chatId, chatType);
         _refreshImageMessageBubble(message, chatId, chatType);
@@ -571,7 +706,7 @@ function _reconcilePreparedImage(task, { messageId, chatId, chatType, preset, av
     task.then(
         produced => settle(produced.readyPatch).then(() => _noticeImageLocalOnly(produced.localOnly)),
         error => settle(null, error)
-    ).catch(err => console.warn('[图片] 预生成补写失败：', err));
+    ).catch(err => console.error('[图片] 预生成补写失败：', err));
 }
 
 /**
@@ -624,6 +759,8 @@ async function prepareImageForMessages(messages, chat, chatId, chatType, options
         const key = _imageTaskKey(chatId, messageId);
         const task = _enqueueImageTask(() => _produceImageMedia({
             description: target.parsed.description,
+            // 这里的 item 还是模型原始输出、没造成消息对象，双语英文只能从 parsed 里拿
+            promptEn: target.parsed.promptEn,
             messageId, chat, chatId, chatType, preset, availability
         }));
         _imageGenerationInflight.set(key, task);
@@ -651,7 +788,9 @@ async function prepareImageForMessages(messages, chat, chatId, chatType, options
         }
 
         if (outcome.error) {
-            console.warn('[图片] 预生成失败，气泡照常展示：', outcome.error.message);
+            // 预生成失败连 toast 都不弹（气泡照常出，只是带失败标记），
+            // 不记日志的话用户完全无从得知失败原因
+            _logImageFailure('预生成', outcome.error, { chatId, chatType, messageId, preset });
             prepared.media = createImageMedia({
                 source: 'generated', state: 'failed', localCacheKey, presetId: preset.id,
                 ...(outcome.error.imageMime ? { mime: outcome.error.imageMime, size: outcome.error.imageSize } : {}),
@@ -666,7 +805,7 @@ async function prepareImageForMessages(messages, chat, chatId, chatType, options
         _noticeImageLocalOnly(outcome.produced.localOnly);
         return prepared;
     } catch (error) {
-        console.warn('[图片] 预生成调度失败，消息照常展示：', error);
+        _logImageFailure('预生成调度', error, { chatId, chatType });
         return null;
     }
 }
@@ -684,6 +823,8 @@ function applyPreparedImage(item, message) {
 }
 
 window.parseImageDescriptionMessage = parseImageDescriptionMessage;
+window.splitBilingualImageDescription = splitBilingualImageDescription;
+window.stripBilingualImagePrompt = stripBilingualImagePrompt;
 window.isImageDescriptionMessage = isImageDescriptionMessage;
 window.isImageGenerationPending = isImageGenerationPending;
 window.getImageStorageAvailability = getImageStorageAvailability;

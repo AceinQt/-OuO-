@@ -211,29 +211,35 @@ if (watchingContext) {
                 prompt += `4. 我的消息中可能会出现特殊格式，请根据其内容和你的角色设定进行回应：
     - [${character.myName}的表情包：xxx]：我给你发送了一个名为xxx的表情包。你只需要根据表情包的名字理解我的情绪或意图并回应，不需要真的发送图片。
     - [${character.myName}发来了一张图片：]：我给你发送了一张图片，你需要对图片内容做出回应。
-    - [${character.myName}送来的礼物：xxx]：我给你送了一个礼物，xxx是礼物的描述。
     - [${character.myName}的语音：xxx]：我给你发送了一段内容为xxx的语音。
     - [${character.myName}发来的照片/视频：xxx]：我给你分享了一个描述为xxx的照片或视频。
     - [${character.myName}给你转账：xxx元；备注：xxx]：我给你转了一笔钱。
     - [${character.myName}发送了位置：{地点名}；地址：{详细地址}]：我给你分享了我所在的位置（“；地址：{详细地址}”部分可能不存在，那就只知道地点名）。你应当把它当作我此刻的真实所在地，并据此作出反应，比如认路、评价这个地方、说要过来找我。
+    - [${character.myName}的分享：(换行)标题：xxx(换行)类别：xxx(换行)内容：xxx(换行)附加信息：xxx]：我分享给你一张卡片，可能是喵坛帖子、文件、链接、商品等任何东西。「类别」告诉你这是什么东西，「内容」是它的正文（你能看到全文），「附加信息」是我额外想说明的（可能没有这一行）。你应当针对分享的**具体内容**作出回应，而不是只说“收到了”。
     - [${character.myName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。
     - [${character.myName} 撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。例如，可以装作没看见并等待我的下一句话，或好奇地问一句“怎么撤回啦？”。
     - [剧情旁白: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。
-5. ✨重要✨ 当我给你送礼物时，你必须通过发送一条指令来表示你已接收礼物。格式必须为：[${character.realName}已接收礼物]。这条指令消息本身不会显示给用户，但会触发礼物状态的变化。你可以在发送这条指令后，再附带一条普通的聊天消息来表达你的感谢和想法。
-6. ✨重要✨ 当我给你转账时，你必须对此做出回应。你有两个选择，且必须严格遵循以下格式之一，这条指令消息本身不会显示给用户，但会触发转账状态的变化。你可以选择在发送这条指令后，再附带一条普通的聊天消息来表达你的想法。
+5. ✨重要✨ 当我给你转账时，你必须对此做出回应。你有两个选择，且必须严格遵循以下格式之一，这条指令消息本身不会显示给用户，但会触发转账状态的变化。你可以选择在发送这条指令后，再附带一条普通的聊天消息来表达你的想法。
     a) 接收转账: [${character.realName}接收${character.myName}的转账]
     b) 退回转账: [${character.realName}退回${character.myName}的转账]
-7. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${character.realName}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${character.realName}送来的礼物：xxx]。
-8. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为：xxx]。例如：[${character.realName}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
-9. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。
-10. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
-11. 你可以主动发起通话邀请，格式为：[${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]。
-12. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
+6. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${character.realName}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${character.realName}送来的礼物：xxx]。
+6.1 ✨重要✨ 你也可以主动分享东西给我，比如一篇文章、一个链接、一份文件、一件想买的商品。格式必须严格为（四行，每个字段名顶格另起一行，最后一个方括号收尾）：
+[${character.realName}的分享：
+标题：xxx
+类别：xxx
+内容：xxx
+附加信息：xxx]
+其中「类别」写这是什么东西（例如：文章、链接、文件、商品、图片）。「内容」写正文，可以很长、可以换行。「附加信息」是补充说明，没什么要补充的可以整行不写。注意：正文里不要顶格写“标题：”“类别：”“内容：”“附加信息：”这几个字，否则会被误认成字段分隔。
+7. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为：xxx]。例如：[${character.realName}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
+8. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。
+9. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
+10. 你可以主动发起通话邀请，格式为：[${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]。
+11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
 `;
                 if (availableStickers) {
-                    prompt += `13. 你拥有发送表情包的能力，这是你拥有的表情包库，包含以下表情：【${availableStickers}】。这是一个可选功能，你可以根据对话氛围，发送表情包来辅助表达情绪，你不必在每次回复中都包含表情包。格式必须严格为：[${character.realName}的表情包：表情名称]。\n⚠️ 严禁造词！你只能使用上述【】内存在的表情名称，并且绝对不要输出任何图片URL路径！\n`;
+                    prompt += `12. 你拥有发送表情包的能力，这是你拥有的表情包库，包含以下表情：【${availableStickers}】。这是一个可选功能，你可以根据对话氛围，发送表情包来辅助表达情绪，你不必在每次回复中都包含表情包。格式必须严格为：[${character.realName}的表情包：表情名称]。\n⚠️ 严禁造词！你只能使用上述【】内存在的表情名称，并且绝对不要输出任何图片URL路径！\n`;
                 } else {
-                    prompt += `13. 因为你的表情包库目前为空，你无法发送任何表情包，只能使用纯文字回复。\n`;
+                    prompt += `12. 因为你的表情包库目前为空，你无法发送任何表情包，只能使用纯文字回复。\n`;
                 }
 
                 let outputFormats = `
@@ -244,28 +250,45 @@ if (watchingContext) {
     e) 照片/视频: [${character.realName}发来的照片/视频：{描述}]
     f) 给我的转账: [${character.realName}的转账：{金额}元；备注：{备注}]
     g) 发送表情包: [${character.realName}的表情包：{表情名称}]
-    h) 对我礼物的回应(此条不显示): [${character.realName}已接收礼物]
-    i) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
-    j) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
-    k) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
-    l) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]
-    m) 主动发起通话邀请: [${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]
-    n) 发送位置: [${character.realName}发送了位置：{地点名}；地址：{详细地址}]。当你想告诉我你在哪、约我碰面或指路时使用。地点名是店名或地标（如“老地方咖啡”），详细地址是门牌路名（如“城南槐花巷12号”）；如果你的角色说不出确切门牌，可以省略“；地址：{详细地址}”这一段，只写地点名。地点必须符合你的人设和当前所处的世界观。`;
+    h) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
+    i) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
+    j) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
+    k) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]
+    l) 主动发起通话邀请: [${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]
+    m) 发送位置: [${character.realName}发送了位置：{地点名}；地址：{详细地址}]。当你想告诉我你在哪、约我碰面或指路时使用。地点名是店名或地标（如“老地方咖啡”），详细地址是门牌路名（如“城南槐花巷12号”）；如果你的角色说不出确切门牌，可以省略“；地址：{详细地址}”这一段，只写地点名。地点必须符合你的人设和当前所处的世界观。`;
 
                 const allWorldBookContent = worldBooksBefore + '\n' + worldBooksAfter;
                 if (allWorldBookContent.includes('<orange>')) {
-                    outputFormats += `\n     l) HTML模块: {HTML内容}。这是一种特殊的、用于展示丰富样式的小卡片消息，格式必须为纯HTML+行内CSS，你可以用它来创造更有趣的互动。`;
+                    outputFormats += `\n     n) HTML模块: {HTML内容}。这是一种特殊的、用于展示丰富样式的小卡片消息，格式必须为纯HTML+行内CSS，你可以用它来创造更有趣的互动。`;
                 }
 
                 
 
-                prompt += `14. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
+                prompt += `13. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
                 // 内容约束：只管束"照片/视频描述怎么写"这一步。真正生图时还会另外
                 // 追加风格与画面比例（见 image_generation_api.js 的 composeImagePrompt），
                 // 那些是画法，这里这条是画什么/不画什么。
                 const imageContentRule = (character.imageContentRule || '').trim();
                 if (imageContentRule) {
-                    prompt += `14.1 **照片/视频描述的内容约束**：当你使用 [${character.realName}发来的照片/视频：{描述}] 格式时，{描述}部分必须遵守：${imageContentRule}。这条只约束你怎么写画面描述，不影响你的普通聊天内容。\n`;
+                    prompt += `13.1 **照片/视频描述的内容约束**：当你使用 [${character.realName}发来的照片/视频：{描述}] 格式时，{描述}部分必须遵守：${imageContentRule}。这条只约束你怎么写画面描述，不影响你的普通聊天内容。\n`;
+                }
+                // 语音语气：只约束语音消息的文字怎么写。句子本体在 chat_voice_settings.js，
+                // 群聊那边用的是同一个函数 —— 两处各抄一份必然漂移。
+                if (typeof buildVoiceTonePromptLine === 'function') {
+                    const voiceToneLine = buildVoiceTonePromptLine(
+                        character, `[${character.realName}的语音：{语音内容}]`);
+                    if (voiceToneLine) prompt += `13.2 ${voiceToneLine}`;
+                }
+                // 13.3 双语照片描述。
+                // ★ 只在这个聊天真的绑了生图预设时注入：没绑的话这段每轮都在白占 token。
+                // ★ 不限 NAI —— 中文喂生图模型会跑偏（实测"水蜜桃"被画成西瓜），
+                //   DALL-E / Gemini 同样受益于英文提示词。
+                // ★ 顺序和下面那条「双语模式」是**反的**（那条是外语在前）。照片这条
+                //   中文在前，为的是降级安全：模型只写一半时退化成纯中文，和没有这个
+                //   功能时完全一样；反过来则会把一串英文直接甩给用户看。
+                //   切分实现见 chat_image_service.js 的 splitBilingualImageDescription。
+                if (typeof resolveImagePresetForChat === 'function' && resolveImagePresetForChat(character)) {
+                    prompt += `13.3 **照片/视频描述要写成中英双语**：使用 [${character.realName}发来的照片/视频：{描述}] 格式时，{描述}写成「{中文描述}（{英文提示词}）」—— 中文在前，是给用户看的；括号里的英文是给生图模型用的提示词，用半角逗号分隔的英文关键词，不要写成句子。例如：[${character.realName}发来的照片/视频：窗边打盹的猫，午后阳光（cat, no humans, animal focus, windowsill, sunlight, indoors, sleeping）]。英文部分请务必写上，缺了生成的图片会跑偏。\n`;
                 }
                 if (character.bilingualModeEnabled) {
                     prompt += `✨双语模式特别指令✨：当你的角色的母语为中文以外的语言时，你的消息回复必须严格遵循双语模式下的普通消息格式：[${character.realName}的消息：{外语原文}（中文翻译）],例如: [${character.realName}的消息：Of course, I'd love to.（当然，我很乐意。）],中文翻译文本视为系统自翻译，不视为角色的原话;当你的角色想要说中文时，需要根据你的角色设定自行判断对于中文的熟悉程度来造句，并使用普通消息的标准格式: [${character.realName}的消息：{中文消息内容}] 。这条规则的优先级非常高，请务必遵守。\n`;
@@ -278,17 +301,17 @@ if (watchingContext) {
                     const _lo = parseInt(_rr[1], 10), _hi = parseInt(_rr[2], 10);
                     if (_lo > 0 && _hi >= _lo) { replyLo = _lo; replyHi = _hi; }
                 }
-                prompt += `15. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少${replyLo}-${replyHi}条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
-                // 调节旋钮：天气并进第 16 条时间那句，见 plans/weather-prompt-refit.md
-                let rule16Prefix = '';
+                prompt += `14. **对话节奏**: 你需要模拟真人的线上聊天习惯，你可以一次性生成多条简短消息。每次要回复至少${replyLo}-${replyHi}条短消息。并根据当前行为/心情/地点变化实时更新状态(状态20个字符以内)。\n`;
+                // 调节旋钮：天气并进第 15 条时间那句，见 plans/weather-prompt-refit.md
+                let rule15Prefix = '';
                 if (character.timePerceptionEnabled && weatherText) {
-                    rule16Prefix = `现在是 ${currentTime}，${weatherText}。你应知晓当前正确的时间与天气，而不是从上下文推测时间与天气，但也不要刻意或反复提及时间和天气（例如，不要催促我睡觉，不要没头没脑地聊天气），`;
+                    rule15Prefix = `现在是 ${currentTime}，${weatherText}。你应知晓当前正确的时间与天气，而不是从上下文推测时间与天气，但也不要刻意或反复提及时间和天气（例如，不要催促我睡觉，不要没头没脑地聊天气），`;
                 } else if (character.timePerceptionEnabled) {
-                    rule16Prefix = `现在是 ${currentTime}。你应知晓当前正确的时间，但不要刻意提及时间（例如，不要催促我睡觉），`;
+                    rule15Prefix = `现在是 ${currentTime}。你应知晓当前正确的时间，但不要刻意提及时间（例如，不要催促我睡觉），`;
                 } else if (weatherText) {
-                    rule16Prefix = `${weatherText}。你应知晓当前正确的天气，而不是从上下文推测当前的天气，但不要刻意或反复提及天气（例如，不要没头没脑地聊天气），`;
+                    rule15Prefix = `${weatherText}。你应知晓当前正确的天气，而不是从上下文推测当前的天气，但不要刻意或反复提及天气（例如，不要没头没脑地聊天气），`;
                 }
-                prompt += `16. ${rule16Prefix}不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
+                prompt += `15. ${rule15Prefix}不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
 
                 return prompt;
             }

@@ -120,7 +120,7 @@ function setupChatSettings() {
                     nickname: oldNick,
                     persona: char.myPersona || '',
                     status: '在线',
-                    avatar: char.myAvatar || 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'
+                    avatar: char.myAvatar || './png/avatar_default.jpg'
                 };
                 if (!db.userPersonas) db.userPersonas = [];
                 db.userPersonas.push(persona);
@@ -255,6 +255,7 @@ function setupChatSettings() {
                 imageAutoGenerate: document.getElementById('setting-chat-image-auto').value === '1',
                 imageContentRule: document.getElementById('setting-chat-image-rule').value || '',
                 imageStylePrompt: document.getElementById('setting-chat-image-style').value || '',
+                imageNegativePrompt: document.getElementById('setting-chat-image-negative').value || '',
                 imageReference: document.getElementById('setting-chat-image-reference').value || ''
             });
             if (!result) return;
@@ -262,8 +263,32 @@ function setupChatSettings() {
             document.getElementById('setting-chat-image-auto').value = result.imageAutoGenerate ? '1' : '0';
             document.getElementById('setting-chat-image-rule').value = result.imageContentRule;
             document.getElementById('setting-chat-image-style').value = result.imageStylePrompt;
+            document.getElementById('setting-chat-image-negative').value = result.imageNegativePrompt;
             document.getElementById('setting-chat-image-reference').value = result.imageReference;
             _refreshChatImageGenerationDisplay();
+        });
+    }
+
+    // 语音：音色 + 语气要求合并进一个折叠弹窗（同图像那套），只回填侧栏草稿，
+    // 提交侧栏时才落库。
+    // 取消（result === null）绝不能写 —— 空语气是"清空语气要求"这个合法意图，
+    // 和"我点错了想退出"必须分开，否则误触一次就把设置好的语气悄悄清了。
+    const voiceItem = document.getElementById('setting-chat-voice-item');
+    if (voiceItem) {
+        voiceItem.addEventListener('click', async () => {
+            if (typeof openVoiceSettingDialog !== 'function') return;
+            const presetInput = document.getElementById('setting-chat-voice-preset');
+            const toneInput = document.getElementById('setting-chat-voice-tone');
+            const result = await openVoiceSettingDialog({
+                voicePresetId: presetInput ? presetInput.value : '',
+                voiceTonePrompt: toneInput ? toneInput.value : ''
+            });
+            if (!result) return;
+            if (presetInput && result.voicePresetId !== undefined) {
+                presetInput.value = result.voicePresetId;
+            }
+            if (toneInput) toneInput.value = result.voiceTonePrompt;
+            _refreshChatVoiceDisplay();
         });
     }
 
@@ -408,20 +433,19 @@ function loadSettingsToSidebar() {
             apiPresetSel.value = e.chatApiPreset || '';
         }
 
-        // 音色：预设在「API 设置 > 语音」里建，这里只选一个
-        const voiceSel = document.getElementById('setting-chat-voice-preset');
-        if (voiceSel && typeof getVoicePresetOptions === 'function') {
-            voiceSel.innerHTML = '';
-            getVoicePresetOptions().forEach(o => {
-                const opt = document.createElement('option');
-                opt.value = o.value;
-                opt.textContent = o.label;
-                voiceSel.appendChild(opt);
-            });
-            // 没设过 = 不使用；指定的预设被删掉了也落回不使用，不留悬空选项
-            const want = e.voicePresetId || VOICE_PRESET_OFF;
-            voiceSel.value = [...voiceSel.options].some(o => o.value === want)
-                ? want : VOICE_PRESET_OFF;
+        // 语音：音色 + 语气都存进隐藏 input 暂存，侧栏只显示一行摘要，内容走弹窗
+        const voicePresetInput = document.getElementById('setting-chat-voice-preset');
+        const voiceToneInput = document.getElementById('setting-chat-voice-tone');
+        if (voicePresetInput || voiceToneInput) {
+            const binding = typeof normalizeChatVoiceBinding === 'function'
+                ? normalizeChatVoiceBinding(e)
+                : {
+                    voicePresetId: e.voicePresetId || 'off',
+                    voiceTonePrompt: e.voiceTonePrompt || ''
+                };
+            if (voicePresetInput) voicePresetInput.value = binding.voicePresetId;
+            if (voiceToneInput) voiceToneInput.value = binding.voiceTonePrompt;
+            _refreshChatVoiceDisplay();
         }
 
         // 天气：隐藏 input 暂存，侧栏只显示文案，具体设置走弹窗
@@ -443,15 +467,18 @@ function loadSettingsToSidebar() {
                     imageAutoGenerate: !!e.imageAutoGenerate,
                     imageContentRule: e.imageContentRule || '',
                     imageStylePrompt: e.imageStylePrompt || '',
+                    imageNegativePrompt: e.imageNegativePrompt || '',
                     imageReference: e.imageReference || ''
                 };
             imagePresetInput.value = binding.imageApiPresetId;
             imageAutoInput.value = binding.imageAutoGenerate ? '1' : '0';
             const imageRuleInput = document.getElementById('setting-chat-image-rule');
             const imageStyleInput = document.getElementById('setting-chat-image-style');
+            const imageNegativeInput = document.getElementById('setting-chat-image-negative');
             const imageRefInput = document.getElementById('setting-chat-image-reference');
             if (imageRuleInput) imageRuleInput.value = binding.imageContentRule;
             if (imageStyleInput) imageStyleInput.value = binding.imageStylePrompt;
+            if (imageNegativeInput) imageNegativeInput.value = binding.imageNegativePrompt;
             if (imageRefInput) imageRefInput.value = binding.imageReference;
             _refreshChatImageGenerationDisplay();
         }
@@ -477,6 +504,19 @@ function _refreshChatImageGenerationDisplay() {
         document.getElementById('setting-chat-image-preset').value || '',
         document.getElementById('setting-chat-image-auto').value === '1'
     );
+}
+
+/** 按隐藏 input 的当前值刷新侧栏语音行文案（音色名 + 有没有设语气）。 */
+function _refreshChatVoiceDisplay() {
+    const display = document.getElementById('setting-chat-voice-display');
+    if (!display || typeof formatVoiceSettingLabel !== 'function') return;
+    const presetInput = document.getElementById('setting-chat-voice-preset');
+    const toneInput = document.getElementById('setting-chat-voice-tone');
+    // 侧栏此刻的真值在隐藏 input 里（可能还没保存），不能去读 db 里那份旧的
+    display.textContent = formatVoiceSettingLabel({
+        voicePresetId: presetInput ? presetInput.value : '',
+        voiceTonePrompt: toneInput ? toneInput.value : ''
+    });
 }
             
 // --- 替换 saveSettingsFromSidebar 函数 ---
@@ -527,9 +567,14 @@ async function saveSettingsFromSidebar() {
             e.chatApiPreset = apiPresetSel.value;
         }
 
-        const voiceSel = document.getElementById('setting-chat-voice-preset');
-        if (voiceSel && voiceSel.value) {
-            e.voicePresetId = voiceSel.value;
+        // 语音：音色 + 语气。空语气要照样写回去（那是"清空语气要求"），所以只判元素存不存在
+        const voicePresetSave = document.getElementById('setting-chat-voice-preset');
+        if (voicePresetSave) {
+            e.voicePresetId = voicePresetSave.value || 'off';
+        }
+        const voiceToneSave = document.getElementById('setting-chat-voice-tone');
+        if (voiceToneSave) {
+            e.voiceTonePrompt = voiceToneSave.value || '';
         }
 
         const weatherModeInput = document.getElementById('setting-chat-weather-mode');
@@ -546,9 +591,11 @@ async function saveSettingsFromSidebar() {
             e.imageAutoGenerate = imageAutoInput.value === '1';
             const imageRuleInput = document.getElementById('setting-chat-image-rule');
             const imageStyleInput = document.getElementById('setting-chat-image-style');
+            const imageNegativeInput = document.getElementById('setting-chat-image-negative');
             const imageRefInput = document.getElementById('setting-chat-image-reference');
             if (imageRuleInput) e.imageContentRule = imageRuleInput.value || '';
             if (imageStyleInput) e.imageStylePrompt = imageStyleInput.value || '';
+            if (imageNegativeInput) e.imageNegativePrompt = imageNegativeInput.value || '';
             if (imageRefInput) e.imageReference = imageRefInput.value || '';
         }
 
@@ -562,66 +609,30 @@ async function saveSettingsFromSidebar() {
     }
 }
             
-// --- 在 chat_settings.js 中寻找并替换 ---
+// 把某个聊天的自定义 CSS 挂成一个 <style>，作用域限制在该聊天室内。
+//
+// 改写逻辑在 js/chat/bubble_css_scope.js（scopeBubbleCss），预览那边跑的是同一个函数 ——
+// 这是硬要求，不是巧合。这里以前是一套手写正则，预览是原样注入，
+// 两条通道语义不同，于是「预览生效、保存后不生效」（尤其是底栏）成了常态反馈。
+// 想改注入方式的话去改 bubble_css_scope.js，别在这里单独加逻辑。
 function updateCustomBubbleStyle(chatId, css, enabled) {
     const styleId = `custom-bubble-style-for-${chatId}`;
     let styleElement = document.getElementById(styleId);
 
-    if (enabled && css) {
-        if (!styleElement) {
-            styleElement = document.createElement('style');
-            styleElement.id = styleId;
-            document.head.appendChild(styleElement);
-        }
+    const finalCss = (enabled && css && typeof scopeBubbleCss === 'function')
+        ? scopeBubbleCss(css, chatId)
+        : '';
 
-        const scope = `#chat-room-screen.chat-active-${chatId}`;
-        let finalCss = '';
-
-        const rootRegex = /:root\s*\{([\s\S]*?)\}/;
-        const rootMatch = css.match(rootRegex);
-        if (rootMatch && rootMatch[1]) {
-            const rootVars = rootMatch[1].trim();
-            if (rootVars) {
-                finalCss += `${scope} { ${rootVars} }\n`;
-            }
-        }
-
-        // 👇【核心修复】：增加 .replace(/\/\*[\s\S]*?\*\//g, '') 彻底剔除带有 {} 的 META 注释！
-        let remainingCss = css
-            .replace(/\/\*[\s\S]*?\*\//g, '') 
-            .replace(rootRegex, '')
-            .replace(/@keyframes[\s\S]*?(\}\s*\}|\})/g, '')
-            .replace(/@font-face[\s\S]*?\}/g, '');
-
-        const ruleRegex = /([^{}]+?)\s*\{([^{}]+?)\}/g;
-        let match;
-        while ((match = ruleRegex.exec(remainingCss)) !== null) {
-            const selectors = match[1].trim();
-            const properties = match[2].trim();
-
-            if (selectors && properties) {
-                const scopedSelectors = selectors
-                    .split(',')
-                    .map(s => s.trim())
-                    .filter(s => s && !s.startsWith('@'))
-                    .map(s => {
-                        if (s.includes('#chat-room-screen')) {
-                            return s.replace('#chat-room-screen', scope);
-                        } else {
-                            return `${scope} ${s}`;
-                        }
-                    })
-                    .join(', ');
-
-                if (scopedSelectors) {
-                    finalCss += `${scopedSelectors} { ${properties} }\n`;
-                }
-            }
-        }
-        styleElement.innerHTML = finalCss;
-    } else {
-        if (styleElement) {
-            styleElement.remove();
-        }
+    if (!finalCss) {
+        if (styleElement) styleElement.remove();
+        return;
     }
+
+    if (!styleElement) {
+        styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        document.head.appendChild(styleElement);
+    }
+    // textContent 而不是 innerHTML：CSS 里的 > 和 & 不该被当成 HTML 解析
+    styleElement.textContent = finalCss;
 }

@@ -140,7 +140,7 @@
 
                 // 2. 处理 Sticker Bar 按钮 (Requirement 3)
                 // 需要禁用的按钮 ID 列表
-                // ⚠️ "+"面板里的线上功能（送礼物/发送位置）不是 <button>，disabled 无效，
+                // ⚠️ "+"面板里的线上功能（发送位置/转发分享）不是 <button>，disabled 无效，
                 //    改由 chat_room.js 的 syncChatExpansionActiveState 置灰，别加到这个列表里。
                 const buttonsToDisable = [
                     'voice-message-btn',       // 语音

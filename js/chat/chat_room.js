@@ -118,7 +118,8 @@ const chatRoomScreen = document.getElementById('chat-room-screen'),
                 settingsForm = document.getElementById('chat-settings-form'),
                 multiSelectBar = document.getElementById('multi-select-bar'),
                 selectCount = document.getElementById('select-count'),
-                deleteSelectedBtn = document.getElementById('delete-selected-btn');
+                deleteSelectedBtn = document.getElementById('delete-selected-btn'),
+                forwardSelectedBtn = document.getElementById('forward-selected-btn');
 
 const regenerateBtn = document.getElementById('regenerate-btn');
 
@@ -441,6 +442,10 @@ let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
 
     cancelMultiSelectBtn.addEventListener('click', exitMultiSelectMode);
     deleteSelectedBtn.addEventListener('click', deleteSelectedMessages);
+    // 转发的实现在 js/chat/chat_feature_share.js（它产出的是一张分享卡片）
+    if (forwardSelectedBtn && typeof openForwardMessagesModal === 'function') {
+        forwardSelectedBtn.addEventListener('click', openForwardMessagesModal);
+    }
 
     document.getElementById('cancel-reply-btn').addEventListener('click', cancelQuoteReply);
     initCallFeature();
@@ -453,11 +458,11 @@ let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
 // "+"面板里属于"隔着手机才成立"的线上功能，线下模式（面对面）下要禁用。
 // sticker bar 上的转账/语音/照片由 updateOfflineModeUI 用 disabled 属性禁；
 // 面板项是 div，只能靠 class 置灰 + 点击拦截，所以清单放在这里。
-const OFFLINE_DISABLED_EXPANSION_ACTIONS = ['send-gift-modal', 'send-location-modal'];
+const OFFLINE_DISABLED_EXPANSION_ACTIONS = ['send-location-modal', 'send-share-modal'];
 
 /**
  * 把"+"面板里与会话绑定的开关（线下模式 / 后台消息）对齐到当前会话的真实状态，
- * 并按线下模式置灰面板里的线上功能（送礼物 / 发送位置）。
+ * 并按线下模式置灰面板里的线上功能（发送位置 / 转发分享）。
  * 面板是全局单例、只在启动时构建一次，所以每次打开面板、每次进聊天室都得重新对齐，
  * 否则会挂着上一个会话残留的蓝色高亮 / 置灰状态。
  */
@@ -1321,8 +1326,11 @@ async function renderNewerMessages(startIndex) {
                         // 如果消息不是系统内部不可见的消息，才增加未读计数
                         // --- 从这里开始是新增的代码 ---
 // 如果消息不是系统内部不可见的消息，才增加未读计数
-const invisibleRegex = /\[system:.*\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]/;
-if (!invisibleRegex.test(message.content)) {
+// 这份名单要和 chat_bubble_factory.js 里 return null 的那条对齐（外加时间分割线）：
+// 聊天室里画不出气泡的消息，既不该算未读，也不该弹顶部通知条。
+const invisibleRegex = /\[system:[\s\S]*?\]|\[.*?更新状态为[:：].*?\]|\[.*?已接收礼物\]|\[.*?(?:接收|退回).*?的转账\]|\[系统情景通知[:：][\s\S]*?\]/;
+const isInvisible = message.content === '[time-divider]' || invisibleRegex.test(message.content);
+if (!isInvisible) {
     senderChat.unreadCount = (senderChat.unreadCount || 0) + 1;
     saveSingleChat(targetChatId, targetChatType); // 异步保存数据
 
@@ -1334,9 +1342,12 @@ if (!invisibleRegex.test(message.content)) {
     // 【优化2】将耗时的“重绘聊天列表”任务延后 100 毫秒
     // 优先保证顶部的 Toast 提示框能够无比丝滑地弹出
     setTimeout(() => {
-        if (typeof renderChatList === 'function') renderChatList(); 
+        if (typeof renderChatList === 'function') renderChatList();
     }, 100);
 }
+
+// 不可见消息（改状态、收转账/礼物、情景注入、时间分割线）到此为止，不弹通知条
+if (isInvisible) return;
 
 
                         let senderName, senderAvatar;
@@ -1357,25 +1368,43 @@ if (!invisibleRegex.test(message.content)) {
                         let previewText = message.content;
 
                         // Extract clean text for preview
-                        const textMatch = previewText.match(/\[.*?的消息：([\s\S]+?)\]/);
-                        if (textMatch) {
+                        const textMatch = previewText.match(/\[.*?的消息[:：]([\s\S]+?)\]/);
+                        if (message.isWithdrawn) {
+                            // 撤回的消息在聊天室里只显示"撤回了一条消息"，通知条也别把原文抖出来
+                            previewText = '撤回了一条消息';
+                        } else if (textMatch) {
                             previewText = textMatch[1];
                         } else {
+                            // 线下模式的旁白气泡：正文就是给人看的，只把 [system-narration: ] 这层壳剥掉
+                            const narrationMatch = previewText.match(/\[system-narration[:：]([\s\S]+?)\]/);
+                            const displayMatch = previewText.match(/\[system-display[:：]([\s\S]+?)\]/);
                             // Handle other message types for preview
-                            if (/\[.*?的表情包：.*?\]/.test(previewText)) previewText = '[表情包]';
-                            else if (/\[.*?的语音：.*?\]/.test(previewText)) previewText = '[语音]';
-                            else if (/\[.*?发来的照片\/视频：.*?\]/.test(previewText)) previewText = '[照片/视频]';
-                            else if (/\[.*?的转账：.*?\]/.test(previewText)) previewText = '[转账]';
-                            else if (/\[.*?送来的礼物：.*?\]/.test(previewText)) previewText = '[礼物]';
-                            else if (/\[.*?发送了位置：.*?\]/.test(previewText)) previewText = '[位置]';
-                            else if (/\[.*?发来了一张图片：\]/.test(previewText)) previewText = '[图片]';
+                            // 转账/礼物的正则放宽到不带"的"字，群聊的「向X转账」「向X送来了礼物」也能命中
+                            if (narrationMatch) previewText = narrationMatch[1].trim();
+                            else if (displayMatch) previewText = displayMatch[1].trim();
+                            else if (/\[.*?表情包[:：].*?\]/.test(previewText)) previewText = '[表情包]';
+                            else if (/\[.*?的语音[:：].*?\]/.test(previewText)) previewText = '[语音]';
+                            else if (/\[.*?照片\/视频[:：].*?\]/.test(previewText)) previewText = '[照片/视频]';
+                            else if (/\[.*?转账[:：].*?\]/.test(previewText)) previewText = '[转账]';
+                            else if (/\[.*?礼物[:：].*?\]/.test(previewText)) previewText = '[礼物]';
+                            else if (/\[.*?发送了位置[:：].*?\]/.test(previewText)) previewText = '[位置]';
+                            else if (/\[.*?发来了一张图片[:：]\]/.test(previewText)) previewText = '[图片]';
                             else if (message.parts && message.parts.some(p => p.type === 'html')) previewText = '[互动]';
+                            else {
+                                // 兜底：上面都没命中（群聊改名/踢人这类可见通知、或没见过的新格式），
+                                // 只把外层方括号剥掉、保留整句，别把原始标记直接摆给用户看。
+                                // 这里刻意不按冒号切——「阿花修改群名为：喵喵星球」切掉前半句就读不懂了。
+                                previewText = previewText.replace(/^\[+/, '').replace(/\]+$/, '').trim();
+                            }
                         }
 
                         showToast({
                             avatar: senderAvatar,
                             name: senderName,
-                            message: previewText.substring(0, 30)
+                            message: previewText.substring(0, 30),
+                            // 带上会话标识，顶部通知条就能点进这个聊天室（见 utils.js processToastQueue）
+                            chatId: targetChatId,
+                            chatType: targetChatType
                         });
                     }
                     return; // IMPORTANT: Stop further execution
@@ -1723,9 +1752,11 @@ function formatSmartTime(timestamp) {
                     },
 
                     {
-                        id: 'send-gift-modal',
-                        name: '赠送礼物',
-                        icon: `<svg viewBox="0 0 24 24"><path d="M22,12V20A2,2 0 0,1 20,22H4A2,2 0 0,1 2,20V12A1,1 0 0,1 1,11V8A2,2 0 0,1 3,6H6.17C6.06,5.69 6,5.35 6,5A3,3 0 0,1 9,2C10,2 10.88,2.5 11.43,3.24V3.23L12,4L12.57,3.23V3.24C13.12,2.5 14,2 15,2A3,3 0 0,1 18,5C18,5.35 17.94,5.69 17.83,6H21A2,2 0 0,1 23,8V11A1,1 0 0,1 22,12M4,20H11V12H4V20M20,20V12H13V20H20M9,4A1,1 0 0,0 8,5A1,1 0 0,0 9,6A1,1 0 0,0 10,5A1,1 0 0,0 9,4M15,4A1,1 0 0,0 14,5A1,1 0 0,0 15,6A1,1 0 0,0 16,5A1,1 0 0,0 15,4M3,8V10H11V8H3M13,8V10H21V8H13Z" /></svg>`
+                        id: 'send-share-modal',
+                        name: '转发分享',
+                        icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M1 18.5088C1 13.1679 4.90169 8.77098 9.99995 7.84598V5.51119C9.99995 3.63887 12.1534 2.58563 13.6313 3.73514L21.9742 10.224C23.1323 11.1248 23.1324 12.8752 21.9742 13.7761L13.6314 20.2649C12.1534 21.4144 10 20.3612 10 18.4888V16.5189C7.74106 16.9525 5.9625 18.1157 4.92778 19.6838C4.33222 20.5863 3.30568 20.7735 2.55965 20.5635C1.80473 20.3511 1.00011 19.6306 1 18.5088ZM12.4034 5.31385C12.2392 5.18613 11.9999 5.30315 11.9999 5.51119V9.41672C11.9999 9.55479 11.8873 9.66637 11.7493 9.67008C8.09094 9.76836 4.97774 12.0115 3.66558 15.1656C3.46812 15.6402 3.31145 16.1354 3.19984 16.6471C3.07554 17.217 3.00713 17.8072 3.00053 18.412C3.00018 18.4442 3 18.4765 3 18.5088C3.00001 18.6437 3.18418 18.6948 3.25846 18.5822C3.27467 18.5577 3.29101 18.5332 3.30747 18.5088C3.30748 18.5088 3.30746 18.5088 3.30747 18.5088C3.63446 18.0244 4.01059 17.5765 4.42994 17.168C4.71487 16.8905 5.01975 16.6313 5.34276 16.3912C7.05882 15.1158 9.28642 14.3823 11.7496 14.3357C11.8877 14.3331 12 14.4453 12 14.5834V18.4888C12 18.6969 12.2393 18.8139 12.4035 18.6862L20.7463 12.1973C20.875 12.0973 20.875 11.9028 20.7463 11.8027L12.4034 5.31385Z"/>
+</svg>`
                     },
                     {
                         id: 'time-skip-modal',
@@ -1856,16 +1887,9 @@ switch (action) {
                         case 'delete-history-chunk':
                             openDeleteChunkModal();
                             break;
-                        case 'send-gift-modal':
-                            // 打开礼物框
-                            if (currentChatType === 'private') {
-                                sendGiftForm.reset();
-                                sendGiftModal.classList.add('visible');
-                            } else if (currentChatType === 'group') {
-                                currentGroupAction.type = 'gift';
-                                renderGroupRecipientSelectionList('送礼物给');
-                                groupRecipientSelectionModal.classList.add('visible');
-                            }
+                        case 'send-share-modal':
+                            // 万能分享卡片：直接发当前会话，不选收件人
+                            if (typeof openShareModal === 'function') openShareModal();
                             break;
                         case 'send-location-modal':
                             // 打开发送位置弹窗（私聊/群聊直接发送，无需选收件人）

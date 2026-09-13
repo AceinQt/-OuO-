@@ -154,7 +154,7 @@ async function setupStickerSystem() {
                     const sCat = s.category || '默认';
                     if (sCat === currentActionCategory) s.category = newName;
                 });
-                await saveGlobalKeys(['myStickers']);
+                await saveStickerTable();
                 if (currentStickerCategory === currentActionCategory) {
                     currentStickerCategory = newName;
                 }
@@ -209,7 +209,7 @@ async function setupStickerSystem() {
             });
             
             await dexieDB.myStickers.bulkDelete(Array.from(idsToDelete));
-            await saveGlobalKeys(['myStickers']);
+            await saveStickerTable();
             const safeChars = db.characters.map(c => { const o = {...c}; if(window.isMessageMigrated) delete o.history; return o; });
             await dexieDB.characters.bulkPut(safeChars);
             
@@ -252,7 +252,7 @@ async function setupStickerSystem() {
                 }
             });
             await dexieDB.myStickers.bulkDelete(Array.from(selectedStickerIds));
-            await saveGlobalKeys(['myStickers']);
+            await saveStickerTable();
             const safeChars = db.characters.map(c => { const o = {...c}; if(window.isMessageMigrated) delete o.history; return o; });
             await dexieDB.characters.bulkPut(safeChars);
             
@@ -314,7 +314,7 @@ async function setupStickerSystem() {
             stickerData.id = `sticker_${Date.now()}`;
             db.myStickers.push(stickerData);
         }
-        await saveGlobalKeys(['myStickers']);
+        await saveStickerTable();
         renderStickerGrid();
         addStickerModal.classList.remove('visible');
         showToast('表情包已保存');
@@ -385,7 +385,7 @@ async function setupStickerSystem() {
         
         if (newStickers.length > 0) {
             db.myStickers.push(...newStickers); 
-            await saveGlobalKeys(['myStickers']);
+            await saveStickerTable();
             renderStickerGrid();
             batchAddStickerModal.classList.remove('visible');
             showToast(`成功导入 ${newStickers.length} 个新表情！`);
@@ -429,7 +429,7 @@ async function setupStickerSystem() {
                     if (c.stickerIds) c.stickerIds = c.stickerIds.filter(id => id !== currentStickerActionTarget);
                 });
                 await dexieDB.myStickers.delete(currentStickerActionTarget);
-                await saveGlobalKeys(['myStickers']);
+                await saveStickerTable();
                 const safeChars = db.characters.map(c => { const o = {...c}; if(window.isMessageMigrated) delete o.history; return o; });
                 await dexieDB.characters.bulkPut(safeChars);
                 renderStickerGrid();

@@ -18,9 +18,6 @@
             const receiveTransferActionSheet = document.getElementById('receive-transfer-actionsheet'),
                 acceptTransferBtn = document.getElementById('accept-transfer-btn'),
                 returnTransferBtn = document.getElementById('return-transfer-btn');
-            const sendGiftModal = document.getElementById('send-gift-modal'),
-                sendGiftForm = document.getElementById('send-gift-form'),
-                giftDescriptionInput = document.getElementById('gift-description-input');
             const sendLocationModal = document.getElementById('send-location-modal'),
                 sendLocationForm = document.getElementById('send-location-form'),
                 locationNameInput = document.getElementById('location-name-input'),
@@ -109,7 +106,9 @@
             // 优先级：全局识图设置 > 该聊天自己的 API 预设 > 全局默认
             // 注意是「全局优先」：一旦在侧栏指定了识图API，所有聊天的转化都走它
             function _getVisionApiConfig(chat) {
+                // 展开兜底：projectId 之类的新字段不用回来逐个加
                 const _pick = (d) => ({
+                    ...d,
                     url:      d.url || d.apiUrl || '',
                     key:      d.key || d.apiKey || '',
                     model:    d.model || '',
@@ -133,37 +132,35 @@
 
             // 调识图 API，返回图片的文字描述（非流式，60秒超时）
             async function requestImageDescription(dataUrl, chat) {
-                const { url, key, model, provider } = _getVisionApiConfig(chat);
+                const cfg = _getVisionApiConfig(chat);
+                const { url, key, model, provider } = cfg;
                 if (!url || !key || !model) throw new Error('识图API未配置完整');
 
-                const _key = (typeof getRandomValue === 'function') ? getRandomValue(key) : key;
+                // 端点与鉴权头统一由 llm_client.js 决定（多 key 轮询也在它内部）
+                const { endpoint, headers } = buildLLMRequestTarget(cfg, { stream: false });
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), 60000);
 
                 try {
-                    let endpoint, headers, body;
+                    let body;
 
-                    if (provider === 'gemini') {
+                    if (llmIsGeminiShape(provider)) {
                         let mimeType = 'image/jpeg';
                         let data = dataUrl;
                         const match = dataUrl.match(/^data:(image\/(\w+));base64,(.*)$/);
                         if (match) { mimeType = match[1]; data = match[3]; }
 
-                        endpoint = `${url}/v1beta/models/${model}:generateContent?key=${_key}`;
-                        headers = { 'Content-Type': 'application/json' };
                         body = {
                             contents: [{
                                 role: 'user',
                                 parts: [
                                     { text: VISION_DESCRIBE_PROMPT },
-                                    { inline_data: { mime_type: mimeType, data: data } }
+                                    { inlineData: { mimeType: mimeType, data: data } }
                                 ]
                             }],
                             generationConfig: { temperature: 0.4 }
                         };
                     } else {
-                        endpoint = `${url}/v1/chat/completions`;
-                        headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${_key}` };
                         body = {
                             model: model,
                             stream: false,
@@ -192,8 +189,10 @@
                     }
 
                     const json = await response.json();
-                    return (provider === 'gemini')
-                        ? (json.candidates?.[0]?.content?.parts?.[0]?.text || '')
+                    return llmIsGeminiShape(provider)
+                        ? (json.candidates?.[0]?.content?.parts || [])
+                            .filter(p => !p.thought && typeof p.text === 'string')
+                            .map(p => p.text).join('')
                         : (json.choices?.[0]?.message?.content || '');
                 } catch (err) {
                     if (err.name === 'AbortError') throw new Error('请求超时（60秒）');
@@ -511,51 +510,6 @@
                 renderChatList();
             }
 
-            async function sendMyGift(description) {
-                if (!description) return;
-                sendGiftModal.classList.remove('visible');
-                await new Promise(resolve => setTimeout(resolve, 100));
-                const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
-                await processTimePerception(chat, currentChatId, currentChatType);
-
-                if (currentChatType === 'private') {
-                    const content = `[${chat.myName}送来的礼物：${description}]`;
-                    const message = {
-                        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-                        role: 'user',
-                        content: content,
-                        parts: [{ type: 'text', text: content }],
-                        timestamp: Date.now(),
-                        giftStatus: 'sent'
-                    };
-                    chat.history.push(message);
-                    addMessageBubble(message, currentChatId, currentChatType);
-                    await saveMessageToDB(message, currentChatId, currentChatType);
-                } else { // Group chat
-                    let msgs =[];
-        currentGroupAction.recipients.forEach(recipientId => {
-                        const recipient = chat.members.find(m => m.id === recipientId);
-                        if (recipient) {
-                            const content = `[${chat.me.realName} 向 ${recipient.realName} 送来了礼物：${description}]`;
-                            const message = {
-                                id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
-                                role: 'user',
-                                content: content,
-                                parts: [{ type: 'text', text: content }],
-                                timestamp: Date.now(),
-                                senderId: 'user_me'
-                            };
-                            chat.history.push(message);
-                            addMessageBubble(message, currentChatId, currentChatType);
-                            msgs.push(message); 
-                        }
-                    });
-                    await saveMessagesToDB(msgs, currentChatId, currentChatType);
-                }
-                await saveSingleChat(currentChatId, currentChatType);
-                renderChatList();
-            }
-
             // --- NEW: Send Location System ---
             async function sendMyLocation(name, address) {
                 if (!name) return;
@@ -739,15 +693,7 @@
                 currentTransferMessageId = null;
             }
 
-            function setupGiftSystem() {
-
-                sendGiftForm.addEventListener('submit', (e) => {
-                    e.preventDefault();
-                    sendMyGift(giftDescriptionInput.value.trim());
-                });
-            }
-            
-             // --- Other Sub-systems Setup (Stickers, Voice, etc.) ---
+            // --- Other Sub-systems Setup (Stickers, Voice, etc.) ---
             function setupImageRecognition() {
                 imageRecognitionBtn.addEventListener('click', () => {
                     imageUploadInput.click();

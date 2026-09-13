@@ -76,6 +76,24 @@ function getMixedContent(responseData) {
         }
 
         if (responseData[i] === '[') {
+            // 分享卡片要特殊对待：它是多行的，而且「内容」是大段自由文本，
+            // 里面很可能出现 ] （"第[三]章"、"价格[特价]39元"）。下面那条按
+            // **第一个** ] 收尾的通用规则会把卡片截半截，剩下的半张卡还会漏成
+            // 一条 [unknown的消息：附加信息：…] 气泡，附加信息也就丢了。
+            // 定尾必须按行扫，复用 extractShareBlocks（chat_feature_share.js）——
+            // 这里别再自己写正则，非贪婪一样会停在正文的 ] 上。
+            const shareHead = responseData.substring(i).match(/^\[[^\[\]：:\n]+?的分享[:：]/);
+            if (shareHead && typeof extractShareBlocks === 'function') {
+                const rest = responseData.substring(i);
+                const found = extractShareBlocks(rest);
+                // 只认从当前位置就开头的那一块（start === 0）
+                if (found.length && found[0].start === 0) {
+                    results.push({ type: 'text', content: found[0].text });
+                    i += found[0].text.length;
+                    continue;
+                }
+            }
+
             // Potential [...] block
             const endBracket = responseData.indexOf(']', i);
             if (endBracket !== -1) {
@@ -308,9 +326,28 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             }
         } else {
             let processedResponse = cleanResponse;
+
+            // 分享卡片先整块抠出来占位，等下面那三条"见括号就断行"的规则跑完再填回去。
+            // 那三条本来是为单行消息写的：分享的「内容」是大段自由文本，里面出现
+            // [ 或 ] 就会被就地断行，一张卡碎成好几条气泡。
+            // 抠取按**行**扫（maskShareBlocks / restoreShareBlocks，实现在
+            // chat_feature_share.js）—— 用一条正则截不行：非贪婪会停在正文自己的
+            // ]（"第[三]章"）把卡片切一半，贪婪又会吞掉后面别的消息。都试过，都碎。
+            let shareBlocks = [];
+            if (typeof maskShareBlocks === 'function') {
+                const masked = maskShareBlocks(processedResponse);
+                processedResponse = masked.masked;
+                shareBlocks = masked.blocks;
+            }
+
             processedResponse = processedResponse.replace(/\]\s*\[/g, ']\n[');
             processedResponse = processedResponse.replace(/([^\n>])\s*\[(?!system-narration|system-display)/g, '$1\n[');
             processedResponse = processedResponse.replace(/\]\s*([^\n<])/g, ']\n$1');
+
+            // 填回去，并保证每张卡片独占一行（占位符前后可能粘着别的话）
+            if (shareBlocks.length && typeof restoreShareBlocks === 'function') {
+                processedResponse = restoreShareBlocks(processedResponse, shareBlocks);
+            }
 
             const trimmedResponse = processedResponse.trim();
             let messages;
@@ -492,6 +529,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         } else if (giftRegex.test(message.content)) {
                             message.giftStatus = 'sent';
                         }
+                        // 双语照片描述：英文摘到 message.imagePromptEn，content 只留中文。
+                        // 必须在 push / addMessageBubble 之前，否则英文会漏进气泡和列表预览
+                        if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(message);
                         // 照片/视频描述走这一支：把预生成占的 id 和画好的图装配回来
                         if (typeof applyPreparedImage === 'function') applyPreparedImage(item, message);
                         if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
@@ -502,7 +542,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 } 
                 else if (targetChatType === 'group') {
                     const group = chat;
-                    const standardRegex = /\[(.*?)((?:的消息|的语音|的表情包|发送的表情包|发来的照片\/视频|发送了位置))[:：]/;
+                    // 「的分享」也要在列表里：不在这份清单上的格式，群聊分支会整条丢掉
+                    const standardRegex = /\[(.*?)((?:的消息|的语音|的表情包|发送的表情包|发来的照片\/视频|发送了位置|的分享))[:：]/;
                     const quoteRegex = /\[(.*?)引用["“](.*?)["”]并回复[:：]([\s\S]*?)\]/;
 
                     const quoteMatch = item.content.match(quoteRegex);
@@ -559,6 +600,8 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                                 timestamp: Date.now(),
                                 senderId: sender.id
                             };
+                            // 双语照片描述：同私聊路径，英文摘走、content 只留中文
+                            if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(message);
                             // 群聊的照片/视频也走 standardMatch 这一支，同样要装配预生成结果
                             if (typeof applyPreparedImage === 'function') applyPreparedImage(item, message);
                             group.history.push(message);
@@ -784,7 +827,7 @@ if (chatType === 'private' && chat.callMode === 'video') {
 // 两者互斥，取其一作为本次请求的写作手册注入
 const activeReinforcement = offlineReinforcement || callReinforcement;
 
-        if (provider === 'gemini') {
+        if (llmIsGeminiShape(provider)) {
             const contents = historySlice.map(msg => {
                 const role = (msg.role === 'assistant' || msg.role === 'model') ? 'model' : 'user';
                 let parts;
@@ -808,15 +851,17 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
                                 mimeType = match[1];
                                 data = match[3];
                             }
-                            return { inline_data: { mime_type: mimeType, data: data } };
+                            return { inlineData: { mimeType: mimeType, data: data } };
                         }
                         return null;
                     }).filter(p => p);
                 } else {
-                    parts = [{ text: processingContent }];
+                    // 老消息没有 parts 字段（早期数据 / 旧备份恢复），退回读 content，
+                    // 与下面 OpenAI 分支的 `content = msg.content` 保持一致
+                    parts = [{ text: String(msg.content ?? '') }];
                 }
                 return { role, parts };
-}).filter(c => c.parts && c.parts.length > 0 && c.parts.some(p => p.text?.trim() || p.inline_data));
+}).filter(c => c.parts && c.parts.length > 0 && c.parts.some(p => p.text?.trim() || p.inlineData));
             
             if (activeReinforcement){
                 let targetIndex = -1;
@@ -849,7 +894,9 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
 
             requestBody = {
     contents: contents,
-    system_instruction: { parts: [{ text: systemPrompt }] },
+    // 字段名必须用 camelCase：新版代理只认 systemInstruction，
+    // 收到 system_instruction 会当未知字段静默丢掉（世界书/人设全部失效）。
+    systemInstruction: { parts: [{ text: systemPrompt }] },
     generationConfig: {
         temperature: effectiveApiSettings.temperature !== undefined ? effectiveApiSettings.temperature : 0.8
     }
@@ -929,12 +976,13 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
 requestBody = { model: model, messages: apiMessages, stream: streamEnabled, temperature: _temp };
         }
 
-        const endpoint = (provider === 'gemini') ? `${url}/v1beta/models/${model}:streamGenerateContent?key=${getRandomValue(key)}` : `${url}/v1/chat/completions`;
-        const headers = (provider === 'gemini') ? { 'Content-Type': 'application/json' } : {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`
-        };
-        
+        // 端点与鉴权头统一由 llm_client.js 的 buildLLMRequestTarget 决定
+        // （多 key 轮询也在它内部做，所以这里不用再 getRandomValue）
+        const { endpoint, headers } = buildLLMRequestTarget(
+            normalizeLLMConfig(effectiveApiSettings),
+            { stream: streamEnabled }
+        );
+
         callAbortController = new AbortController();          // ← 每次请求前重置
 const response = await fetch(endpoint, {
     method: 'POST',
@@ -953,8 +1001,12 @@ const response = await fetch(endpoint, {
         } else {
             const result = await response.json();
             let fullResponse = "";
-            if (provider === 'gemini') {
-                fullResponse = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            if (llmIsGeminiShape(provider)) {
+                // 同样要跳过 thought part，否则思考内容会被当成正文
+                fullResponse = (result.candidates?.[0]?.content?.parts || [])
+                    .filter(p => !p.thought && typeof p.text === 'string')
+                    .map(p => p.text)
+                    .join('');
             } else {
                 fullResponse = result.choices[0].message.content || "";
             }
@@ -993,43 +1045,60 @@ document.getElementById('call-mic-btn')?.removeAttribute('disabled');
 // ==========================================
 async function processStream(response, chat, apiType, targetChatId, targetChatType) {
     const reader = response.body.getReader(), decoder = new TextDecoder();
-    let fullResponse = "", accumulatedChunk = "";
+    const isGemini = llmIsGeminiShape(apiType);
+    let fullResponse = "", buffer = "", raw = "";
+
+    // Gemini 原生：思考是 parts 里带 thought:true 的一项，内容同样放在 text 字段，
+    // 必须按 part 逐个判断丢弃，光靠正则刮 "text" 会把思考混进正文。
+    const collectGemini = (json) => {
+        for (const p of json.candidates?.[0]?.content?.parts || []) {
+            if (p.thought) continue;
+            if (typeof p.text === 'string') fullResponse += p.text;
+        }
+    };
+
     for (; ;) {
         const { done, value } = await reader.read();
         if (done) break;
-        accumulatedChunk += decoder.decode(value, { stream: true });
-        if (apiType === "openai" || apiType === "deepseek" || apiType === "claude" || apiType === "newapi") {
-            const parts = accumulatedChunk.split("\n\n");
-            accumulatedChunk = parts.pop();
-            for (const part of parts) {
-                if (part.startsWith("data: ")) {
-                    const data = part.substring(6);
-                    if (data.trim() !== "[DONE]") {
-                        try {
-                            fullResponse += JSON.parse(data).choices[0].delta?.content || "";
-                        } catch (e) { /* ignore */ }
-                    }
+        const chunk = decoder.decode(value, { stream: true });
+        raw += chunk;
+        buffer += chunk;
+
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop();   // 末尾可能是半个事件，留到下一轮
+        for (const ev of events) {
+            // 一个 SSE 事件可能有多行 data:，拼起来才是完整 JSON
+            const data = ev.split(/\r?\n/)
+                .filter(l => l.startsWith("data:"))
+                .map(l => l.slice(5).trim())
+                .join("");
+            if (!data || data === "[DONE]") continue;
+            try {
+                const json = JSON.parse(data);
+                if (isGemini) {
+                    collectGemini(json);
+                } else {
+                    fullResponse += json.choices?.[0]?.delta?.content || "";
                 }
+            } catch (e) { /* 半包或非 JSON，忽略 */ }
+        }
+    }
+
+    // 兜底：旧版代理的 :streamGenerateContent 不发 SSE，而是返回一个 JSON 数组
+    if (isGemini && !fullResponse && raw.trim()) {
+        try {
+            const arr = JSON.parse(raw.trim());
+            (Array.isArray(arr) ? arr : [arr]).forEach(collectGemini);
+        } catch (e) {
+            const textRegex = /"text":\s*"((?:[^"\\]|\\.)*)"/g;
+            let match;
+            while ((match = textRegex.exec(raw)) !== null) {
+                try { fullResponse += JSON.parse(`"${match[1]}"`); }
+                catch (_) { fullResponse += match[1]; }
             }
         }
     }
 
-    if (apiType === "gemini") {
-        try {
-            const textRegex = /"text":\s*"((?:[^"\\]|\\.)*)"/g;
-            let match;
-            fullResponse = ""; 
-            while ((match = textRegex.exec(accumulatedChunk)) !== null) {
-                let contentText = match[1];
-                try {
-                    contentText = JSON.parse(`"${contentText}"`); 
-                } catch (e) { /* ignore */ }
-                fullResponse += contentText;
-            }
-        } catch (e) {
-            console.error("Error parsing Gemini stream:", e);
-        }
-    }
     await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType);
 }
 

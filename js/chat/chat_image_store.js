@@ -200,15 +200,37 @@ function deleteImageCacheByChat(chatId) {
     return _deleteImageCacheWhere('chatId', chatId);
 }
 
+// 逐行扫描 imageCache，只把元数据留在内存里，绝不让所有行的 bytes 同时驻留。
+//
+// 原本这里用 dexieDB.imageCache.toArray()，等于把整张表的图片字节全读进堆——
+// 而 putImageCache 每存一张图就会调一次 enforceImageCacheLimit，于是每收发一张图
+// 都产生一次「整个缓存上限那么大」的分配尖峰（默认 10MB，用户可在生图设置里调大且无上限）。
+// 安卓 Chrome 正是在这种周期性大块分配下最容易把整个页面丢弃。
+//
+// size 字段在写入时就存好了（putImageCache 里 size: data.byteLength），求和根本不需要 bytes；
+// 只有历史数据可能缺 size，那种行才回退去量 bytes 的长度。
+// 参考 chat_voice_store.js 的做法：统计与淘汰只碰元数据。
+async function _eachImageCacheMeta(callback) {
+    await dexieDB.imageCache.each(row => {
+        if (!row) return;
+        callback({
+            key: row.key,
+            size: Number(row.size) || (_imageBytes(row.bytes)?.byteLength || 0),
+            cloudBacked: !!row.cloudBacked,
+            lastAccessedAt: Number(row.lastAccessedAt) || 0
+        });
+    });
+}
+
 async function getImageCacheStats() {
     const empty = { entryCount: 0, cachedBytes: 0, cloudBackedCount: 0, localOnlyCount: 0 };
     if (!_imageCacheTableReady()) return empty;
     try {
-        const rows = await dexieDB.imageCache.toArray();
-        const stats = { ...empty, entryCount: rows.length };
-        rows.forEach(row => {
-            stats.cachedBytes += Number(row.size) || (_imageBytes(row.bytes)?.byteLength || 0);
-            if (row.cloudBacked) stats.cloudBackedCount++;
+        const stats = { ...empty };
+        await _eachImageCacheMeta(meta => {
+            stats.entryCount++;
+            stats.cachedBytes += meta.size;
+            if (meta.cloudBacked) stats.cloudBackedCount++;
             else stats.localOnlyCount++;
         });
         return stats;
@@ -242,24 +264,26 @@ async function enforceImageCacheLimit(limitMB, protectedKeys = []) {
     const result = { freedBytes: 0, evictedCloudBacked: 0, evictedLocalOnly: 0, remainingBytes: 0 };
     if (!_imageCacheTableReady()) return result;
     try {
-        const rows = await dexieDB.imageCache.toArray();
+        // 只收元数据，不留 bytes（见 _eachImageCacheMeta 的说明）
+        const metas = [];
+        let total = 0;
+        await _eachImageCacheMeta(meta => { metas.push(meta); total += meta.size; });
+
         const limitBytes = _imageCacheLimitMB(limitMB) * 1024 * 1024;
-        let total = rows.reduce((sum, row) => sum + (Number(row.size) || _imageBytes(row.bytes)?.byteLength || 0), 0);
         result.remainingBytes = total;
         if (total <= limitBytes) return result;
 
         const protectedSet = new Set(protectedKeys || []);
-        const lru = (a, b) => (Number(a.lastAccessedAt) || 0) - (Number(b.lastAccessedAt) || 0);
-        const removable = rows.filter(row => !protectedSet.has(row.key));
-        const cloudRows = removable.filter(row => row.cloudBacked).sort(lru);
-        const localRows = removable.filter(row => !row.cloudBacked).sort(lru);
+        const lru = (a, b) => a.lastAccessedAt - b.lastAccessedAt;
+        const removable = metas.filter(m => !protectedSet.has(m.key));
+        const cloudRows = removable.filter(m => m.cloudBacked).sort(lru);
+        const localRows = removable.filter(m => !m.cloudBacked).sort(lru);
         const toDelete = [];
         for (const row of [...cloudRows, ...localRows]) {
             if (total <= limitBytes) break;
             toDelete.push(row.key);
-            const size = Number(row.size) || _imageBytes(row.bytes)?.byteLength || 0;
-            total -= size;
-            result.freedBytes += size;
+            total -= row.size;
+            result.freedBytes += row.size;
             if (row.cloudBacked) result.evictedCloudBacked++;
             else result.evictedLocalOnly++;
         }

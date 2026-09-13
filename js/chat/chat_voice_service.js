@@ -2,9 +2,9 @@
 // chat_voice_service.js — 语音消息业务层
 // ============================================================
 // 只做三件事：这条消息该不该出语音、用谁的声音、字节从哪来。
-// 凭据和请求在 js/api/doubao_tts_api.js；仓库读写在 js/api/github_repo_api.js；
+// 凭据和请求在 js/api/tts_api.js；仓库读写在 js/api/github_repo_api.js；
 // 字节存哪、淘汰谁在 js/chat/chat_voice_store.js。
-// 本文件不出现 endpoint、不碰 IndexedDB 表名、不认识 DOM。
+// 本文件不出现 endpoint、不碰 IndexedDB 表名、不认识 DOM，也不认识"哪家服务商"。
 //
 // 消费方（后续接上）：
 //   · chat_ai_service.js       → 回复落库后触发后台合成
@@ -123,12 +123,12 @@ function _emitVoiceClipReady(voiceKey) {
 }
 
 // 合成并发闸门。一次合成 20 秒以上且并发不缩短单次耗时，开大只是一起变慢，
-// 所以上限来自常量而不是设置项（见 doubao_tts_api.js 的 DOUBAO_TTS_CONCURRENCY）。
+// 所以上限来自常量而不是设置项（见 tts_api.js 的 VOICE_CONCURRENCY）。
 let _voiceActiveSynth = 0;
 const _voiceSynthWaiters = [];
 
 function _acquireSynthSlot() {
-    const limit = typeof DOUBAO_TTS_CONCURRENCY === 'number' ? DOUBAO_TTS_CONCURRENCY : 2;
+    const limit = typeof VOICE_CONCURRENCY === 'number' ? VOICE_CONCURRENCY : 2;
     if (_voiceActiveSynth < limit) {
         _voiceActiveSynth++;
         return Promise.resolve();
@@ -385,8 +385,10 @@ async function prepareVoiceForMessages(messages, chat, chatType) {
     try {
         if (!Array.isArray(messages) || !messages.length || !chat) return;
         const config = _normalizeVoiceSettings(db.voiceSettings);
-        // 总闸关着、没开自动合成、没填 Key 都不动手
-        if (!config.enabled || !config.autoSynthesize || !config.apiKey) return;
+        // 总闸关着、没开自动合成都不动手。
+        // ★ 这里不再判 Key —— 凭据现在在每条预设里，够不够齐要按预设逐条看，
+        //   见下面的 voicePresetReady。
+        if (!config.enabled || !config.autoSynthesize) return;
 
         const jobs = [];
         messages.forEach(item => {
@@ -397,7 +399,9 @@ async function prepareVoiceForMessages(messages, chat, chatType) {
 
             const senderId = _findVoiceSenderId(chat, chatType, parsed.speaker);
             const profile = resolveVoicePresetForSender(chat, chatType, senderId);
-            if (!profile) return;
+            // 没音色、或这条预设还没配齐（缺 Key / 缺音色 ID）都跳过 ——
+            // 后台静默合成不该产生"必然失败"的请求，用户点播放时会看到具体缺什么
+            if (!profile || !voicePresetReady(profile)) return;
 
             // quotaOncePerDay：这条路每条消息都会走，超额提示当天只弹一次
             // 单条的失败在这里咽掉 —— 一条合成不出来不该把整批都卡住，

@@ -7,109 +7,41 @@ const colorThemes = {
     }
 };
 // =================================== 预览模板与沙盒渲染 ===================================
+//
+// 预览不再维护第二份 HTML —— 直接 clone index.html 里真实的 #chat-room-screen，
+// 并且跑 chat_settings.js 用的同一个 scopeBubbleCss。
+//
+// 为什么这么改：以前预览是三份手写模板 + CSS 原样注入，实际应用是一套手写正则改写器。
+// 两份结构会漂移（模板里给 .chat-input-wrapper 挂了内联 position、输入框是 disabled 的、
+// 缺 #multi-select-bar 之类的兄弟节点），两条 CSS 通道语义又不同，于是「预览生效、
+// 保存后不生效」是必然而不是偶发，底栏尤其明显。现在结构和改写都只有一份，
+// 改 index.html 预览自动跟着变。
+//
+// 代价：clone 出来的东西里有一堆预览时不该出现的浮层（侧边栏、表情面板、多选栏），
+// 得按 PREVIEW_HIDE_IDS 关掉；每个视图再决定滚到哪里、把哪些区域收窄。
 let currentPreviewMode = 0; // 0:气泡, 1:顶部栏, 2:底部栏
 
-// 你的原生 HTML 结构模板
-const previewModes =[
-    {
-        title: '预览 1/3：消息气泡 (Bubbles)',
-        template: `
-            <div id="chat-room-screen" class="screen active">
-                <main class="content">
-                    <div class="message-area" style="padding: 10px;">
-                        <!-- 第一条接收消息 -->
-                        <div class="message-wrapper received" data-sender-id="test1">
-                            <div class="message-bubble-row">
-                                <img src="https://i.postimg.cc/Y96LPskq/o-o-2.jpg" class="message-avatar avatar">
-                                <div class="message-content-col">
-                                    <div class="message-meta-info message-info"><span class="group-nickname">对方</span></div>
-                                    <div class="message-bubble received">这是一条对方发来的消息，用于测试气泡。</div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- 第二条连续接收消息 (用于测试连续气泡隐藏头像) -->
-                        <div class="message-wrapper received" data-sender-id="test1">
-                            <div class="message-bubble-row">
-                                <img src="https://i.postimg.cc/Y96LPskq/o-o-2.jpg" class="message-avatar avatar">
-                                <div class="message-content-col">
-                                    <div class="message-meta-info message-info"><span class="group-nickname">对方</span></div>
-                                    <div class="message-bubble received">这是连续发来的第二条消息！</div>
-                                </div>
-                            </div>
-                        </div>
-                        <!-- 发送方的消息 -->
-                        <div class="message-wrapper sent" data-sender-id="user_me">
-                            <div class="message-bubble-row">
-                                <img src="https://i.postimg.cc/GtbTnxhP/o-o-1.jpg" class="message-avatar avatar">
-                                <div class="message-content-col">
-                                    <div class="message-meta-info message-info"><span class="group-nickname">我</span></div>
-                                    <div class="message-bubble sent">这是我方回复的消息。</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </main>
-            </div>
-        `
-    },
-    {
-        title: '预览 2/3：顶部栏 (Header)',
-        template: `
-            <div id="chat-room-screen" class="screen active">
-                <header class="app-header" id="chat-room-header-default">
-                    <button class="back-btn" data-target="chat-list-screen">‹</button>
-                    <div class="title-container">
-                        <h1 class="title" id="chat-room-title">聊天对象</h1>
-                        <div class="subtitle" id="chat-room-subtitle">
-                            <div class="online-indicator"></div>
-                            <span id="chat-room-status-text">在线</span>
-                        </div>
-                    </div>
-                    <div class="action-btn-group">
-                        <button class="action-btn" id="peek-btn">
-                            <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path transform="scale(1.4) translate(0.5 0.5)" d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328zM1.83 1.83l.002-.001-.002.001z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                        </button>
-                        <button class="action-btn" id="chat-settings-btn">
-                            <svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="5" width="18" height="1.5" rx="0.75" /><rect x="3" y="11" width="18" height="1.5" rx="0.75" /><rect x="3" y="17" width="18" height="1.5" rx="0.75" /></svg>
-                        </button>
-                    </div>
-                </header>
-            </div>
-        `
-    },
-    {
-        title: '预览 3/3：底部栏 (Footer & Input)',
-        template: `
-            <div id="chat-room-screen" class="screen active">
-                <div class="chat-input-wrapper" style="position: absolute; bottom: 0; left: 0; width: 100%;">
-                    <div id="reply-preview-bar" style="display:none;">
-                        <div class="reply-preview-content">
-                            <span class="reply-preview-name"></span>
-                            <p class="reply-preview-text"></p>
-                        </div>
-                        <button id="cancel-reply-btn">×</button>
-                    </div>
-                    <div class="message-input-area" id="message-input-default">
-                        <input type="text" id="message-input" placeholder="输入消息..." disabled>
-                        <button id="send-message-btn" class="icon-btn send-btn">发送</button>
-                        <button id="get-reply-btn" class="icon-btn">
-                            <svg viewBox="0 0 24 24"><path d="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 1,1 20,12A8,8 0 0,1 12,20M16.24,7.76C15.07,6.58 13.53,6 12,6V12L7.76,16.24C10.1,18.58 13.9,18.58 16.24,16.24C18.58,13.9 18.58,10.1 16.24,7.76Z" /></svg>
-                        </button>
-                    </div>
-                    <div id="sticker-bar">
-                        <button class="sticker-bar-btn" id="regenerate-btn" title="重回"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65,6.35C16.2,4.9,14.21,4,12,4A8,8,0,0,0,4,12A8,8,0,0,0,12,20C15.73,20,18.84,17.45,19.73,14H17.65C16.83,16.33,14.61,18,12,18A6,6,0,0,1,6,12A6,6,0,0,1,12,6C13.66,6,15.14,6.69,16.22,7.78L13,11H20V4L17.65,6.35Z" /></svg></button>
-                        <button class="sticker-bar-btn" id="voice-message-btn"><svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" /></svg></button>
-                        <button class="sticker-bar-btn" id="image-recognition-btn"><svg viewBox="0 0 24 24"><path d="M20,4H4C2.9,4,2,4.9,2,6v12c0,1.1,0.9,2,2,2h16c1.1,0,2-0.9,2-2V6C22,4.9,21.1,4,20,4z M20,18H4v-4.57l5.36-4.91l4.06,3.72l3.43-3.09L20,12.27V18z" /></svg></button>
-                        <button class="sticker-bar-btn" id="photo-video-btn"><svg viewBox="0 0 24 24"><path d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z" /></svg></button>
-                        <button class="sticker-bar-btn" id="wallet-btn"><svg viewBox="0 0 24 24"><path d="M20,4H4C2.9,4,2,4.9,2,6v12c0,1.1,0.9,2,2,2h16c1.1,0,2-0.9,2-2V6C22,4.9,21.1,4,20,4z M20,8l-8,5L4,8V6l8,5l8-5V8z" /></svg></button>
-                        <button class="sticker-bar-btn" id="sticker-toggle-btn"><svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" /></svg></button>
-                        <button class="sticker-bar-btn" id="placeholder-plus-btn"><svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg></button>
-                    </div>
-                </div>
-            </div>
-        `
-    }
+// clone 出来后要强制隐藏的浮层/浮块（它们都住在 #chat-room-screen 里面）
+const PREVIEW_HIDE_IDS = [
+    'chat-settings-sidebar',   // 设置侧边栏
+    'sticker-modal',           // 表情包面板
+    'chat-expansion-panel',    // "+"扩展面板
+    'multi-select-bar',        // 多选删除栏
+    'chat-room-header-select', // 多选状态的顶栏
+    'typing-indicator'         // "正在输入"指示器
 ];
+
+// 三个预览视图。focus 决定 iframe 里滚动/裁切到哪个区域，
+// 不再各自持有一份 HTML。
+const previewModes = [
+    { title: '预览 1/3：消息气泡 (Bubbles)', focus: 'bubbles' },
+    { title: '预览 2/3：顶部栏 (Header)',    focus: 'header'  },
+    { title: '预览 3/3：底部栏 (Footer & Input)', focus: 'footer' }
+];
+
+// 预览用的假 chatId。scopeBubbleCss 会把它拼进 class，所以只能用合法 class 字符。
+const PREVIEW_CHAT_ID = 'preview';
+
 
 function _getBubblePresets() {
     let presets = db.bubbleCssPresets ||[];
@@ -126,6 +58,35 @@ function _saveBubblePresets(arr) {
     db.bubbleCssPresets = arr ||[];
    saveGlobalKeys(['bubbleCssPresets']);
 }
+
+// 预设的保存/删除/重命名会把新 CSS 直接注入用到该预设的每个聊天的
+// customBubbleCss / useCustomBubbleCss / bubbleThemeName 三个字段。
+// 渲染读的是 chat.customBubbleCss 而不是预设列表，所以这三个字段必须落盘；
+// 过去只保存了 bubbleCssPresets，改动仅存在内存里靠切后台的全量 saveData 兜底，
+// App 被系统杀掉就会整体回退到旧 CSS，用户看到的是"刚改的外观没了"。
+// 落盘口径与 saveSingleChat 一致：剥掉 history 与独立存储的记忆字段。
+async function _persistChatsAfterPresetChange() {
+    try {
+        if (typeof dexieDB === 'undefined') return;
+        const strip = (src) => {
+            const o = { ...src };
+            delete o.history;
+            delete o.memorySummaries;
+            delete o.memoryJournals;
+            delete o.longTermSummaries;
+            if (window.isChunkMigrated) delete o.memoryChunks;
+            return o;
+        };
+        if (dexieDB.characters && db.characters && db.characters.length) {
+            await dexieDB.characters.bulkPut(db.characters.map(strip));
+        }
+        if (dexieDB.groups && db.groups && db.groups.length) {
+            await dexieDB.groups.bulkPut(db.groups.map(strip));
+        }
+    } catch (e) {
+        console.error('❌ 气泡预设同步到聊天的保存失败:', e);
+    }
+}
 // =================================== 更新预览区域核心逻辑 ===================================
 
 // 全景气泡预览生成器：将所有的气泡都放在一个窗口里
@@ -139,7 +100,7 @@ function getDynamicBubblePreview() {
     const getRow = (isSent, innerHtml) => `
         <div class="message-wrapper ${isSent ? 'sent' : 'received'}">
             <div class="message-bubble-row" ${isSent ? 'style="flex-direction: row-reverse;"' : ''}>
-                <img src="https://i.postimg.cc/${isSent ? 'GtbTnxhP/o-o-1.jpg' : 'Y96LPskq/o-o-2.jpg'}" class="message-avatar avatar">
+                <img src="${isSent ? './png/avatar_default_me.jpg' : './png/avatar_default.jpg'}" class="message-avatar avatar">
                 <div class="message-content-col" ${isSent ? 'style="align-items: flex-end;"' : ''}>
                     ${innerHtml}
                 </div>
@@ -218,26 +179,109 @@ function getDynamicBubblePreview() {
             <span class="duration">8"</span>
         </div>
     `);
-    return `
-        <div id="chat-room-screen" class="screen active">
-            <main class="content">
-                <div class="message-area" style="padding: 10px;">
-                    ${html}
-                </div>
-            </main>
-        </div>
-    `;
+    // 只返回消息内容，外壳由 buildPreviewShellHtml 从真实 DOM clone 出来
+    return html;
 }
+
+// 从 index.html 真实的 #chat-room-screen clone 一份，改成适合预览的样子。
+// 关键点是：不重写结构，只做「隐藏浮层 + 填示例内容」这两件事。
+// 这样以后改 index.html 的顶栏/底栏，预览自动跟着变，不会再漂移。
+function buildPreviewShellHtml() {
+    const real = document.getElementById('chat-room-screen');
+    if (!real) return '';
+
+    const clone = real.cloneNode(true);
+    // scopeBubbleCss 生成的选择器是 #chat-room-screen.chat-active-preview.chat-active-preview，
+    // 这里必须挂上同名 class，否则预览里什么都不生效。
+    clone.classList.add('screen', 'active', `chat-active-${PREVIEW_CHAT_ID}`);
+    // preview-root 是取景框用的钩子（见 updateBubbleCssPreview 里那段布局 CSS）
+    clone.classList.add('preview-root');
+    // 动画会让 iframe 每次重画都闪一下
+    clone.classList.add('no-anim');
+
+    // clone 出来的 id 会和主文档重名。iframe 是独立 document 所以不会真冲突，
+    // 但内部 id 选择器（#sticker-bar 这类）要能命中，所以 id 一律保留。
+
+    PREVIEW_HIDE_IDS.forEach(id => {
+        const el = clone.querySelector(`#${id}`);
+        if (el) el.style.setProperty('display', 'none', 'important');
+    });
+
+    // 设置侧边栏占了 clone 出来的一大半体积（几百个表单控件），预览里永远看不到，
+    // 直接摘掉而不是 display:none —— 每次改一个字符都要重建一遍 iframe，省下来的是实打实的。
+    const sidebar = clone.querySelector('#chat-settings-sidebar');
+    if (sidebar) sidebar.remove();
+
+    // 预览里不该出现真实数据：标题/状态换成示例文案
+    const title = clone.querySelector('#chat-room-title');
+    if (title) title.textContent = '聊天对象';
+    const statusText = clone.querySelector('#chat-room-status-text');
+    if (statusText) statusText.textContent = '在线';
+    const subtitle = clone.querySelector('#chat-room-subtitle');
+    if (subtitle) subtitle.style.display = 'flex';
+
+    // 输入框：真实 DOM 里不是 disabled 的，预览也别 disable
+    // （旧模板写了 disabled，用户针对 :disabled 调的样式在预览里对不上）
+    const input = clone.querySelector('#message-input');
+    if (input) {
+        input.removeAttribute('disabled');
+        input.setAttribute('value', '');
+        input.setAttribute('placeholder', '输入消息...');
+    }
+
+    // 示例气泡塞进真实的 #message-area
+    const area = clone.querySelector('#message-area');
+    if (area) area.innerHTML = getDynamicBubblePreview();
+
+    return clone.outerHTML;
+}
+
+// 每个预览视图额外补的一点布局 CSS。
+// iframe 只有 200px 高，装不下整个聊天室，所以按视图把注意力放到对应区域：
+// 看顶栏就把消息区压扁，看底栏就把底栏顶到可见处。
+// 注意这些规则都不带用户 scope —— 它们是「取景框」，不该被用户 CSS 影响，
+// 也不该影响用户判断自己写的样式生效没有。
+// 取景框只有 200px 高，装不下「顶栏 + 一屏气泡 + 底栏」。
+// 所以每个视图只留自己那一块：调气泡时不需要看见顶栏底栏（气泡全家福要占满整窗，
+// 这也是旧模板的行为），调顶栏/底栏时反过来把消息区让出去。
+const PREVIEW_FOCUS_CSS = {
+    bubbles: `
+        /* 气泡视图：把 chrome 收掉，200px 全给气泡全家福 */
+        #chat-room-screen.preview-root .app-header,
+        #chat-room-screen.preview-root .chat-input-wrapper { display: none !important; }
+        #chat-room-screen.preview-root .message-area {
+            padding-bottom: 10px !important;
+            overflow-y: auto !important;
+        }
+    `,
+    header: `
+        /* 顶栏视图：只留顶栏，下面留一点消息区做背景参照 */
+        #chat-room-screen.preview-root .chat-input-wrapper { display: none !important; }
+        #chat-room-screen.preview-root .app-header { position: relative; z-index: 3; }
+        #chat-room-screen.preview-root .message-area {
+            padding-bottom: 10px !important;
+            opacity: 0.35;
+        }
+    `,
+    footer: `
+        /* 底栏视图：只留底栏。它本身是 absolute bottom:0，
+           顶栏收掉后把消息区淡成背景，视线落在底栏上 */
+        #chat-room-screen.preview-root .app-header { display: none !important; }
+        #chat-room-screen.preview-root .message-area { opacity: 0.35; }
+        #chat-room-screen.preview-root .chat-input-wrapper { z-index: 60; }
+    `
+};
 
 function updateBubbleCssPreview(previewContainer, css, useDefault, theme) {
     if (!previewContainer) return;
-    
-    let innerContainer = document.getElementById('preview-inner-container');
-    let titleEl = document.getElementById('preview-mode-title');
+
+    const innerContainer = document.getElementById('preview-inner-container');
+    const titleEl = document.getElementById('preview-mode-title');
     if (!innerContainer) return;
 
-    titleEl.textContent = previewModes[currentPreviewMode].title;
-    
+    const mode = previewModes[currentPreviewMode] || previewModes[0];
+    if (titleEl) titleEl.textContent = mode.title;
+
     let iframe = document.getElementById('preview-iframe');
     if (!iframe) {
         iframe = document.createElement('iframe');
@@ -251,22 +295,32 @@ function updateBubbleCssPreview(previewContainer, css, useDefault, theme) {
 
     const doc = iframe.contentWindow.document;
     doc.open();
-    
-    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(el => el.outerHTML).join('\n');
+
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+        // 别把上一轮生成的 custom-bubble-style-for-* 也搬进来，
+        // 否则用户当前编辑的 CSS 会和某个聊天已保存的那份叠在一起
+        .filter(el => !(el.id || '').startsWith('custom-bubble-style-for-'))
+        .filter(el => !(el.id || '').startsWith('offline-narration-style-'))
+        .map(el => el.outerHTML).join('\n');
+
     // 不加 !important，这样你手写的高级 CSS 可以轻松覆盖它，也能防止气泡无 CSS 时变透明
-    let fallbackCss = `
+    const fallbackCss = `
         /* 强制提供底层主题色兜底 */
         .message-wrapper.sent .message-bubble, .message-wrapper.sent .voice-bubble { background-color: ${theme.sent.bg}; color: ${theme.sent.text}; }
         .message-wrapper.received .message-bubble, .message-wrapper.received .voice-bubble { background-color: ${theme.received.bg}; color: ${theme.received.text}; }
     `;
-    const userCss = (!useDefault && css) ? css : '';
 
-    let templateHtml = previewModes[currentPreviewMode].template;
-    if (currentPreviewMode === 0) {
-        templateHtml = getDynamicBubblePreview(); // 不再需要传参，直接输出全家福
-    }
+    // 【关键】用户 CSS 走的是和实际应用完全一样的改写函数，只是 chatId 换成 'preview'。
+    // 这条不能改成原样注入 —— 那正是「预览生效、实际不生效」的来源。
+    const rawUserCss = (!useDefault && css) ? css : '';
+    const userCss = (rawUserCss && typeof scopeBubbleCss === 'function')
+        ? scopeBubbleCss(rawUserCss, PREVIEW_CHAT_ID)
+        : '';
 
-doc.write(`
+    const shellHtml = buildPreviewShellHtml();
+    const focusCss = PREVIEW_FOCUS_CSS[mode.focus] || '';
+
+    doc.write(`
         <!DOCTYPE html>
         <html>
         <head>
@@ -274,40 +328,53 @@ doc.write(`
             ${styles}
             <style>
                 html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background: transparent; }
-                
-                /* --- 修改：预览窗口基础背景色 --- */
-                #chat-room-screen { 
-                    position: relative !important; height: 100% !important; width: 100% !important; 
-                    display: block !important; transform: none !important; 
-                    background-color: #eef2f5 !important; /* 舒适的浅灰蓝背景 */
-                    overflow: hidden !important; 
-                }
-                
-                /* --- 新增：超大号居中倾斜的 SAMPLE 水印 --- */
-                #chat-room-screen::before {
-                    content: "OuO";
-                    position: absolute;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%) rotate(-35deg);
-                    font-size: 120px; /* 超大字号 */
-                    font-weight: 600;
-                    color: rgba(0, 0, 0, 0.1); /* 非常浅的颜色，不喧宾夺主 */
-                    font-family: Arial, sans-serif;
-                    letter-spacing: 10px;
-                    pointer-events: none; /* 关键：穿透点击，绝不会阻挡鼠标 */
-                    white-space: nowrap;
+
+                /* 预览取景框：真实聊天室是 flex 撑满手机壳，这里要塞进 200px 的小窗 */
+                #chat-room-screen.preview-root {
+                    position: relative !important;
+                    height: 100% !important; width: 100% !important;
+                    display: flex !important; flex-direction: column !important;
+                    background-color: #eef2f5 !important;
+                    overflow: hidden !important;
+                    transform: none !important;
+                    animation: none !important;
+                    /* 手机壳圆角变量在这里没有意义，清掉免得底栏出现奇怪的圆角 */
+                    --phone-corner-radius: 0px;
+                    /* 预览里没有刘海/home 条，安全区归零，否则底栏凭空多一截留白 */
+                    --safe-bottom: 0px;
                 }
 
-                /* 去除自带的 iframe 滚动条 */
-                .message-area::-webkit-scrollbar { width: 4px; }
-                .message-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+                #chat-room-screen.preview-root::before {
+                    content: "OuO";
+                    position: absolute;
+                    top: 50%; left: 50%;
+                    transform: translate(-50%, -50%) rotate(-35deg);
+                    font-size: 120px;
+                    font-weight: 600;
+                    color: rgba(0, 0, 0, 0.1);
+                    font-family: Arial, sans-serif;
+                    letter-spacing: 10px;
+                    pointer-events: none;
+                    white-space: nowrap;
+                    z-index: 0;
+                }
+
+                /* 消息区在真实页面里靠 padding-bottom 避开底栏，预览窗太矮要收一收 */
+                #chat-room-screen.preview-root .message-area {
+                    padding: 10px !important;
+                    padding-bottom: 90px !important;
+                }
+
+                #chat-room-screen.preview-root .message-area::-webkit-scrollbar { width: 4px; }
+                #chat-room-screen.preview-root .message-area::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+                ${focusCss}
                 ${fallbackCss}
             </style>
             <style id="user-custom-css">${userCss}</style>
         </head>
         <body>
-            ${templateHtml}
+            ${shellHtml}
         </body>
         </html>
     `);
@@ -507,6 +574,31 @@ function setupBubblePresets() {
                 typeCss += ` border-radius: ${conf.radius}px !important;`;
                 isTypeChanged = true;
                 hasChanges = true;
+
+                // 旁白是「连续多条拼成一张大卡片」的：chat_room.css 用 :has(+...) / +
+                // 把相邻两条之间的圆角和边框压平。上面这句 border-radius 带 !important
+                // 且生成得更晚，会把那几条压平规则全部盖掉 —— 表现就是用户一调圆角，
+                // 大卡片碎成一堆各自带圆角的小气泡。
+                // 所以这里必须把拼接规则按用户的新半径重新生成一遍：
+                // 首条只圆上两角、末条只圆下两角、中间四角全平。
+                if (isNarration) {
+                    const nw = '.message-wrapper.narration-wrapper';
+                    const r = `${conf.radius}px`;
+                    // 后面还有旁白 → 我不是最后一条 → 底部两角压平
+                    basicCss += `${nw}:has(+ ${nw}) ${sel} {`
+                        + ` border-bottom-left-radius: 0 !important;`
+                        + ` border-bottom-right-radius: 0 !important;`
+                        + ` border-top-left-radius: ${r} !important;`
+                        + ` border-top-right-radius: ${r} !important; }\n`;
+                    // 前面还有旁白 → 我不是第一条 → 顶部两角压平
+                    basicCss += `${nw} + ${nw} ${sel} {`
+                        + ` border-top-left-radius: 0 !important;`
+                        + ` border-top-right-radius: 0 !important; }\n`;
+                    // 既有前也有后 → 中间条 → 四角全平
+                    // （上面两条已经能推出这个结果，但显式写一遍防止将来谁改动其中一条时破功）
+                    basicCss += `${nw} + ${nw}:has(+ ${nw}) ${sel} {`
+                        + ` border-radius: 0 !important; }\n`;
+                }
             }
 
             // 4. 字号对比
@@ -527,8 +619,8 @@ function setupBubblePresets() {
             if (conf.strokeW !== defaultConf.strokeW || conf.strokeC.toUpperCase() !== defaultConf.strokeC.toUpperCase() || JSON.stringify(conf.strokeSides) !== JSON.stringify(defaultConf.strokeSides)) {
                 isTypeChanged = true;
                 hasChanges = true;
+                const sides = conf.strokeSides ||[];
                 if (conf.strokeW > 0) {
-                    const sides = conf.strokeSides ||[];
                     if (sides.length === 4) {
                         typeCss += ` border: ${conf.strokeW}px solid ${conf.strokeC} !important;`;
                     } else if (sides.length > 0) {['top', 'right', 'bottom', 'left'].forEach(side => {
@@ -543,6 +635,23 @@ function setupBubblePresets() {
                     }
                 } else {
                     typeCss += ` border: none !important;`;
+                }
+
+                // 旁白的上下描边同样要「只描整组的外沿」，理由和圆角那条一样：
+                // 选了上+下的话，每条旁白都会各自画一条上边和一条下边，
+                // 相邻两条的接缝处就叠出两条横线，横穿本该是一整张的大卡片。
+                // 所以把内侧那条边去掉：不是最后一条就没有下边，不是第一条就没有上边。
+                // 左右边不用管 —— 它们沿着卡片侧面连成一条，本来就是想要的效果。
+                if (isNarration && conf.strokeW > 0) {
+                    const nw = '.message-wrapper.narration-wrapper';
+                    if (sides.length === 4 || sides.includes('bottom')) {
+                        // 后面还有旁白 → 我不是最后一条 → 去掉下边
+                        basicCss += `${nw}:has(+ ${nw}) ${sel} { border-bottom: none !important; }\n`;
+                    }
+                    if (sides.length === 4 || sides.includes('top')) {
+                        // 前面还有旁白 → 我不是第一条 → 去掉上边
+                        basicCss += `${nw} + ${nw} ${sel} { border-top: none !important; }\n`;
+                    }
                 }
             }
 
@@ -964,7 +1073,7 @@ function syncBasicUiFromCss(css) {
                 return updated;
             };
             let updatedP = updateChats(db.characters ||[]); let updatedG = updateChats(db.groups ||[]);
-            if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
+            if (updatedP || updatedG) { await saveGlobalKeys(['bubbleCssPresets']); await _persistChatsAfterPresetChange(); }
 
             showToast('外观保存成功！');
             if (typeof window.populateChatThemeSelects === 'function') window.populateChatThemeSelects();
@@ -1005,7 +1114,7 @@ function syncBasicUiFromCss(css) {
                     return updated;
                 };
                 let updatedP = resetChats(db.characters ||[]); let updatedG = resetChats(db.groups ||[]);
-                if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
+                if (updatedP || updatedG) { await saveGlobalKeys(['bubbleCssPresets']); await _persistChatsAfterPresetChange(); }
 
                 if(window.showToast) showToast('预设删除成功');
                 if(addBtn) document.getElementById('global-bubble-add-btn').click();
@@ -1069,7 +1178,7 @@ function syncBasicUiFromCss(css) {
                         return updated;
                     };
                     let updatedP = updateChats(db.characters ||[]); let updatedG = updateChats(db.groups ||[]);
-                    if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
+                    if (updatedP || updatedG) { await saveGlobalKeys(['bubbleCssPresets']); await _persistChatsAfterPresetChange(); }
 
                     openManagePresetsModal(); 
                     if (typeof window.populateChatThemeSelects === 'function') window.populateChatThemeSelects();
@@ -1104,7 +1213,7 @@ function syncBasicUiFromCss(css) {
                         return updated;
                     };
                     let updatedP = resetChats(db.characters ||[]); let updatedG = resetChats(db.groups ||[]);
-                    if (updatedP || updatedG) await saveGlobalKeys(['bubbleCssPresets']);
+                    if (updatedP || updatedG) { await saveGlobalKeys(['bubbleCssPresets']); await _persistChatsAfterPresetChange(); }
 
                     openManagePresetsModal(); 
                     if (typeof window.populateChatThemeSelects === 'function') window.populateChatThemeSelects();

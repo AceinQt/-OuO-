@@ -2,6 +2,26 @@
 // chat_bubble_factory.js - 专门负责生成聊天气泡的 DOM 元素
 // ==========================================
 
+// ================================================================
+// === isMultiSelectBlockingDetail: 多选模式下拦掉"看详情"的动作 ===
+// ================================================================
+// 多选模式下点气泡只该做一件事：勾选/取消勾选这条消息。但气泡内部有一堆
+// 在**创建时**就绑在元素自己身上的 click（看大图、生图、展开通话记录、
+// 展开撤回原文、分享卡片弹详情……），它们在 target 阶段就跑了，早于
+// chat_room.js 挂在 #message-area 上的委托，所以点一下会"又看详情又勾选"，
+// 或者被 stopPropagation 吞掉、连勾都勾不上。
+//
+// ★ 这里只 return true 表示"别做详情动作"，**不要在这里 stopPropagation**：
+//   要让事件继续冒泡到 #message-area，那边的委托才会把它翻成一次勾选。
+//   带了 stopPropagation 的调用方，必须把这个判断放在 stopPropagation 之前。
+//
+// 判断用 typeof：chat_bubble_factory.js 在 globals.js 之后加载，正常情况
+// 一定拿得到；但它是被人用 typeof 防御式调用的公共函数，别让一个未定义
+// 的全局把整条渲染链路炸掉。
+function isMultiSelectBlockingDetail() {
+    return typeof isInMultiSelectMode !== 'undefined' && isInMultiSelectMode;
+}
+
 function createMessageBubbleElement(message) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     const { role, content, timestamp, id, transferStatus, giftStatus, stickerData, senderId, quote, isWithdrawn, originalContent } = message;
@@ -134,6 +154,8 @@ function createMessageBubbleElement(message) {
         const withdrawnMessageSpan = wrapper.querySelector('.withdrawn-message');
         if (withdrawnMessageSpan) {
             withdrawnMessageSpan.addEventListener('click', () => {
+                // 多选模式下不展开原文，交给 #message-area 的委托去勾选。
+                if (isMultiSelectBlockingDetail()) return;
                 const withdrawnContent = wrapper.querySelector('.withdrawn-content');
                 if (withdrawnContent && withdrawnContent.textContent.trim()) {
                     withdrawnContent.classList.toggle('active');
@@ -194,7 +216,7 @@ function createMessageBubbleElement(message) {
                 avatarUrl = sender.avatar;
                 senderNickname = sender.groupNickname;
             } else {
-                avatarUrl = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+                avatarUrl = './png/avatar_default.jpg';
             }
         }
         bubbleTheme = theme.received;
@@ -252,6 +274,13 @@ function createMessageBubbleElement(message) {
     const imageRecogMatch = content.match(imageRecogRegex);
     const textMatch = content.match(textRegex);
     const locationMatch = content.match(locationRegex);
+    // 分享卡片：新格式 [xxx的分享：\n标题：...] 优先，旧格式 [喵坛分享]标题：... 兜底。
+    // 解析统一放在 chat_feature_share.js，正则和字段拆分只有那一份。
+    let shareData = null;
+    if (typeof parseShareMessage === 'function') shareData = parseShareMessage(content);
+    if (!shareData && typeof parseLegacyForumShare === 'function') {
+        shareData = parseLegacyForumShare(content);
+    }
 
     if (pomodoroMatch) {
         const taskName = pomodoroMatch[1];
@@ -259,12 +288,14 @@ function createMessageBubbleElement(message) {
         const pokeCount = pomodoroMatch[3];
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'pomodoro-record-card';
-        bubbleElement.innerHTML = `<img src="https://i.postimg.cc/sgdS9khZ/chan-122.png" class="pomodoro-record-icon" alt="pomodoro complete"><div class="pomodoro-record-body"><p class="task-name">${taskName}</p></div>`;
+        bubbleElement.innerHTML = `<img src="./png/card_pomodoro.png" class="pomodoro-record-icon" alt="pomodoro complete"><div class="pomodoro-record-body"><p class="task-name">${taskName}</p></div>`;
         const detailsDiv = document.createElement('div');
         detailsDiv.className = 'pomodoro-record-details';
         detailsDiv.innerHTML = `<p><strong>任务名称:</strong> ${taskName}</p><p><strong>专注时长:</strong> ${duration}</p><p><strong>"戳一戳"次数:</strong> ${pokeCount}</p>`;
         wrapper.appendChild(detailsDiv);
         bubbleElement.addEventListener('click', () => {
+            // 多选模式下不展开专注详情，交给委托去勾选
+            if (isMultiSelectBlockingDetail()) return;
             detailsDiv.classList.toggle('active');
         });
     } else if (unifiedStickerMatch || legacyReceivedStickerMatch) {
@@ -309,36 +340,52 @@ function createMessageBubbleElement(message) {
         } else {
             giftText = isSent ? '您有一份礼物～' : '您有一份礼物～';
         }
-        bubbleElement.innerHTML = `<img src="https://i.postimg.cc/rp0Yg31K/chan-75.png" alt="gift" class="gift-card-icon"><div class="gift-card-text">${giftText}</div><div class="gift-card-received-stamp">已查收</div>`;
+        bubbleElement.innerHTML = `<img src="./png/card_gift.png" alt="gift" class="gift-card-icon"><div class="gift-card-text">${giftText}</div><div class="gift-card-received-stamp">已查收</div>`;
         const description = groupGiftMatch ? groupGiftMatch[3].trim() : match[1].trim();
         const descriptionDiv = document.createElement('div');
         descriptionDiv.className = 'gift-card-description';
         descriptionDiv.textContent = description;
         wrapper.appendChild(descriptionDiv);
-    } else if (content.startsWith('[喵坛分享]')) {
-        const forumShareRegex = /\[喵坛分享\]标题：([\s\S]+?)\n内容：([\s\S]+)/;
-        const forumShareMatch = content.match(forumShareRegex);
+    } else if (shareData) {
+        // 万能分享卡片。三个来源（用户手填 / AI 自己发 / 喵坛帖子）共用这一套渲染，
+        // 页头文字就是用户填的「类别」—— 喵坛来的填的是「来自喵坛的分享」，
+        // 所以看起来和旧版一模一样。
+        //
+        // 摘要**只在这里截**，消息里存的是全文：以前 forum_share.js 发送时先截 50 字
+        // 再存，全文就永久丢了，点开详情也拿不回来。截断交给 CSS 的 line-clamp。
+        bubbleElement = document.createElement('div');
+        bubbleElement.className = 'forum-share-card';
 
-        if (forumShareMatch) {
-            const title = forumShareMatch[1].trim();
-            const fullContent = forumShareMatch[2].trim();
-            let displaySummary = fullContent.substring(0, 50);
-            if (fullContent.length > 50) {
-                displaySummary += '...';
-            }
+        const header = document.createElement('div');
+        header.className = 'forum-share-header';
+        header.innerHTML = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M1 18.5088C1 13.1679 4.90169 8.77098 9.99995 7.84598V5.51119C9.99995 3.63887 12.1534 2.58563 13.6313 3.73514L21.9742 10.224C23.1323 11.1248 23.1324 12.8752 21.9742 13.7761L13.6314 20.2649C12.1534 21.4144 10 20.3612 10 18.4888V16.5189C7.74106 16.9525 5.9625 18.1157 4.92778 19.6838C4.33222 20.5863 3.30568 20.7735 2.55965 20.5635C1.80473 20.3511 1.00011 19.6306 1 18.5088ZM12.4034 5.31385C12.2392 5.18613 11.9999 5.30315 11.9999 5.51119V9.41672C11.9999 9.55479 11.8873 9.66637 11.7493 9.67008C8.09094 9.76836 4.97774 12.0115 3.66558 15.1656C3.46812 15.6402 3.31145 16.1354 3.19984 16.6471C3.07554 17.217 3.00713 17.8072 3.00053 18.412C3.00018 18.4442 3 18.4765 3 18.5088C3.00001 18.6437 3.18418 18.6948 3.25846 18.5822C3.27467 18.5577 3.29101 18.5332 3.30747 18.5088C3.30748 18.5088 3.30746 18.5088 3.30747 18.5088C3.63446 18.0244 4.01059 17.5765 4.42994 17.168C4.71487 16.8905 5.01975 16.6313 5.34276 16.3912C7.05882 15.1158 9.28642 14.3823 11.7496 14.3357C11.8877 14.3331 12 14.4453 12 14.5834V18.4888C12 18.6969 12.2393 18.8139 12.4035 18.6862L20.7463 12.1973C20.875 12.0973 20.875 11.9028 20.7463 11.8027L12.4034 5.31385Z"/>
+</svg>`;
+        const headerText = document.createElement('span');
+        // textContent：类别是自由文本，不能当 HTML
+        headerText.textContent = shareData.category || '分享';
+        header.appendChild(headerText);
 
-            bubbleElement = document.createElement('div');
-            bubbleElement.className = 'forum-share-card';
-            bubbleElement.innerHTML = `
-                <div class="forum-share-header">
-                    <svg viewBox="0 0 24 24"><path d="M21,3H3A2,2 0 0,0 1,5V19A2,2 0 0,0 3,21H21A2,2 0 0,0 23,19V5A2,2 0 0,0 21,3M21,19H3V5H21V19M8,11H16V9H8V11M8,15H13V13H8V15Z" /></svg>
-                    <span>来自喵坛的分享</span>
-                </div>
-                <div class="forum-share-content">
-                    <div class="forum-share-title">${title}</div>
-                    <div class="forum-share-summary">${displaySummary}</div>
-                </div>`;
-        }
+        const body = document.createElement('div');
+        body.className = 'forum-share-content';
+        const titleEl = document.createElement('div');
+        titleEl.className = 'forum-share-title';
+        titleEl.textContent = shareData.title || '';
+        const summaryEl = document.createElement('div');
+        summaryEl.className = 'forum-share-summary';
+        summaryEl.textContent = shareData.body || '';
+        body.appendChild(titleEl);
+        body.appendChild(summaryEl);
+
+        bubbleElement.appendChild(header);
+        bubbleElement.appendChild(body);
+
+        // 卡片一直有 cursor:pointer 和 hover 抬起，但过去没绑过 click，点了没反应
+        bubbleElement.addEventListener('click', () => {
+            // 多选模式下不弹详情，交给 #message-area 的委托去勾选这张卡片
+            if (isMultiSelectBlockingDetail()) return;
+            if (typeof openShareDetailModal === 'function') openShareDetailModal(shareData);
+        });
     } else if (voiceMatch) {
         const voiceText = voiceMatch[1].trim();
         bubbleElement = document.createElement('div');
@@ -365,7 +412,7 @@ function createMessageBubbleElement(message) {
         //   实际只画得出两条竖线。竖条同时兼任播放进度条。
         bubbleElement.innerHTML =
             `<button type="button" class="voice-play-btn" data-voice-state="idle"`
-            + ` aria-label="播放语音（首次需要合成，约 20 秒）">`
+            + ` aria-label="播放语音（首次需要合成，可能要等一会儿）">`
             + `<svg class="vp-icon-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>`
             + `<svg class="vp-icon-stop" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>`
             + `<svg class="vp-icon-fail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6"/><path d="M12 16.5v.5"/></svg>`
@@ -401,7 +448,7 @@ function createMessageBubbleElement(message) {
 
         const overlay = document.createElement('div');
         overlay.className = 'pv-card-image-overlay';
-        overlay.style.backgroundImage = `url("${isSent ? 'https://i.postimg.cc/L8NFrBrW/1752307494497.jpg' : 'https://i.postimg.cc/1tH6ds9g/1752301200490.jpg'}")`;
+        overlay.style.backgroundImage = `url("${isSent ? './png/card_photo_sent.jpg' : './png/card_photo_recv.jpg'}")`;
 
         const footer = document.createElement('div');
         footer.className = 'pv-card-footer';
@@ -438,6 +485,9 @@ function createMessageBubbleElement(message) {
         generateButton.hidden = hasImageMedia && (!media || livePending || media.state === 'ready');
         generateButton.addEventListener('click', async event => {
             event.preventDefault();
+            // ★ 必须在 stopPropagation 之前判：多选模式下这次点击要留给
+            //   #message-area 的委托去勾选，吞掉事件就勾不上了。
+            if (isMultiSelectBlockingDetail()) return;
             event.stopPropagation();
             if (typeof generateImageForMessage !== 'function') {
                 if (typeof showToast === 'function') showToast('图片生成功能尚未加载');
@@ -468,6 +518,8 @@ function createMessageBubbleElement(message) {
             zoomButton.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
             zoomButton.addEventListener('click', event => {
                 event.preventDefault();
+                // 多选模式下别开图片查看器，这次点击留给委托去勾选
+                if (isMultiSelectBlockingDetail()) return;
                 event.stopPropagation();
                 const src = overlay.dataset.imageObjectUrl;
                 if (src && typeof openImageViewer === 'function') openImageViewer(message, src);
@@ -587,6 +639,8 @@ function createMessageBubbleElement(message) {
         legacyZoom.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
         legacyZoom.addEventListener('click', event => {
             event.preventDefault();
+            // 多选模式下别开图片查看器，这次点击留给委托去勾选
+            if (isMultiSelectBlockingDetail()) return;
             event.stopPropagation();
             if (legacyImage.src && typeof openImageViewer === 'function') openImageViewer(message, legacyImage.src);
         });
@@ -606,7 +660,7 @@ function createMessageBubbleElement(message) {
                 event.preventDefault();
                 // 多选模式下不吞事件：交给 chat_room 的委托去勾选这条消息。
                 // 转文字不可逆，误触的代价比"少一次转化"大得多。
-                if (typeof isInMultiSelectMode !== 'undefined' && isInMultiSelectMode) return;
+                if (isMultiSelectBlockingDetail()) return;
                 event.stopPropagation();
                 if (typeof isImageConverting === 'function' && isImageConverting(message.id)) {
                     if (typeof showToast === 'function') showToast('该图片正在转化中');
@@ -789,6 +843,9 @@ function createCollapsedCallBubble(sessionId, sessionMsgs, isSentByUser) {
         <path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z"/>
     </svg>`;
     expandBtn.addEventListener('click', async (e) => {
+        // 多选模式下别弹"展开通话记录"的确认框（它还会 await，把勾选卡住），
+        // 这次点击留给委托去勾选。放在 stopPropagation 之前。
+        if (isMultiSelectBlockingDetail()) return;
         e.stopPropagation();
         const ok = await AppUI.confirm('展开通话期间的聊天记录？', '通话记录','展开','取消');
         if (ok) expandCallSession(sessionId, wrapper);

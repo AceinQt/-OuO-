@@ -34,7 +34,9 @@
     }
 
     async function persist() {
-        try { if (typeof window.saveData === 'function') await window.saveData(); }
+        // 只写自己这一项设置（含 Web Push 订阅凭证 subscription）。
+        // 过去调 saveData() 全量覆盖，改一个开关就会盖掉另一个窗口的改动。
+        try { if (typeof window.saveGlobalKeys === 'function') await window.saveGlobalKeys(['globalPushSettings']); }
         catch (e) { console.warn('[推送节点] 保存设置失败:', e); }
     }
 
@@ -287,10 +289,32 @@ async function subscribe() {
         return finalContent;
     }
 
-    // 预掷 summary/idle 的 draft：按 scheduledAt 升序取“首个抽中”的赢家，
-    // 改写 draft(只留赢家、锁 probability=100，其余删掉)。
-    // 返回 { deliverAt, payload } 表示需要在未来时刻推送；返回 null 表示无需 CF
-    // (无可定点槽 / 睡过头 / 赢家在过去 → 交给本地投递)。
+    // 槽位 ID(noon_0 / afternoon_0)里 '_' 之前那截就是它属于哪个时段，
+    // 与本地投递侧的 paWindowOfSlot 同义 —— 两边判定"同一时段"必须一致。
+    function windowOfSlot(slotId) { return String(slotId).toLowerCase().split('_')[0]; }
+
+    // 池里是否还有「没被预掷过、且尚未到点」的时段(跨时段续投的再放行判据)。
+    // _cfWindow 记着上次决策过的时段，它自己不算"没决策过"。
+    function hasUndecidedWindow(draft, now) {
+        if (!draft || !draft.content) return false;
+        return Object.keys(draft.content).some(slotId => {
+            if (draft._cfWindow && windowOfSlot(slotId) === draft._cfWindow) return false;
+            const msgs = draft.content[slotId] && draft.content[slotId].messages;
+            return Array.isArray(msgs) && msgs.some(m => typeof m.scheduledAt === 'number' && m.scheduledAt > now);
+        });
+    }
+
+    // 预掷 summary/idle 的 draft：**只消费「最早那个尚未到点的时段」**，在该时段内按 scheduledAt
+    // 升序取首个抽中的赢家，改写 draft(该时段只留赢家、锁 probability=100，同时段其余槽删掉)。
+    //
+    // 【既定规则·跨时段】其他时段的槽必须原样留着。生成端一次产出两个时段(getTargetSlots)，
+    //   以前这里不论赢家属于哪个时段，都把 draft 里其余所有槽一律删掉 —— 而 handoffChat 是在
+    //   生成完成那一刻就调的，于是第二个时段在出生后几毫秒内就被销毁，永远没机会发出去：
+    //   第一个时段送达后池子即空 → 保活判定"没有有效草稿" → 5 分钟后又付费生成一轮。
+    //   现在第二个时段留在池里，等这次的 CF 任务到点后由 reconcileChat 再单独移交。
+    // 已过点的槽也一概不动：CF 推不了过去的时刻，那是本地迟到补投的活儿。
+    //
+    // 返回 { deliverAt, payload, window } 表示需要在未来时刻推送；返回 null 表示本轮无需 CF。
     // out 是可选的出参对象，失败时把原因写进 out.reason，供诊断展示。
     function preRollDraft(chat, type, draft, out) {
         const bail = (r) => { if (out) out.reason = r; return null; };
@@ -308,27 +332,31 @@ async function subscribe() {
         }
         if (!slots.length) return bail('草稿里没有带 scheduledAt 的槽位，只能交给本地投递'); // 完全交给本地
 
-        slots.sort((a, b) => a.deliverAt - b.deliverAt);
+        // 已过点的槽不参与预掷、也不删 —— 交给本地迟到补投
+        const pending = slots.filter(s => s.deliverAt > now).sort((a, b) => a.deliverAt - b.deliverAt);
+        if (!pending.length) {
+            return bail(`${slots.length} 组的发送时刻都已经过了，交给本地补投`);
+        }
+
+        // 本轮只处理最早那个时段
+        const winWindow = windowOfSlot(pending[0].slotId);
+        const inWindow = pending.filter(s => windowOfSlot(s.slotId) === winWindow);
+
         let winner = null;
-        for (const s of slots) {
+        for (const s of inWindow) {
             if (Math.random() * 100 <= s.prob) { winner = s; break; }
         }
 
-        if (winner) {
-            // 只留赢家(锁100)，其余所有槽(含无 scheduledAt 的)一律删除 → 本地单一真相
-            for (const slotId of Object.keys(draft.content)) {
-                if (slotId === winner.slotId) draft.content[slotId].probability = 100;
-                else delete draft.content[slotId];
-            }
-        } else {
-            // 睡过头：删掉参与预掷的定时槽（无定时槽保留给本地）
-            for (const s of slots) delete draft.content[s.slotId];
-            return bail(`预掷全部没中(共 ${slots.length} 组，按概率“睡过头”)，本轮不发`);
+        if (!winner) {
+            // 睡过头：只删本时段参与预掷的槽，后面的时段留着，下次 reconcile 再掷
+            for (const s of inWindow) delete draft.content[s.slotId];
+            return bail(`${winWindow} 时段预掷没中(共 ${inWindow.length} 组，按概率“睡过头”)，本时段不发`);
         }
 
-        // 赢家已过点 → 本地迟到补投，无需 CF
-        if (winner.deliverAt <= now) {
-            return bail(`赢家的发送时刻已经过了 ${Math.round((now - winner.deliverAt) / 60000)} 分钟，交给本地补投`);
+        // 只留赢家(锁100)：删掉**同时段**其余槽(含无 scheduledAt 的) → 本地单一真相；别的时段不动
+        for (const slotId of Object.keys(draft.content)) {
+            if (slotId === winner.slotId) { draft.content[slotId].probability = 100; continue; }
+            if (windowOfSlot(slotId) === winWindow) delete draft.content[slotId];
         }
 
         const notifMsgs = winner.slot.messages.map(m => ({ role: 'assistant', content: draftMsgToContent(chat, type, m) }));
@@ -336,7 +364,7 @@ async function subscribe() {
         if (!payload) return bail('消息内容算不出通知文案(可能都是系统/视觉类消息)');
         payload.chatId = chat.id;
         payload.chatType = type;
-        return { deliverAt: winner.deliverAt, payload };
+        return { deliverAt: winner.deliverAt, payload, window: winWindow };
     }
 
     // 按 chatId 在 CF 端撤销任务（不依赖前端内存，刷新后依然可靠）。
@@ -355,12 +383,15 @@ async function subscribe() {
     }
 
     // 清除 summary/idle draft 上的移交标记（撤销后允许重新移交）
+    // _cfDeliverAt / _cfWindow 是跨时段续投的状态：撤销意味着这条草稿在 CF 上已经没有任务了，
+    // 标记不一起清就会被 reconcileChat 当成"还有任务在飞"而跳过，草稿彻底失去再移交的机会。
     function clearSiHandoff(chat) {
         const q = chat && chat.proactiveMessageQueue;
         if (!Array.isArray(q)) return;
         for (const m of q) {
             if (m && (m.type === 'time_window_summary' || m.type === 'time_window_idle')) {
                 delete m._cfHandedOff; delete m._cfTaskId;
+                delete m._cfDeliverAt; delete m._cfWindow;
             }
         }
     }
@@ -410,6 +441,12 @@ async function subscribe() {
     async function schedulePeek(chat, type, say) {
         say = say || (() => {});
         if (type === 'private' && chat.offlineModeEnabled) return say('peek: 处于离线模式，不移交');
+        // 【既定规则】peek 只在随机模式投递(与本地路径 checkAndDeliverProactiveMessages 同步)。
+        //   fixed 模式自己付费预生成 idle 池，再叠 peek 就是双份主动消息。
+        //   注意 reconcileChat 上游只挡了 dnd/timer，fixed 会走到这里，故必须在此再判一次。
+        if ((chat.proactiveMode || 'random') !== 'random') {
+            return say('peek: 主动模式是 ' + (chat.proactiveMode || 'random') + '，按设计只有随机模式吃 peek');
+        }
         const q = chat.proactiveMessageQueue;
         if (!Array.isArray(q)) return say('peek: 没有消息池');
         const peek = q.find(m => m.type === 'time_window_peek');
@@ -530,7 +567,16 @@ async function subscribe() {
 
         let siActive = false;
         if (draft) {
-            if (!draft._cfHandedOff) {
+            // 【跨时段续投】以前这里只看 _cfHandedOff 这个布尔量：第一次 reconcile 决策完就永久封印。
+            //   配合当时 preRollDraft「只留一个赢家、其余时段全删」，第二个时段既发不出去也留不住。
+            //   现在 preRollDraft 一次只消费一个时段，这里在「上一个 CF 任务已到点 + 池里还有别的
+            //   时段没决策过」时重新放行，把后面的时段接着移交。
+            //   上一个任务还在飞时绝不能重新决策 —— 下面第一步就是 cfCancelChat(si)，会把在飞的撤掉。
+            //   到点判定留 10 分钟宽限(与本地 ON_TIME_NOTIFY_WINDOW_MS 同口径)：CF cron 有分钟级抖动，
+            //   刚过点就当它已发完而去撤销，有可能正好撤掉将要发出的那一条。
+            const prevPending = typeof draft._cfDeliverAt === 'number'
+                && draft._cfDeliverAt > now - 10 * 60 * 1000;
+            if (!draft._cfHandedOff || (!prevPending && hasUndecidedWindow(draft, now))) {
                 // 先清掉该会话可能残留的旧 si 任务(如重新生成场景)，再移交新的
                 await cfCancelChat(chat, 'si');
                 const out = {};
@@ -541,18 +587,20 @@ async function subscribe() {
                     const ok = await addTask({ taskId, deliverAt: decision.deliverAt, payload: decision.payload });
                     if (ok) {
                         draft._cfTaskId = taskId;
+                        draft._cfDeliverAt = decision.deliverAt; // 供上面的 prevPending 判据用
+                        draft._cfWindow = decision.window;       // 已决策过的时段，别再重复掷
                         const mins = Math.round((decision.deliverAt - now) / 60000);
-                        say(`✅ ${draft.type === 'time_window_summary' ? 'summary' : 'idle'} 已移交，约 ${mins} 分钟后推送`);
+                        say(`✅ ${draft.type === 'time_window_summary' ? 'summary' : 'idle'} 的 ${decision.window} 时段已移交，约 ${mins} 分钟后推送`);
                     } else {
                         say('❌ add-task 请求失败（网络/Worker 地址/token 检查一下）');
                     }
                 } else {
                     say('未产生任务：' + (out.reason || '未知'));
                 }
-                draft._cfHandedOff = true; // 无论掷中与否都标记：已决策，不再重复预掷/移交
+                draft._cfHandedOff = true; // 标记已决策过；后续时段靠 hasUndecidedWindow 再放行
                 if (typeof saveSingleChat === 'function') { try { await saveSingleChat(chat.id, type); } catch (_) {} }
             } else {
-                say('summary/idle 之前已决策过(_cfHandedOff)，本次跳过');
+                say('summary/idle 的当前时段已决策过(_cfHandedOff)，本次跳过');
             }
             siActive = !!(draft.content && Object.keys(draft.content).length > 0);
         } else {

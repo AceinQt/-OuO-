@@ -220,7 +220,7 @@ function setupChatListScreen() {
 // 语音消息（聊天列表侧边栏）
 // ============================================================
 // 这一层只有两个开关：总闸 + 收到后自动合成。
-//   · 音色预设 / API Key / 配额 → API 设置的语音 tab
+//   · 音色预设 / API Key / 配额 → API 设置的语音 tab（Key 随预设走，一条一把）
 //   · 归档仓库                  → 设置页的「GitHub 仓库」
 //   · 谁用什么声音              → 各自的角色档案
 // 总闸放在聊天列表这一层而不是每个聊天里，是为了"额度快用完时一键全关"；
@@ -244,11 +244,12 @@ async function saveChatSidebarVoiceSettings({ enabled, autoSynthesize } = {}) {
     // 开了但还缺东西的话现在就说清楚，否则要等到聊天里没声音才发现
     if (enabled) {
         const after = _normalizeVoiceSettings(db.voiceSettings);
-        if (!after.apiKey) {
-            return showToast('已开启，但还没填语音 API Key（API 设置 > 语音）');
-        }
         if (!after.voicePresets.length) {
             return showToast('已开启，但还没建音色预设（API 设置 > 语音）');
+        }
+        // 凭据在每条预设里，所以"缺 Key"要按预设逐条看
+        if (!after.voicePresets.some(p => voicePresetReady(p))) {
+            return showToast('已开启，但没有一条音色预设配齐了 Key 和音色 ID（API 设置 > 语音）');
         }
     }
     showToast('语音设置已保存');
@@ -263,9 +264,10 @@ async function openChatSidebarVoiceDialog() {
         {
             type: 'note', key: 'autoHint', label: '',
             value: '开启后：语音全部合成好，消息才开始逐条出现。'
-                 + '合成一条约 20 秒，这段时间聊天页会一直显示"正在输入中"，'
+                 + '合成期间聊天页会一直显示"正在输入中"，'
                  + '好处是语音气泡一出现就能点播放。\n\n'
-                 + '关闭后：消息立刻出现，点播放键时才合成，需要现场等约 20 秒。'
+                 + '关闭后：消息立刻出现，点播放键时才合成，需要现场等。\n\n'
+                 + '单条耗时看服务商，豆包约 20 秒，MiniMax 快得多。'
         }
     ], { title: '语音消息', confirmText: '保存', cancelText: '取消' });
     if (!result) return;
@@ -283,8 +285,9 @@ function refreshChatSidebarVoiceDisplay() {
     const s = _normalizeVoiceSettings(db.voiceSettings);
     let text;
     if (!s.enabled) text = '未开启';
-    else if (!s.apiKey) text = '缺 API Key';
     else if (!s.voicePresets.length) text = '缺音色预设';
+    // 凭据在每条预设里，所以判据是"有没有任何一条能用"，不是全局有没有 Key
+    else if (!s.voicePresets.some(p => voicePresetReady(p))) text = '预设缺 Key';
     else text = s.autoSynthesize ? '自动合成' : '手动合成';
     display.textContent = text;
 }
@@ -357,7 +360,7 @@ function setupAddCharModal() {
                 nickname: myNickname,
                 persona: myPersonaVal,
                 status: '在线',
-                avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg'
+                avatar: './png/avatar_default.jpg'
             };
             
             if(!db.userPersonas) db.userPersonas = [];
@@ -374,14 +377,14 @@ function setupAddCharModal() {
             realName: realName,
             remarkName: remarkName,
             persona: '',
-            avatar: 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg',
+            avatar: './png/avatar_default.jpg',
             
             myName: myRealName,
             myNickname: myNickname,
             myPersona: myPersonaVal,
             boundPersonaId: finalBoundId,
             
-            myAvatar: 'https://i.postimg.cc/GtbTnxhP/o-o-1.jpg',
+            myAvatar: './png/avatar_default_me.jpg',
             theme: 'white_blue',
             maxMemory: 10,
             chatBg: '',
@@ -506,7 +509,7 @@ function renderUserPersonas() {
         if (modal) {
             document.getElementById('user-persona-modal-title').textContent = '新建档案';
             document.getElementById('user-persona-form').reset();
-            document.getElementById('user-persona-avatar-preview').src = 'https://i.postimg.cc/Y96LPskq/o-o-2.jpg';
+            document.getElementById('user-persona-avatar-preview').src = './png/avatar_default.jpg';
             currentPersonaIdToEdit = null;
             modal.classList.add('visible');
         }
@@ -624,6 +627,8 @@ function goBackToContacts() {
                             const stickerRegex = /\[.*?的表情包：.*?\]|\[.*?发送的表情包：.*?\]/;
                             const giftRegex = /\[.*?送来的礼物：.*?\]|\[.*?向.*?送来了礼物：.*?\]/;
                             const locationRegex = /\[.*?发送了位置：.*?\]/;
+                            // 分享卡片是多行的，[\s\S] 不能写成 .
+                            const shareRegex = /\[[^\[\]：:\n]+?的分享[:：][\s\S]*?\]/;
 
 
 
@@ -639,6 +644,8 @@ function goBackToContacts() {
                                 lastMessageText = '[转账]';
                             } else if (locationRegex.test(lastMsg.content)) {
                                 lastMessageText = '[位置]';
+                            } else if (shareRegex.test(lastMsg.content) || lastMsg.content.startsWith('[喵坛分享]')) {
+                                lastMessageText = '[分享]';
                             } else if (imageRecogRegex.test(lastMsg.content) || (lastMsg.parts && lastMsg.parts.some(p => p.type === 'image'))) {
                                 lastMessageText = '[图片]';
                             } else if ((lastMsg.parts && lastMsg.parts.some(p => p.type === 'html'))) {
