@@ -46,39 +46,17 @@ function _getMemoryApiConfig(type, chatObj) {
 /**
  * 统一 fetch wrapper，支持流式和非流式。
  * 流式时读完所有 chunk 后返回完整文本，行为对上层透明。
+ * gemini 原生 / openai 兼容两种格式的差异由 callLLM 处理（js/api/llm_client.js）。
+ * @param {object} cfg  预设对象（_getMemoryApiConfig 的返回值，含 provider）
+ * @param {object} body { messages, temperature, stream? }
  */
-async function _fetchCompletion(url, key, body) {
-    const response = await fetch(`${url}/v1/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-        body: JSON.stringify(body)
+async function _fetchCompletion(cfg, body) {
+    return callLLM({
+        cfg,
+        messages: body.messages,
+        temperature: body.temperature,
+        stream: !!body.stream
     });
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-
-    if (body.stream) {
-        // SSE 流式读取，拼接完整内容后返回
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let fullText = '';
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            const lines = decoder.decode(value, { stream: true }).split('\n');
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const data = line.slice(6).trim();
-                if (data === '[DONE]') continue;
-                try {
-                    const delta = JSON.parse(data).choices?.[0]?.delta?.content;
-                    if (delta) fullText += delta;
-                } catch {}
-            }
-        }
-        return fullText;
-    } else {
-        const result = await response.json();
-        return result.choices[0].message.content;
-    }
 }
 
 // ============================================================
@@ -516,8 +494,9 @@ ${outputInstruction}
 (提示：你可以先输出一段 "### 🧠 思考脉络" 用于热身，但在那之后必须严格输出 【标题】 和 【内容】)`;
     }
 
-const { url, key, model, temperature: presetTemp, streamEnabled } = _getMemoryApiConfig(type, chat);
-const rawContent = await _fetchCompletion(url, key, {
+const _memCfg = _getMemoryApiConfig(type, chat);
+const { url, key, model, temperature: presetTemp, streamEnabled } = _memCfg;
+const rawContent = await _fetchCompletion(_memCfg, {
     model,
     messages: [
         { role: 'system', content: systemPrompt },
@@ -887,8 +866,9 @@ ${wbWriting ? `\n【特别文风/内容指导】：\n${wbWriting}\n` : ''}
 【内容】(按时间发展脉络撰写，保留上述要求的关键细节和伏笔)
 `;
 
-const { url, key, model, temperature: presetTemp, streamEnabled } = _getMemoryApiConfig('summary', chat);
-const rawContent = await _fetchCompletion(url, key, {
+const _memCfg2 = _getMemoryApiConfig('summary', chat);
+const { url, key, model, temperature: presetTemp, streamEnabled } = _memCfg2;
+const rawContent = await _fetchCompletion(_memCfg2, {
     model,
     messages: [
         { role: 'system', content: systemPrompt },

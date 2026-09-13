@@ -279,6 +279,13 @@ async function callEmbeddingApi(text, chat) {
     const url = (apiConfig.url || '').replace(/\/v\d+\/?$/, '');
     if (!url || !key || !model) throw new Error('Embedding API 配置不完整');
 
+    // Vertex Express 的 REST 面只有 countTokens / generateContent /
+    // streamGenerateContent，**没有 embedding 端点**。不拦的话下面会按 openai
+    // 形状去打 /v1/embeddings 拿一个 404，错误信息完全指不到真因。
+    if (url.includes('aiplatform.googleapis.com')) {
+        throw new Error('Vertex Express 没有 embedding 端点，请另配一份 Gemini 或 OpenAI 向量预设');
+    }
+
     // 判断 provider
     const provider = url.includes('generativelanguage.googleapis.com') ? 'gemini' : 'openai';
 

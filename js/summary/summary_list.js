@@ -861,7 +861,7 @@ async function retryChunkBlock(blockId) {
         const rawText = await _rebuildChunkRawText(block, chat);
         if (!rawText) throw new Error('原文重建失败，消息记录可能已被删除');
 
-        const { url, key, model } = _getMemoryApiConfig('summary', chat);
+        const _chunkCfg = _getMemoryApiConfig('summary', chat);
 
 const sysPrompt = `请为以下对话片段生成详细总结和摘要。严格按格式输出，不要添加任何额外文字：
 #CHUNK_BLOCK_0#
@@ -871,21 +871,16 @@ const sysPrompt = `请为以下对话片段生成详细总结和摘要。严格�
 强度: <0.0到1.0的小数。极严标准：0.1-0.3平静/毫无波澜，0.4-0.6微小起伏/正常交流，0.7-0.8明显波动，0.9-1.0极端爆发或深刻浪漫。日常绝大多数应在0.5以下，切勿滥用高分>
 日常: <是/否，"是"=日常闲聊或例行打招呼，"否"=有明显情节推进/冲突/重要表白或约定/新事件>`;
 
-        const response = await fetch(`${url}/v1/chat/completions`, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-            body:    JSON.stringify({
-                model,
-                messages: [
-                    { role: 'system', content: sysPrompt },
-                    { role: 'user',   content: `对话片段内容：\n\n${rawText}` }
-                ],
-                temperature: 0.3
-            })
+        // 二次调用固定走非流式：下面要按格式整体正则解析
+        const raw = await callLLM({
+            cfg: _chunkCfg,
+            messages: [
+                { role: 'system', content: sysPrompt },
+                { role: 'user',   content: `对话片段内容：\n\n${rawText}` }
+            ],
+            temperature: 0.3,
+            stream: false
         });
-
-        if (!response.ok) throw new Error(`API Error: ${response.status}`);
-        const raw = (await response.json()).choices[0].message.content;
 
         const contentM = raw.match(/内容[:：]\s*([\s\S]*?)(?=\n摘要[:：]|$)/);
         const summaryM = raw.match(/摘要[:：]\s*(.+)/);
