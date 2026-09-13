@@ -3,9 +3,12 @@
 //       从而能控制根页面（否则 navigator.serviceWorker.ready 会永久挂起），
 //       并让通知点击、图标等相对路径都从根目录解析。
 
-const CACHE_NAME = 'ouo-cache-Q2.0.0';
-// 每次部署新版本时，把上面的版本号往上加
-// SW 会自动清理旧缓存，确保用户拿到最新文件
+const CACHE_NAME = 'ouo-cache-Q2.1.0';
+// 三段式：前两位是大版本，第三位是测试次数。
+// 【每次改代码都要把第三位 +1】，不是攒到部署时才动 —— 不升的话 SW 会端出旧缓存，
+// 改动到不了手机上，看到的还是旧代码。
+// 第二位只在发正式版时升，同时第三位归零（Q2.0.37 → Q2.1.0），时机由用户定。
+// 详见 CLAUDE.md 开头那一节。
 
 // 从缓存名里剥出纯版本号（如 'Q1.8.0'），作为全站版本号的唯一来源
 const APP_VERSION = CACHE_NAME.replace('ouo-cache-', '');
@@ -44,18 +47,37 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     const url = new URL(event.request.url);
 
-    // 非同源请求（postimg、外部字体等）直接放行，不走缓存
+    // 非同源请求（用户数据里手填的外链图、外部字体等）直接放行，不走缓存。
+    // ★ 内置图片曾经全放在 postimg 图床上，正是走到这里被放行、一张都不进缓存，
+    //   网络一抖就整片裂图 —— 现已全部落到 png/ 下，改走下面的「图片缓存优先」。
     if (url.origin !== location.origin) {
         return;
     }
 
-    // JS / HTML / JSON 文件：网络优先，保证总是拿到最新代码
+    // 代码类文件（JS / CSS / HTML / JSON）：网络优先，保证总是拿到最新代码
     // 网络失败时才用缓存兜底（离线场景）
+    //
+    // ★ CSS 原先在下面那条「缓存优先」分支里，这就是"手机端改了样式不生效"的根因：
+    //   有缓存就直接用、根本不去网络问，只有升 CACHE_NAME 把旧缓存清掉才会重新拉。
+    //   样式和 JS 一样属于代码、改动频率同级，所以归到同一条规则里。
+    //   这样改 CSS 不需要在文件名后面挂 ?v=123 之类的版本号，刷新一次就是最新的。
+    //   （代价：冷启动时 CSS 也要走网络。CSS 总共 500 多 KB，而 JS 已经有 3 MB 在走
+    //     同一条规则了，多出来的这点可以忽略。）
+    //
+    // ★ 例外 js/lib/：第三方库虽然也是 .js，但它不是"我们的代码"——文件名里带版本号，
+    //   同一路径的内容永不改变，网络优先对它只有坏处：echarts 一个就 1 MB，而 Dexie
+    //   是"拉不到就整个 App 起不来"的东西，不该每次冷启动都押在网络上。放它掉到下面
+    //   那条「缓存优先」规则里。升级库＝换文件名，旧文件随 CACHE_NAME 一起清掉。
+    //   用 includes 而非 startsWith，是为了兼容部署在子路径下的情况。
     if (
-        url.pathname.endsWith('.js') ||
-        url.pathname.endsWith('.html') ||
-        url.pathname.endsWith('.json') ||
-        url.pathname === '/'
+        !url.pathname.includes('/js/lib/') &&
+        (
+            url.pathname.endsWith('.js') ||
+            url.pathname.endsWith('.css') ||
+            url.pathname.endsWith('.html') ||
+            url.pathname.endsWith('.json') ||
+            url.pathname === '/'
+        )
     ) {
         event.respondWith(
             fetch(event.request)
@@ -73,7 +95,9 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // CSS / 图片等静态资源：缓存优先，有缓存直接用，没有才去网络拿
+    // 图片 / 字体 / 音频等静态资源，以及 js/lib/ 下的第三方库：缓存优先，
+    // 有缓存直接用，没有才去网络拿
+    // （这些是"内容"不是"代码"，换的时候一般是换文件名，不需要每次回源问）
     event.respondWith(
         caches.match(event.request).then(cached => {
             if (cached) return cached;

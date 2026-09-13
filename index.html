@@ -15,14 +15,25 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="./icon/icon_cat_apple.jpeg">
 
-    <!-- 新增：破解图床防盗链（极其重要！因为你的代码里用了 postimg.cc） -->
+    <!-- 不发 Referer：内置图片已全部本地化到 png/，这条不再是为它们准备的，
+         但用户数据里仍可能有手填的外链（角色头像、表情包、壁纸），部分图床会按
+         Referer 做防盗链。留着，删掉会让那些外链变成裂图。 -->
     <meta name="referrer" content="no-referrer" />
 
-    <!-- 你的外部脚本和样式（保持不变） -->
-    <script src="https://unpkg.com/dexie/dist/dexie.js"></script>
-    <script src="https://unpkg.com/dompurify@2.3.8/dist/purify.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 第三方库：一律本地引用，不要改回 CDN 外链。
+         原因一：sw.js 的 fetch 拦截对非同源请求直接放行（见那里的注释），外链完全不进
+                 缓存。弱网或离线时 Dexie 拉不到 → dexieDB 未就绪 → 整个 App 起不来，
+                 这是离线可用性上最大的单点。
+         原因二：原先 dexie 和 marked 的 URL 没写版本号，吃的是上游 latest；marked 那条
+                 更危险——jsDelivr 把 marked 解析到 18.x，但 18.x 里已经没有 marked.min.js
+                 这个文件，200 是边缘节点拿 v15.0.12 的旧副本在兜，上游一清就 404。
+         文件名带版本号 ⇒ 内容永不变 ⇒ 由 sw.js 的 js/lib/ 例外走缓存优先，首次加载后
+         永久零网络。升级库＝下载新文件 + 改这里的文件名，别原地覆盖同名文件。
+         注：echarts 已移除——它此前只为存储备份页的一个环形饼图撑场（1.03 MB），
+             现由 js/settings/data_storage.js 里手写的 SVG 环形图替代。 -->
+    <script src="js/lib/dexie-4.4.5.min.js"></script>
+    <script src="js/lib/purify-2.5.9.min.js"></script>
+    <script src="js/lib/marked-15.0.12.min.js"></script>
     <link rel="manifest" href="manifest.json">
     <link rel="stylesheet" href="css/main.css">
 </head>
@@ -840,8 +851,10 @@
             </div>
 
             <div id="multi-select-bar"><span id="select-count">已选择 0 项</span>
-                <button class="btn btn-danger" id="delete-selected-btn">删除已选
-                </button>
+                <div class="multi-select-actions">
+                    <button class="btn btn-danger" id="delete-selected-btn">删除已选</button>
+                    <button class="btn btn-primary" id="forward-selected-btn">转发</button>
+                </div>
             </div>
 <!-- 表情包主面板 -->
             <div id="sticker-modal">
@@ -958,8 +971,12 @@
             <input type="hidden" id="setting-chat-image-preset" value="off">
             <input type="hidden" id="setting-chat-image-auto" value="0">
             <input type="hidden" id="setting-chat-image-style" value="">
+            <input type="hidden" id="setting-chat-image-negative" value="">
             <input type="hidden" id="setting-chat-image-rule" value="">
             <input type="hidden" id="setting-chat-image-reference" value="">
+            <!-- 语音：音色 + 语气要求都由弹窗回填（空语气 = 不注入任何要求） -->
+            <input type="hidden" id="setting-chat-voice-preset" value="off">
+            <input type="hidden" id="setting-chat-voice-tone" value="">
             <!-- ============================== -->
 
             <!-- 设置项列表 -->
@@ -998,11 +1015,11 @@
                     <span id="setting-chat-weather-display" class="item-value">不开启</span>
                     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
-                <!-- 音色（语音消息用哪个音色说话；预设在「API 设置 > 语音」里建） -->
+                <!-- 语音（音色 + 语气要求合并成一行，点开是折叠式弹窗，同图像生成那套） -->
                 <div class="settings-item" id="setting-chat-voice-item">
                     <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z"></path><path d="M19 11v1a7 7 0 0 1-14 0v-1"></path><path d="M12 19v2"></path></svg></div>
-                    <div class="item-details"><span class="item-name">音色</span></div>
-                    <select id="setting-chat-voice-preset" class="inline-select"></select>
+                    <div class="item-details"><span class="item-name">语音</span></div>
+                    <span id="setting-chat-voice-display" class="item-value">不使用语音</span>
                     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
                 <!-- 最大记忆轮数 (Prompt触发) -->
@@ -1110,8 +1127,11 @@
             <input type="hidden" id="setting-group-image-preset" value="off">
             <input type="hidden" id="setting-group-image-auto" value="0">
             <input type="hidden" id="setting-group-image-style" value="">
+            <input type="hidden" id="setting-group-image-negative" value="">
             <input type="hidden" id="setting-group-image-rule" value="">
             <input type="hidden" id="setting-group-image-reference" value="">
+            <!-- 语音语气要求（弹窗回填；空 = 不注入。群里对所有成员生效） -->
+            <input type="hidden" id="setting-group-voice-tone" value="">
             <input type="file" id="setting-group-chat-bg-upload" accept="image/*" style="display:none;">
             <!-- ======================================= -->
 
@@ -1160,6 +1180,13 @@
                     <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M4.93 4.93l1.41 1.41"></path><path d="M17.66 17.66l1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="M4.93 19.07l1.41-1.41"></path><path d="M17.66 6.34l1.41-1.41"></path><circle cx="12" cy="12" r="4"></circle></svg></div>
                     <div class="item-details"><span class="item-name">天气地点</span></div>
                     <span id="setting-group-weather-display" class="item-value">不开启</span>
+                    <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </div>
+                <!-- 语音（群级只有语气要求，对所有成员生效；音色按成员在「编辑成员」里选） -->
+                <div class="settings-item" id="setting-group-voice-item">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z"></path><path d="M19 11v1a7 7 0 0 1-14 0v-1"></path><path d="M12 19v2"></path></svg></div>
+                    <div class="item-details"><span class="item-name">语音</span></div>
+                    <span id="setting-group-voice-display" class="item-value">未设语气</span>
                     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
                 <!-- ③ 最大记忆轮数 -->
@@ -2060,6 +2087,7 @@
                             <option value="deepseek">DeepSeek</option>
                             <option value="claude">Claude</option>
                             <option value="gemini">Gemini</option>
+                            <option value="vertexExpress">Vertex Express（Google）</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -2070,17 +2098,26 @@
                         <label for="api-chat-key">密钥 (Key)</label>
                         <input type="password" id="api-chat-key" placeholder="请输入 API 密钥">
                     </div>
-                    
+                    <div class="form-group" id="api-chat-project-row" hidden>
+                        <label for="api-chat-project">Project ID <span class="field-hint">留空则由 Google 自选区域，部分模型会 404；填写则钉定 global</span></label>
+                        <input type="text" id="api-chat-project" placeholder="可留空">
+                    </div>
+
                     <button type="button" class="btn btn-secondary" style="margin-bottom: 20px;" id="api-chat-fetch-btn">
                         <span class="btn-text">点击拉取模型</span>
                         <div class="spinner"></div>
                     </button>
                     
                     <div class="form-group">
-                        <label for="api-chat-model">选择模型</label>
-                        <select id="api-chat-model">
-                            <option value="">请先拉取模型列表</option>
-                        </select>
+                        <label for="api-chat-model">选择模型 <span class="field-hint">拉不到就点右边方块自己编辑清单</span></label>
+                        <div class="model-inline-row">
+                            <select id="api-chat-model">
+                                <option value="">请先拉取或手动编辑模型列表</option>
+                            </select>
+                            <button type="button" class="api-icon-btn model-edit-btn" id="api-chat-model-edit" title="编辑模型列表">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- 参数设置 -->
@@ -2184,10 +2221,15 @@
                     </button>
                     
                     <div class="form-group">
-                        <label for="api-emb-model">选择模型</label>
-                        <select id="api-emb-model">
-                            <option value="">请先拉取模型列表</option>
-                        </select>
+                        <label for="api-emb-model">选择模型 <span class="field-hint">拉不到就点右边方块自己编辑清单</span></label>
+                        <div class="model-inline-row">
+                            <select id="api-emb-model">
+                                <option value="">请先拉取或手动编辑模型列表</option>
+                            </select>
+                            <button type="button" class="api-icon-btn model-edit-btn" id="api-emb-model-edit" title="编辑模型列表">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     <div class="api-scroll-spacer"></div>
@@ -2298,7 +2340,7 @@
                 </div>
             </div>
 
-            <!-- 语音 Tab（豆包音频生成） -->
+            <!-- 语音 Tab（多服务商 TTS：豆包 / MiniMax） -->
             <div class="api-tab-pane" id="api-tab-voice">
                 <div class="api-section-scroll">
 
@@ -2342,33 +2384,39 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="api-voice-key">API Key <span class="field-hint">语音技术控制台 &gt; API Key 管理。全局共用，不随预设切换</span></label>
-                        <input type="password" id="api-voice-key" placeholder="请输入豆包语音 API Key" autocomplete="off">
+                        <label for="api-voice-url">API 地址 <span class="field-hint">切服务商时自动填官方地址，可改成中转</span></label>
+                        <input type="url" id="api-voice-url" placeholder="https://openspeech.bytedance.com" autocomplete="off">
                     </div>
 
                     <div class="form-group">
-                        <label for="api-voice-speaker">音色 ID <span class="field-hint">官方预置音色或自己复刻的 S_xxx</span></label>
+                        <label for="api-voice-key">API Key <span class="field-hint">随预设切换，每条预设各存一把</span></label>
+                        <input type="password" id="api-voice-key" placeholder="请输入该服务商的 API Key" autocomplete="off">
+                    </div>
+
+                    <!-- Group ID 行：只有 MiniMax 有这个概念，别的服务商整行藏掉 -->
+                    <div class="form-group" id="api-voice-group-row" hidden>
+                        <label for="api-voice-group">Group ID <span class="field-hint">选填。控制台「账户信息」里的 19 位数字，官方端点不填也能用</span></label>
+                        <input type="text" id="api-voice-group" placeholder="例如：1812345678901234567" autocomplete="off">
+                    </div>
+
+                    <!-- 模型行：只有能选模型的服务商显示（豆包只有一个模型，藏起来） -->
+                    <div class="form-group" id="api-voice-model-row" hidden>
+                        <label for="api-voice-model">模型 <span class="field-hint">2.8 系列自动匹配情绪，turbo 更快</span></label>
+                        <select id="api-voice-model"></select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="api-voice-speaker">音色 ID <span class="field-hint" id="api-voice-speaker-hint">官方预置音色或自己复刻的 S_xxx</span></label>
                         <input type="text" id="api-voice-speaker" placeholder="例如：zh_female_vv_uranus_bigtts" autocomplete="off">
                     </div>
 
                     <div class="form-group">
-                        <label for="api-voice-desc">声音描述 <span class="field-hint">自然语言，留空则只念文本</span></label>
-                        <textarea id="api-voice-desc" rows="2" placeholder="例如：一位中青年女性，嗓音清冷偏低，语速偏慢" maxlength="200"></textarea>
+                        <label for="api-voice-speed">语速 <span class="field-hint" id="api-voice-speed-hint">-50 到 100，0 是原速</span></label>
+                        <input type="number" id="api-voice-speed" min="-50" max="100" step="5" placeholder="0">
                     </div>
-
                     <div class="form-group">
-                        <label for="api-voice-rate-speech">语速 <span class="field-hint">-50 到 100，写「语速偏慢」也会拖慢，两者叠加</span></label>
-                        <input type="number" id="api-voice-rate-speech" min="-50" max="100" step="5" placeholder="0">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="api-voice-rate-pitch">音调 <span class="field-hint">-12 到 12</span></label>
-                        <input type="number" id="api-voice-rate-pitch" min="-12" max="12" step="1" placeholder="0">
-                    </div>
-
-                    <div class="form-group">
-                        <label for="api-voice-rate-loudness">音量 <span class="field-hint">-50 到 100</span></label>
-                        <input type="number" id="api-voice-rate-loudness" min="-50" max="100" step="5" placeholder="0">
+                        <label for="api-voice-pitch">音调 <span class="field-hint" id="api-voice-pitch-hint">-12 到 12 半音，0 是原调</span></label>
+                        <input type="number" id="api-voice-pitch" min="-12" max="12" step="1" placeholder="0">
                     </div>
 
                     <div class="form-group">
@@ -2403,7 +2451,7 @@
                         <input type="number" id="api-voice-cache-limit" min="1" step="10" placeholder="10">
                     </div>
 
-                    <p class="voice-api-footnote">注意：用量计数仅供参考，实际用量请在火山官方网站控制台查询。API Key 明文存在这台设备的浏览器里，纯前端没法真正藏住，请勿使用共享的公共 Key。总开关和「收到就自动合成」在聊天列表的侧边栏里，归档仓库在设置页的「GitHub 仓库」里。</p>
+                    <p class="voice-api-footnote">注意：用量计数按秒统计仅供参考（MiniMax 实际按字符计费），准确用量请在各服务商官方控制台查询。API Key 明文存在这台设备的浏览器里，纯前端没法真正藏住，请勿使用共享的公共 Key。总开关和「收到就自动合成」在聊天列表的侧边栏里，归档仓库在设置页的「GitHub 仓库」里。</p>
                     <div class="api-scroll-spacer"></div>
                 </div>
 
@@ -2453,13 +2501,18 @@
                     </div>
 
                     <div class="form-group">
-                        <label for="api-image-url">API 地址 <span class="field-hint">OpenAI格式，不含 /v1</span></label>
+                        <label for="api-image-url">API 地址 <span class="field-hint" id="api-image-url-hint">OpenAI格式，不含 /v1</span></label>
                         <input type="url" id="api-image-url" placeholder="例如：https://api.openai.com" autocomplete="off">
                     </div>
 
                     <div class="form-group">
                         <label for="api-image-key">API Key <span class="field-hint">随预设切换</span></label>
                         <input type="password" id="api-image-key" placeholder="请输入 API Key" autocomplete="off">
+                    </div>
+
+                    <div class="form-group" id="api-image-project-row" hidden>
+                        <label for="api-image-project">Project ID <span class="field-hint">留空则借用「文字」页那份；两处都空由 Google 自选区域，部分模型会 404</span></label>
+                        <input type="text" id="api-image-project" placeholder="可留空" autocomplete="off">
                     </div>
 
                     <button type="button" class="btn btn-secondary" style="margin-bottom: 20px;" id="api-image-fetch-btn">
@@ -2484,7 +2537,7 @@
                                 <option value="512x512">512x512 (适用于 DALL-E 2)</option>
                             </select>
                         </div>
-                        <div style="flex:1;">
+                        <div style="flex:1;" id="api-image-quality-col">
                             <label for="api-image-quality">画面质量</label>
                             <select id="api-image-quality">
                                 <option value="standard">标准 (Standard)</option>
@@ -2493,7 +2546,7 @@
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="api-image-style-row">
                         <label for="api-image-style">画面风格 <span class="field-hint">仅 DALL-E 3 有效</span></label>
                         <select id="api-image-style">
                             <option value="vivid">生动 / 夸张色彩 (Vivid)</option>
@@ -2510,6 +2563,13 @@
                         <label for="api-image-preview-text">测试提示词 <span class="field-hint">支持长文本描述</span></label>
                         <!-- 改成了 textarea，取消了 200 字限制，设为 2000 -->
                         <textarea id="api-image-preview-text" rows="4" placeholder="例如：一只戴着墨镜的猫在喝咖啡，赛博朋克风格，霓虹灯背景，高细节，8k分辨率..." maxlength="2000"></textarea>
+                    </div>
+
+                    <!-- 测试负面词：只对 NAI 显示。没有它的话，负面词只能靠在聊天里
+                         真生成一张图来试，慢且花钱；试不出效果又容易误判成"没生效" -->
+                    <div class="form-group" id="api-image-preview-negative-row" hidden>
+                        <label for="api-image-preview-negative">测试负面提示词 <span class="field-hint">仅用于这里的测试生成，不会存进任何聊天</span></label>
+                        <textarea id="api-image-preview-negative" rows="2" placeholder="半角逗号分隔。例如：lowres, worst quality, watermark" maxlength="600"></textarea>
                     </div>
 
                     <!-- 按钮组：测试生成 + 下载/取消（下载与取消共用同一槽位，生成中显示取消） -->
@@ -2872,14 +2932,23 @@
         <div class="title-container">
             <h1 class="title">系统日志</h1>
         </div>
-        <!-- 顶部清空按钮 -->
-        <button class="action-btn" id="clear-console-btn">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path
-                                d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"
-                                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </button>
+        <div class="action-btn-group">
+            <!-- 运行诊断报告：把 OuODiag 记录的历史打印到下面的输出区 -->
+            <button class="action-btn" id="diag-report-btn" title="运行诊断">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" />
+                    <path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                </svg>
+            </button>
+            <!-- 顶部清空按钮 -->
+            <button class="action-btn" id="clear-console-btn">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path
+                        d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </button>
+        </div>
     </header>
     <main class="content">
         <!-- 输出区域 -->
@@ -3462,7 +3531,7 @@
             </header>
             <main class="content">
                 <div class="steps-header">
-                    <img src="https://i.postimg.cc/Y96LPskq/o-o-2.jpg" alt="Char Avatar" class="steps-header-avatar"
+                    <img src="./png/avatar_default.jpg" alt="Char Avatar" class="steps-header-avatar"
                         id="steps-char-avatar">
                     <span class="steps-header-name" id="steps-char-name">Char</span>
                 </div>
@@ -3740,7 +3809,7 @@
             <div class="me-avatar-wrapper-left">
                 <div class="me-avatar-container" id="me-avatar-trigger">
                     <div class="me-avatar-preview">
-                        <img id="me-avatar-img" src="https://i.postimg.cc/Y96LPskq/o-o-2.jpg">
+                        <img id="me-avatar-img" src="./png/avatar_default.jpg">
                     </div>
                     <div class="me-avatar-overlay">
                         <svg viewBox="0 0 24 24"><path fill="#fff" d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z" /></svg>
@@ -5870,7 +5939,7 @@
                                 </svg>
                             </button>
                         </div>
-                        <img src="https://i.postimg.cc/Y96LPskq/o-o-2.jpg" class="focus-avatar" alt="avatar">
+                        <img src="./png/avatar_default.jpg" class="focus-avatar" alt="avatar">
                         <button class="control-btn" id="pomodoro-giveup-btn" title="放弃">
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -5989,15 +6058,29 @@
             </div>
         </div>
 
-        <!-- ④ 画面风格 -->
+        <!-- ④ 画面风格与负面词 —— 两项都是发给生图模型的，所以同一个折叠；
+             「内容约束」那项是发给文字模型的，刻意不放进来 -->
         <div class="collapsible-section">
             <div class="collapsible-header">
-                <h4>画面风格</h4>
+                <h4>画面风格与负面词</h4>
                 <span class="collapsible-arrow">▼</span>
             </div>
             <div class="collapsible-content">
-                <div class="form-group mb-0">
+                <div class="form-group">
+                    <label for="image-generation-style">画面风格 <span class="field-hint">画风、画师串</span></label>
                     <textarea id="image-generation-style" rows="3" placeholder="连同画面比例一起并进生图提示词。例如：写实风格，电影质感" maxlength="200" class="mb-0"></textarea>
+                </div>
+                <div class="form-group mb-0">
+                    <label for="image-generation-negative">负面提示词 <span class="field-hint" id="image-generation-negative-hint">不希望出现在画面里的内容</span></label>
+                    <textarea id="image-generation-negative" rows="3" placeholder="半角逗号分隔。例如：lowres, worst quality, watermark" maxlength="600" class="mb-0"></textarea>
+                    <!-- 间距靠 CSS 给（见 chat_modal.css 的 #image-generation-uc-presets）：
+                         内联 display:flex 会压住 hidden 属性自带的 display:none，
+                         切到不支持负面词的服务商时按钮藏不掉 -->
+                    <div id="image-generation-uc-presets">
+                        <button type="button" class="btn btn-neutral btn-small" data-uc="heavy">填入 Heavy</button>
+                        <button type="button" class="btn btn-neutral btn-small" data-uc="light">填入 Light</button>
+                        <button type="button" class="btn btn-neutral btn-small" data-uc="humanFocus">填入 Human Focus</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -6029,6 +6112,61 @@
         <div class="btn-group main-actions">
             <button type="button" class="btn btn-primary" id="image-generation-confirm">保存</button>
             <button type="button" class="btn btn-neutral" id="image-generation-cancel">取消</button>
+        </div>
+    </div>
+</div>
+
+<!-- === 语音设置：私聊侧栏与群聊侧栏共用这一个弹窗 ===
+     两节的性质完全不同：①音色是 TTS 参数（花钱合成音频）②语气是注入语言模型的提示词
+     （一个字都不进 TTS 请求）。合并只是 UI 上的，详见 js/chat/chat_voice_settings.js -->
+<div id="voice-setting-modal" class="modal-overlay">
+    <div class="modal-window">
+        <h3>语音</h3>
+
+        <!-- ① 音色（默认展开）。群聊没有群级音色，JS 会把这一节整块隐掉 -->
+        <div class="collapsible-section open" id="voice-setting-preset-block">
+            <div class="collapsible-header">
+                <h4>音色</h4>
+                <span class="collapsible-arrow">▼</span>
+            </div>
+            <div class="collapsible-content">
+                <div class="form-group mb-0">
+                    <select id="voice-setting-preset" class="mb-0"></select>
+                    <!-- 说明文字用 p 不用 label[for]：否则点说明也会弹开下拉框 -->
+                    <p class="field-hint">音色预设在「API 设置 &gt; 语音」里建，语速和音调也在那里。选「不使用语音」即本聊天不合成语音。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 群聊模式下顶替上面那一节：群里音色是按成员选的 -->
+        <div class="collapsible-section open" id="voice-setting-preset-group-hint" style="display:none;">
+            <div class="collapsible-header">
+                <h4>音色</h4>
+                <span class="collapsible-arrow">▼</span>
+            </div>
+            <div class="collapsible-content">
+                <p class="field-hint">群聊的音色按成员单独选：点群成员头像进「编辑成员」，里面有音色下拉。下面的语气要求对群里所有成员生效。</p>
+            </div>
+        </div>
+
+        <!-- ② 语气要求（注入语言模型，不是 TTS 参数） -->
+        <div class="collapsible-section">
+            <div class="collapsible-header">
+                <h4>语气要求</h4>
+                <span class="collapsible-arrow">▼</span>
+            </div>
+            <div class="collapsible-content">
+                <div class="form-group mb-0">
+                    <textarea id="voice-setting-tone" rows="3" placeholder="约束模型怎么写语音消息的文字。例如：语气慵懒随性，多用语气词和停顿，别说书面语" maxlength="300" class="mb-0"></textarea>
+                    <p class="field-hint">这段注入给语言模型，只管语音消息的文字怎么写，不影响普通消息。留空则一个字都不注入。</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 底部全局按钮 -->
+        <div class="btn-group main-actions">
+            <button type="button" class="btn btn-primary" id="voice-setting-confirm">保存</button>
+            <button type="button" class="btn btn-neutral" id="voice-setting-cancel">取消</button>
         </div>
     </div>
 </div>
@@ -6305,19 +6443,6 @@
                 </form>
             </div>
         </div>
-        <div id="send-gift-modal" class="modal-overlay">
-            <div class="modal-window">
-                <h3>送出礼物</h3>
-                <form id="send-gift-form">
-                    <div class="form-group">
-                        <label for="gift-description-input">礼物描述</label>
-                        <textarea id="gift-description-input" placeholder="告诉Ta你送了什么特别的东西..." required
-                            rows="4"></textarea>
-                    </div>
-                    <button type="submit" class="btn btn-primary">发送</button>
-                </form>
-            </div>
-        </div>
         <!-- NEW: Send Location Modal -->
         <div id="send-location-modal" class="modal-overlay">
             <div class="modal-window">
@@ -6333,6 +6458,94 @@
                     </div>
                     <button type="submit" class="btn btn-primary">发送</button>
                 </form>
+            </div>
+        </div>
+        <!-- 万能分享卡片：发送弹窗 -->
+        <div id="send-share-modal" class="modal-overlay">
+            <div class="modal-window">
+                <h3>转发分享</h3>
+                <form id="send-share-form">
+                    <!-- 手机高度不一：四个输入项放滚动区，按钮钉在外面 -->
+                    <div class="share-form-scroll">
+                        <div class="form-group">
+                            <label for="share-title-input">标题</label>
+                            <input type="text" id="share-title-input" placeholder="例如：煲仔饭" required>
+                        </div>
+                        <div class="form-group">
+                            <div class="share-label-row">
+                                <label for="share-category-input">类别</label>
+                                <div id="share-category-presets" class="share-category-presets"></div>
+                            </div>
+                            <input type="text" id="share-category-input" placeholder="例如：美团外卖链接" required>
+                        </div>
+                        <div class="form-group">
+                            <div class="share-label-row">
+                                <label for="share-body-input">内容</label>
+                                <!-- type="button" 不能省：在 form 里默认就是 submit，点一下直接把卡片发出去了。
+                                     文案由 chat_feature_share.js 填（补全时要改成"补全中…"，只留一处来源）。 -->
+                                <button type="button" id="share-ai-complete-btn" class="share-ai-btn"
+                                    title="按标题和类别，让 AI 补出内容"></button>
+                            </div>
+                            <textarea id="share-body-input" placeholder="例如：腊味双拼煲仔饭 ¥38，30分钟送达" required
+                                rows="3"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="share-extra-input">附加信息</label>
+                            <textarea id="share-extra-input" placeholder="（选填）例如：文件大小 2.4MB"
+                                rows="1"></textarea>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">发送</button>
+                </form>
+            </div>
+        </div>
+        <!-- 万能分享卡片：点卡片看完整内容 -->
+        <div id="share-detail-modal" class="modal-overlay">
+            <div class="modal-window">
+                <!-- 页眉钉在顶上不滚：左类别、右 X -->
+                <div class="share-detail-header">
+                    <div class="share-detail-category" id="share-detail-category"></div>
+                    <button type="button" class="share-detail-close" id="share-detail-close-btn"
+                        aria-label="关闭">×</button>
+                </div>
+                <!-- 标题/内容/附注顺序排，整个区一起滚（不再每节各滚各的） -->
+                <div class="share-detail-scroll">
+                    <h3 class="share-detail-title" id="share-detail-title"></h3>
+                    <div class="share-detail-text" id="share-detail-body"></div>
+                    <div id="share-detail-extra-block">
+                        <div class="share-detail-divider"></div>
+                        <div class="share-detail-text" id="share-detail-extra"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 转发聊天记录：多选几条消息 → 转发 → 在目标聊天生成一张「聊天记录」分享卡片。
+             布局照 #share-post-modal（喵坛分享帖）那一套，只是顶上那栏从「评论条数」
+             换成了「转发备注」。checkbox 的 id 前缀必须和那个弹窗错开（forward-to- /
+             share-to-），撞了 <label for> 会点到另一个弹窗的框上去。 -->
+        <div id="forward-messages-modal" class="modal-overlay">
+            <div class="modal-window">
+                <h3>转发聊天记录</h3>
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label for="forward-note-input" style="font-size:13px; color:#666;">转发备注</label>
+                    <input type="text" id="forward-note-input" placeholder="（选填）想跟对方说的一句话"
+                        style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+                </div>
+
+                <div class="char-info-tab-bar" id="forward-target-tab-bar" style="padding: 0; margin-bottom: 10px;">
+                    <button type="button" class="char-info-tab-btn active" data-forward-tab="private">私聊</button>
+                    <button type="button" class="char-info-tab-btn" data-forward-tab="group">群聊</button>
+                </div>
+
+                <div class="forward-target-box">
+                    <ul id="forward-char-list" class="binding-list">
+                        <!-- JS 填充 -->
+                    </ul>
+                    <ul id="forward-group-list" class="binding-list" style="display: none;">
+                        <!-- JS 填充 -->
+                    </ul>
+                </div>
+                <button id="confirm-forward-btn" class="btn btn-primary" style="width:100%">转发</button>
             </div>
         </div>
         <!-- NEW: Time Skip Modal -->
@@ -6895,7 +7108,7 @@
                 
                 <!-- 新增：头像预览区域 -->
                 <div style="text-align: center; margin-bottom: 15px;">
-                    <img id="peek-unlock-avatar-preview" src="https://i.postimg.cc/SNwL1XwR/chan-11.png" alt="预览">
+                    <img id="peek-unlock-avatar-preview" src="./png/peek_unlock_avatar.png" alt="预览">
                 </div>
 
                 <div class="form-group">
@@ -7393,14 +7606,19 @@
 </div>   
 
 <!-- js文件引入开始 -->
+<!-- 重启原因记录器：必须第一个执行，才能在其它代码之前读到 document.wasDiscarded -->
+<script src="js/core/restart_diag.js"></script>
 <script src="js/core/globals.js"></script>
 <script src="js/core/database.js"></script>
 <script src="js/core/lazy_load.js"></script>
 <script src="js/core/utils.js"></script>
 
 <!-- API 层：凭据 / 额度 / 请求封装。必须排在 settings 和 chat 之前，两边都依赖它 -->
+    <!-- 文本 LLM 统一适配层：gemini 原生 / openai 兼容两种格式的差异都收在这里，
+         必须排在所有会调 AI 的模块之前 -->
+    <script src="js/api/llm_client.js"></script>
     <script src="js/api/weather_api.js"></script>
-    <script src="js/api/doubao_tts_api.js"></script>
+    <script src="js/api/tts_api.js"></script>
     <script src="js/api/github_repo_api.js"></script>
 <!-- 图片存储层：缓存、GitHub 回读、下载与 Object URL 生命周期 -->
     <script src="js/chat/chat_image_store.js"></script>
@@ -7409,6 +7627,8 @@
     <script src="js/chat/chat_voice_service.js"></script>
 <!-- 语音功能里唯一认识 DOM 的模块，必须排在 chat_room / chat_bubble_factory 之前 -->
     <script src="js/chat/chat_voice_player.js"></script>
+<!-- 聊天级语音设置（音色 + 语气要求合并的弹窗）。语气那句提示词只在这里定义，private/group_prompt 都要用它 -->
+    <script src="js/chat/chat_voice_settings.js"></script>
     <script src="js/api/image_generation_api.js"></script>
     <script src="js/chat/chat_image_settings.js"></script>
     <script src="js/chat/chat_image_service.js"></script>
@@ -7436,12 +7656,16 @@
     <script src="js/chat/proactive_prompt.js"></script>
     <script src="js/chat/group_prompt.js"></script>
     <script src="js/chat/char_import.js"></script>
+    <!-- scope 改写器要排在 bubble_css_preset / chat_settings 前面：两边都调它 -->
+    <script src="js/chat/bubble_css_scope.js"></script>
     <script src="js/chat/bubble_css_preset.js"></script>
     <script src="js/chat/chat_list.js"></script>
     <script src="js/chat/chat_settings.js"></script>
     <script src="js/chat/chat_search.js"></script>
     <script src="js/chat/chat_feature_sticker.js"></script>
     <script src="js/chat/chat_feature_basic.js"></script>
+    <!-- 分享格式解析要排在 chat_bubble_factory / forum_share 前面：两边都调它 -->
+    <script src="js/chat/chat_feature_share.js"></script>
     <script src="js/chat/chat_feature_offline.js"></script>
     <script src="js/chat/chat_feature_proactive.js"></script>
     <script src="js/chat/notification_center.js"></script>
