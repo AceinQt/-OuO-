@@ -2,6 +2,12 @@
   padding:10px;
 }
 
+/* header 右上角的诊断/清空两个键：action-btn-group 默认给 svg 上 fill，
+   这两个都是描边款图标，不关掉 fill 会糊成一团实心 */
+#dev-console-screen .app-header .action-btn-group .action-btn svg {
+  fill: none;
+}
+
 #dev-console-output {
   font-family: 'Courier New', Courier, monospace; 
   font-size: 13px; 

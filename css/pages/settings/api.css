@@ -123,6 +123,28 @@
     background: #ffe0de;
 }
 
+/* ── 模型 select + 编辑按钮同一行 ───────────────────────────── */
+/* 试听按钮那行（.voice-inline-row）是"输入框 + 文字按钮"，这里换成方形图标按钮。
+   注意别用 `aspect-ratio` + 拉伸来凑正方形：flex 项的主轴尺寸先按内容算好，
+   那时交叉轴还不是定值，aspect-ratio 用不上，结果是 20×47 的细条。
+   所以两边都钉死 46px —— 换全局字体时 select 用 min-height 还能长高，不会被裁。 */
+.model-inline-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.model-inline-row select {
+    min-width: 0;
+    flex: 1;
+    min-height: 46px;
+}
+
+.api-icon-btn.model-edit-btn {
+    width: 46px;
+    height: 46px;
+}
+
 /* ── field-hint（label 内的提示文字）────────────────────────── */
 .field-hint {
     font-size: 11px;
@@ -325,7 +347,7 @@
     margin-top: 12px;
 }
 
-/* 分组小标题（语音 tab 字段多，靠它分「合成」「归档」两段） */
+/* 分组小标题（语音 tab 字段多，靠它把「用量」单独分出一段） */
 .voice-group-title {
     margin: 26px 2px 12px;
     padding-top: 18px;

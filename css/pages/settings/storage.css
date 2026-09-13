@@ -264,3 +264,35 @@
     font-size: 14px;
 }
 
+/* --- 存储分析：SVG 饼图专属样式 --- */
+/* tooltip 是绝对定位在容器里的，容器必须有定位上下文 */
+#storage-chart-container {
+    position: relative;
+}
+
+.storage-chart-tooltip {
+    position: absolute;
+    pointer-events: none;
+    display: none;
+    background: #fff;
+    border: 1px solid #2E81C2;
+    color: #333;
+    padding: 8px 12px;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: nowrap;
+    z-index: 10;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+
+/* 饼图扇区（SVG path，hover 时由 JS 重算 d 把外径推大） */
+.storage-chart-slice {
+    cursor: pointer;
+    /* d 的过渡目前只有 Chromium 和 Safari 17.4+ 认，Firefox 不支持。
+       不支持的浏览器只是没有补间、直接跳到放大后的形状，不影响功能。 */
+    transition: d 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+

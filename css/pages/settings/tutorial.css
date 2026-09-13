@@ -36,15 +36,64 @@
 
 .tutorial-item.open .tutorial-content {
     padding: 10px 10px;
-    /* A large value to ensure it expands to fit the content */
+    /* "展开到自适应高度"的老写法：transition 动不了 height:auto，只能拿一个够大的 max-height
+       当上限。这个数要卡在「大于最长那条的真实高度」和「别太离谱」之间：
+       - 小了：超出部分被 overflow:hidden 直接吃掉，没有滚动条、没有任何提示。更新日志堆到
+         14 个版本时真实高度 11755px，5000px 就砍掉了一多半。
+       - 大了：收起动画会"先卡住再突然塌下去"。因为 max-height 从 20000 掉到内容真实高度
+         （约 1000px）的这段里视觉上没有任何变化，0.5s 的过渡有九成时间是空转的。
+       现在日志只留最新一版，最长的模块是「版本更新内容」，实测 2156px，5000px 余量充裕
+       且动画手感正常。以后往教程里加长内容时留意这个数。 */
     max-height: 5000px;
 }
 
-.tutorial-content img {
-    width: 100%;
-    height: auto;
-    border-radius: 8px;
-    display: block;
+/* 教程正文已全部改成文字（js/settings/tutorial.js 的 usageModules），
+   原来的 .tutorial-content img 规则连同 png/tutorial_*.jpg 一起删了。
+   下面是文字版的排版：t-h 小标题 / t-p 段落 / t-ul 列表 / t-tip 贴士。 */
+.tutorial-content .t-h {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin: 12px 0 6px;
+}
+.tutorial-content .t-h:first-child {
+    margin-top: 0;
+}
+.tutorial-content .t-p {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #555;
+    margin: 0 0 8px;
+}
+.tutorial-content .t-ul {
+    list-style: none;
+    padding-left: 4px;
+    margin: 0 0 10px;
+}
+.tutorial-content .t-ul li {
+    position: relative;
+    padding-left: 16px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #666;
+    margin-bottom: 4px;
+}
+.tutorial-content .t-ul li::before {
+    content: '·';
+    position: absolute;
+    left: 4px;
+    color: var(--accent-color);
+    font-weight: 700;
+}
+.tutorial-content .t-tip {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #9a6b3f;
+    background: #FFF6E6;
+    border-left: 3px solid #F0B26F;
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin: 0 0 10px;
 }
 
 /* --- Update Log Modal Styles --- */
