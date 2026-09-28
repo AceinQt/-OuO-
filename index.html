@@ -371,6 +371,31 @@
                         <label>隐藏头像</label>
                         <label class="switch"><input type="checkbox" id="setting-hide-avatar"><span class="slider round"></span></label>
                     </div>
+                    <!-- 头像弧度：只在「显示头像」时才有意义，隐藏头像时由 JS 整行收掉 -->
+                    <div class="bubble-settings-item col" id="avatar-radius-row">
+                        <label>头像弧度：<span class="val-display" id="val-avatar-radius">正圆</span></label>
+                        <input type="range" class="bubble-slider" id="setting-avatar-radius" min="0" max="19" step="1">
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>消息时间：</label>
+                        <select id="setting-time-pos">
+                            <option value="none">不显示</option>
+                            <option value="avatar">头像下方</option>
+                            <option value="above">气泡上方</option>
+                            <option value="tail">气泡后</option>
+                        </select>
+                    </div>
+                    <!-- 时间格式：选了「不显示」以外的位置才出现，由 JS 整行收放 -->
+                    <div class="bubble-settings-item row" id="time-format-row">
+                        <label>时间格式
+                            <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'timeFormat')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                            </svg>
+                        </label>
+                        <input type="text" id="setting-time-format" placeholder="例如: HH:mm">
+                    </div>
                     <div class="bubble-settings-item row">
                         <label>字体：</label>
                         <input type="text" id="setting-custom-font" placeholder="例如: https://.../font.ttf">
@@ -782,7 +807,9 @@
                 <div class="title-container">
                     <h1 class="title" id="multi-select-title">选择消息</h1>
                 </div>
-                <div class="placeholder"></div>
+                <!-- 「显示隐藏」把 isHidden 的上下文消息（[system:…]）画出来，好逐条勾选删/转。
+                     文案在「显示隐藏 / 收起隐藏」之间切，见 chat_actions.js 的 syncHiddenToggleBtn。 -->
+                <button class="action-btn" id="toggle-hidden-msg-btn">显示隐藏</button>
             </header>
             <main class="content">
                 <div class="message-area" id="message-area"></div>
@@ -974,8 +1001,10 @@
             <input type="hidden" id="setting-chat-image-negative" value="">
             <input type="hidden" id="setting-chat-image-rule" value="">
             <input type="hidden" id="setting-chat-image-reference" value="">
-            <!-- 语音：音色 + 语气要求都由弹窗回填（空语气 = 不注入任何要求） -->
+            <!-- 语音：音色 + 通话开关 + 语气要求都由弹窗回填（空语气 = 不注入任何要求）。
+                 通话开关和通话界面工具箱那颗按钮是同一个字段 chat.callVoiceEnabled -->
             <input type="hidden" id="setting-chat-voice-preset" value="off">
+            <input type="hidden" id="setting-chat-voice-call" value="0">
             <input type="hidden" id="setting-chat-voice-tone" value="">
             <!-- ============================== -->
 
@@ -1015,11 +1044,23 @@
                     <span id="setting-chat-weather-display" class="item-value">不开启</span>
                     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
-                <!-- 语音（音色 + 语气要求合并成一行，点开是折叠式弹窗，同图像生成那套） -->
+                <!-- 语音（音色 + 通话开关 + 语气要求合并成一行，点开是折叠式弹窗，同图像生成那套） -->
                 <div class="settings-item" id="setting-chat-voice-item">
                     <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z"></path><path d="M19 11v1a7 7 0 0 1-14 0v-1"></path><path d="M12 19v2"></path></svg></div>
                     <div class="item-details"><span class="item-name">语音</span></div>
-                    <span id="setting-chat-voice-display" class="item-value">不使用语音</span>
+                    <!-- 这一行右边只放音色名 + 两枚小标记（亮着=该功能开着）。
+                         ★ 通话/语气**不能**写成「· 通话出声 · 已设语气」这种文字后缀：
+                           .item-value 不收缩，两个中文后缀叠上去会把整行挤变形。
+                         ★ 标记是静态 DOM，JS 只切 .is-on 类 —— 音色名是用户自己起的，
+                           拼 innerHTML 塞进去就是一条没必要的注入面。
+                           **别改成 hidden 属性**：SVG 没有那个 IDL 属性，赋值是空操作，
+                           详见 settings_sidebar.css 里 .item-value-flag 那段。
+                         哪枚该亮的规则在 voiceSettingRowFlags 里定义一次。 -->
+                    <span id="setting-chat-voice-display" class="item-value">
+                        <span id="setting-chat-voice-name">不使用语音</span>
+                        <svg id="setting-chat-voice-flag-call" class="item-value-flag" role="img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><title>通话中自动出声</title><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.9.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+                        <svg id="setting-chat-voice-flag-tone" class="item-value-flag" role="img" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><title>已设语气要求</title><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                    </span>
                     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
                 <!-- 最大记忆轮数 (Prompt触发) -->
@@ -3603,6 +3644,14 @@
                             d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25Z" />
                     </svg>
                 </button>
+
+                <!-- 长按多选时这条栏子就地换成「取消 + 计数」。
+                     共用同一个容器是为了位置严丝合缝：.forum-top-search-bar 是绝对定位
+                     但没写 top，吃的是静态位置，另起一条绝对定位的栏子对不齐。
+                     显隐全在 CSS 里，见 forum.css 的 body.forum-multi-select-on 那一段。 -->
+                <button class="forum-multi-cancel-btn" id="forum-multi-cancel-btn">取消</button>
+                <span class="forum-multi-count" id="forum-multi-count">已选择 0 个帖子</span>
+                <span class="forum-multi-spacer"></span>
             </div>
 
             <!-- Main 内容区域 -->
@@ -3682,39 +3731,36 @@
                         </svg>
                         <span>世界书</span>
                     </button>
+
+                    <!-- 3. 管理按钮（论坛 API / 批量删帖 / 正文样式） -->
+                    <button class="world-sidebar-btn" data-tab="admin">
+                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" id="settings-alt" class="icon glyph"><path d="M21.9,10.59,20,8.69V6a2,2,0,0,0-2-2H15.31l-1.9-1.9a2,2,0,0,0-2.82,0L8.69,4H6A2,2,0,0,0,4,6V8.69l-1.9,1.9a2,2,0,0,0,0,2.82L4,15.31V18a2,2,0,0,0,2,2H8.69l1.9,1.9a2,2,0,0,0,2.82,0l1.9-1.9H18a2,2,0,0,0,2-2V15.31l1.9-1.9A2,2,0,0,0,21.9,10.59ZM12,16a4,4,0,1,1,4-4A4,4,0,0,1,12,16Z"></path></svg>
+                        <span>管理</span>
+                    </button>
                 </div>
 
                 <div class="world-content-wrapper">
                     <p id="world-content-tips">
-                        <span style="color:var(--primary-color)">提示：</span>勾选后请点击右上角保存。
+                        <span>提示：</span>勾选后请点击右上角保存。
                     </p>
 
                     <!-- Tab 1: 角色 (默认显示 active) -->
                     <!-- Tab 1: 角色 -->
                     <div id="world-tab-char" class="world-tab-pane active">
-                    <div class="setting-row">
-    <div style="display:flex; flex-direction:column;">
-        <span style="font-size:14px; font-weight:600; color:#333;">论坛功能 API</span>
-    </div>
-    <select id="forum-api-preset-select" class="setting-select" style="max-width:140px; font-size:13px;">
-        <option value="">全局默认</option>
-    </select>
-</div>
-                        <div class="setting-row" style="padding-top:0;">
-                            <div style="display:flex; flex-direction:column;">
-                                <span style="font-size:14px; font-weight:600; color:#333;">关联聊天记忆</span>
-                                <span style="font-size:11px; color:#999;">开启后 AI 将读取选中角色/群聊的聊天记录</span>
+                        <div class="setting-row">
+                            <div class="world-label-group">
+                                <span class="world-label">关联聊天记忆</span>
+                                <span class="world-sublabel">开启后 AI 将读取选中角色/群聊的聊天记录</span>
                             </div>
-                            <div style="display: flex; align-items: center;">
+                            <div class="world-history-controls">
                                 <!-- 修改：开关在前，输入框在后 -->
-                                <label class="switch" style="margin-right: -5px;">
+                                <label class="switch">
                                     <input type="checkbox" id="world-use-history-toggle">
                                     <span class="slider round"></span>
                                 </label>
-                                <!-- 修改：去掉了 display:none，增加了 transition 和默认占位样式 -->
+                                <!-- 默认隐藏占位（CSS 里 opacity:0），开关勾上后 JS 写内联显出来 -->
                                 <input type="number" id="world-history-limit" class="history-limit-input" value="50"
-                                    min="1" max="500" placeholder="条数"
-                                    style="opacity: 0; pointer-events: none; transition: opacity 0.2s; width: 45px;">
+                                    min="1" max="500" placeholder="条数">
                             </div>
                         </div>
                         <div class="world-section-title">活跃的角色 & 群聊</div>
@@ -3736,6 +3782,50 @@
                             <ul id="forum-worldbook-list" class="binding-list">
                                 <!-- JS 填充 -->
                             </ul>
+                        </div>
+                    </div>
+
+                    <!-- Tab 3: 管理 (默认隐藏) -->
+                    <!-- 这块的内联样式已收进 forum.css 的 #world-tab-admin 作用域，别再往回写内联 -->
+                    <div id="world-tab-admin" class="world-tab-pane">
+                        <div class="world-admin-scroll">
+                            <div class="setting-row">
+                                <div class="world-label-group">
+                                    <span class="world-label">论坛功能 API</span>
+                                    <span class="world-sublabel">生成帖子/评论用的接口</span>
+                                </div>
+                                <select id="forum-api-preset-select" class="setting-select world-admin-select">
+                                    <option value="">全局默认</option>
+                                </select>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="world-label-group">
+                                    <span class="world-label">批量删除帖子</span>
+                                    <span class="world-sublabel">按时间范围清理，删掉不可恢复</span>
+                                </div>
+                                <button id="forum-batch-delete-btn" class="btn btn-primary btn-small world-admin-action-btn">选择范围</button>
+                            </div>
+
+                            <div class="world-admin-css-block">
+                                <div class="world-label-group">
+                                    <span class="world-label">帖子正文样式</span>
+                                    <span class="world-sublabel">只作用于帖子详情页的正文。改完点右上角保存。</span>
+                                </div>
+                                <textarea id="forum-detail-css-input" class="field-textarea css-editor"
+                                    placeholder="直接写属性＝改正文整体，如：
+font-size:17px; line-height:1.8;
+
+写一条 选择器{属性}＝改正文里这类元素，如：
+p{margin-bottom:14px}
+em{color:#4E7FAB}
+.inline-quote{background:#F6FAFF}
+
+能改的元素：
+p 段落 / h1 h2 h3 标题 / blockquote 引用块
+em 斜体 / strong 加粗 / .inline-quote 对话引号
+a 链接 / ul ol li 列表 / code 代码"></textarea>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -3860,15 +3950,11 @@
                 我的档案
                 <div class="active-bar"></div>
             </div>
-            <div class="me-tab-item" data-tab="css">
-                正文样式
-                <div class="active-bar"></div>
-            </div>
         </div>
 
         <!-- Tab 内容区域 (无卡片背景，直接衔接) -->
         <div class="me-tab-content-container">
-            
+
             <!-- Tab 1: 档案内容 -->
             <div class="me-tab-pane active" id="tab-persona">
                 <div class="field-group">
@@ -3877,18 +3963,10 @@
                     <div class="me-load-btn">
                     <button id="me-load-persona-btn" class="btn btn-secondary">读取预设</button></div>
                 </div>
-                
+
                 <div class="field-group">
                     <label>设定</label>
                     <textarea id="me-persona-input" readonly class="field-textarea" placeholder="暂无设定信息"></textarea>
-                </div>
-            </div>
-
-            <!-- Tab 2: CSS 内容 -->
-            <div class="me-tab-pane" id="tab-css">
-                <div class="field-group">
-                    <textarea id="me-custom-css-input" class="field-textarea css-editor" placeholder=".post-detail-content-body{正文}
-.inline-quote{引用}"></textarea>
                 </div>
             </div>
 </div>
@@ -3948,6 +4026,33 @@
                 </div>
             </nav>
 
+            <!-- 喵坛长按多选的底部操作条：盖在全局底部导航栏那一格上（同位置同高度）。
+                 它是 .bottom-tab-bar 的兄弟节点，为的是共用同一个绝对定位包含块。
+                 ★ 这里不给 inline 的 display —— switchScreen 会往 .bottom-tab-bar 上写
+                   inline style，多选态是靠 body 上的类 + !important 盖住它的，
+                   自己这条也必须由那个类来开关，否则 inline 优先级会把 CSS 压掉。 -->
+            <div class="forum-multi-action-bar" id="forum-multi-action-bar">
+                <button class="forum-multi-action is-danger" id="forum-multi-delete-btn" disabled>
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z" />
+                    </svg>
+                    <span>删除</span>
+                </button>
+                <button class="forum-multi-action" id="forum-multi-fav-btn" disabled>
+                    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+<path d="M9.15316 5.40838C10.4198 3.13613 11.0531 2 12 2C12.9469 2 13.5802 3.13612 14.8468 5.40837L15.1745 5.99623C15.5345 6.64193 15.7144 6.96479 15.9951 7.17781C16.2757 7.39083 16.6251 7.4699 17.3241 7.62805L17.9605 7.77203C20.4201 8.32856 21.65 8.60682 21.9426 9.54773C22.2352 10.4886 21.3968 11.4691 19.7199 13.4299L19.2861 13.9372C18.8096 14.4944 18.5713 14.773 18.4641 15.1177C18.357 15.4624 18.393 15.8341 18.465 16.5776L18.5306 17.2544C18.7841 19.8706 18.9109 21.1787 18.1449 21.7602C17.3788 22.3417 16.2273 21.8115 13.9243 20.7512L13.3285 20.4768C12.6741 20.1755 12.3469 20.0248 12 20.0248C11.6531 20.0248 11.3259 20.1755 10.6715 20.4768L10.0757 20.7512C7.77268 21.8115 6.62118 22.3417 5.85515 21.7602C5.08912 21.1787 5.21588 19.8706 5.4694 17.2544L5.53498 16.5776C5.60703 15.8341 5.64305 15.4624 5.53586 15.1177C5.42868 14.773 5.19043 14.4944 4.71392 13.9372L4.2801 13.4299C2.60325 11.4691 1.76482 10.4886 2.05742 9.54773C2.35002 8.60682 3.57986 8.32856 6.03954 7.77203L6.67589 7.62805C7.37485 7.4699 7.72433 7.39083 8.00494 7.17781C8.28555 6.96479 8.46553 6.64194 8.82547 5.99623L9.15316 5.40838Z"/>
+                    </svg>
+                    <span>收藏</span>
+                </button>
+                <button class="forum-multi-action" id="forum-multi-forward-btn" disabled>
+                    <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M1 18.5088C1 13.1679 4.90169 8.77098 9.99995 7.84598V5.51119C9.99995 3.63887 12.1534 2.58563 13.6313 3.73514L21.9742 10.224C23.1323 11.1248 23.1324 12.8752 21.9742 13.7761L13.6314 20.2649C12.1534 21.4144 10 20.3612 10 18.4888V16.5189C7.74106 16.9525 5.9625 18.1157 4.92778 19.6838C4.33222 20.5863 3.30568 20.7735 2.55965 20.5635C1.80473 20.3511 1.00011 19.6306 1 18.5088ZM12.4034 5.31385C12.2392 5.18613 11.9999 5.30315 11.9999 5.51119V9.41672C11.9999 9.55479 11.8873 9.66637 11.7493 9.67008C8.09094 9.76836 4.97774 12.0115 3.66558 15.1656C3.46812 15.6402 3.31145 16.1354 3.19984 16.6471C3.07554 17.217 3.00713 17.8072 3.00053 18.412C3.00018 18.4442 3 18.4765 3 18.5088C3.00001 18.6437 3.18418 18.6948 3.25846 18.5822C3.27467 18.5577 3.29101 18.5332 3.30747 18.5088C3.30748 18.5088 3.30746 18.5088 3.30747 18.5088C3.63446 18.0244 4.01059 17.5765 4.42994 17.168C4.71487 16.8905 5.01975 16.6313 5.34276 16.3912C7.05882 15.1158 9.28642 14.3823 11.7496 14.3357C11.8877 14.3331 12 14.4453 12 14.5834V18.4888C12 18.6969 12.2393 18.8139 12.4035 18.6862L20.7463 12.1973C20.875 12.0973 20.875 11.9028 20.7463 11.8027L12.4034 5.31385Z"/>
+</svg>
+                    <span>转发</span>
+                </button>
+            </div>
+
 
         <div id="forum-post-detail-screen" class="screen">
             <!-- 1. 静态 Header -->
@@ -3961,7 +4066,6 @@
                     <h1 class="title">详 情</h1>
                 </div>
                 <div class="action-btn-group">
-                    <!-- 新增：收藏星标 -->
                     <button class="action-btn" id="d-delete-btn" style="cursor: pointer;">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path
@@ -3969,8 +4073,6 @@
                                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
                         </svg>
                     </button>
-                    <!-- 原有的分享按钮 -->
-                    <!-- 原有的 AI 按钮 -->
                     <button class="action-btn" id="detail-ai-btn" title="AI生成评论">
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                             <path
@@ -4003,8 +4105,7 @@
                         <h2 id="d-post-title" class="post-detail-title">...</h2>
                         <div id="d-post-content" class="post-detail-content-body">...</div>
 
-                        <!-- 操作栏：赞和删除 -->
-                        <!-- 操作栏：删除、阅读、评论 -->
+                        <!-- 操作栏：在看、阅读、评论 -->
                         <!-- 找到 post-detail-actions 区域 -->
                         <div class="post-detail-actions">
                             <!-- 阅读/在看 按钮 -->
@@ -5828,53 +5929,8 @@
                 </div>
                 <p class="placeholder-text" id="pomodoro-no-tasks-placeholder">还没有专注任务，点击右上角“+”创建一个吧。</p>
             </main>
-        <!-- Pomodoro Settings Sidebar -->
-        <div id="pomodoro-settings-sidebar" class="settings-sidebar">
-            <div class="header">专注设置</div>
-            <div class="content">
-                <form id="pomodoro-settings-form">
-                    <div class="form-group">
-                        <label for="pomodoro-char-select">绑定陪伴角色</label>
-                        <select id="pomodoro-char-select" class="form-group"></select>
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-user-persona-select">选择你的设定</label>
-                        <select id="pomodoro-user-persona-select" class="form-group"></select>
-                    </div>
-                    <hr>
-                    <div class="form-group">
-                        <label for="pomodoro-encouragement-minutes">鼓励机制 (分钟)</label>
-                        <input type="number" id="pomodoro-encouragement-minutes" class="form-group"
-                            placeholder="专注多少分钟后收到鼓励" min="1">
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-poke-limit">“戳一戳”次数上限</label>
-                        <input type="number" id="pomodoro-poke-limit" class="form-group" placeholder="每次专注允许戳几次"
-                            min="0">
-                    </div>
-                    <hr>
-                    <div class="form-group">
-                        <label for="pomodoro-focus-bg-url">专注界面背景 URL</label>
-                        <input type="url" id="pomodoro-focus-bg-url" class="form-group" placeholder="粘贴图片URL">
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-focus-bg-upload" class="btn btn-secondary">或从本地上传</label>
-                        <input type="file" id="pomodoro-focus-bg-upload" accept="image/*" style="display:none;">
-                    </div>
-                    <hr>
-                    <div class="form-group">
-                        <label for="pomodoro-task-card-bg-url">任务卡片背景 URL</label>
-                        <input type="url" id="pomodoro-task-card-bg-url" class="form-group" placeholder="粘贴图片URL">
-                    </div>
-                    <div class="form-group">
-                        <label for="pomodoro-task-card-bg-upload" class="btn btn-secondary">或从本地上传</label>
-                        <input type="file" id="pomodoro-task-card-bg-upload" accept="image/*" style="display:none;">
-                    </div>
-                    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">保存设置</button>
-                </form>
-            </div>
-        </div>
-        <!-- Pomodoro Global Settings Sidebar -->
+        <!-- Pomodoro Global Settings Sidebar（任务列表那一屏的「全局」设置，由
+             #pomodoro-settings-btn 打开，所以留在本屏；本任务设置在 focus 屏里） -->
         <div id="pomodoro-global-settings-sidebar" class="settings-sidebar">
             <div class="header">全局专注设置</div>
             <div class="content">
@@ -5950,7 +6006,60 @@
                     </div>
                 </div>
             </main>
+        <!-- Pomodoro Settings Sidebar（专注中的「本任务」设置）
+             必须挂在 #pomodoro-focus-screen 里面：开它的齿轮 #pomodoro-focus-settings-btn
+             就在这一屏。放在 #pomodoro-screen 下的话，切到专注屏时那一屏是 display:none，
+             整棵子树不渲染 —— .open 加上了、right 也算成 0，但盒子量出来 0×0，点了没反应。
+             （别为了防「侧边栏串页」再把它挪回去：串页已由 components.css 里
+             .settings-sidebar 的 visibility:hidden / pointer-events:none 根治。）
+             同理 #pomodoro-global-settings-sidebar 留在 #pomodoro-screen，因为开它的
+             #pomodoro-settings-btn 在任务列表那一屏。 -->
+        <div id="pomodoro-settings-sidebar" class="settings-sidebar">
+            <div class="header">专注设置</div>
+            <div class="content">
+                <form id="pomodoro-settings-form">
+                    <div class="form-group">
+                        <label for="pomodoro-char-select">绑定陪伴角色</label>
+                        <select id="pomodoro-char-select" class="form-group"></select>
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-user-persona-select">选择你的设定</label>
+                        <select id="pomodoro-user-persona-select" class="form-group"></select>
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="pomodoro-encouragement-minutes">鼓励机制 (分钟)</label>
+                        <input type="number" id="pomodoro-encouragement-minutes" class="form-group"
+                            placeholder="专注多少分钟后收到鼓励" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-poke-limit">“戳一戳”次数上限</label>
+                        <input type="number" id="pomodoro-poke-limit" class="form-group" placeholder="每次专注允许戳几次"
+                            min="0">
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="pomodoro-focus-bg-url">专注界面背景 URL</label>
+                        <input type="url" id="pomodoro-focus-bg-url" class="form-group" placeholder="粘贴图片URL">
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-focus-bg-upload" class="btn btn-secondary">或从本地上传</label>
+                        <input type="file" id="pomodoro-focus-bg-upload" accept="image/*" style="display:none;">
+                    </div>
+                    <hr>
+                    <div class="form-group">
+                        <label for="pomodoro-task-card-bg-url">任务卡片背景 URL</label>
+                        <input type="url" id="pomodoro-task-card-bg-url" class="form-group" placeholder="粘贴图片URL">
+                    </div>
+                    <div class="form-group">
+                        <label for="pomodoro-task-card-bg-upload" class="btn btn-secondary">或从本地上传</label>
+                        <input type="file" id="pomodoro-task-card-bg-upload" accept="image/*" style="display:none;">
+                    </div>
+                    <button type="submit" class="btn btn-primary" style="margin-top: 20px;">保存设置</button>
+                </form>
+            </div>
         </div>
+</div>
 
 
 
@@ -6149,7 +6258,35 @@
             </div>
         </div>
 
-        <!-- ② 语气要求（注入语言模型，不是 TTS 参数） -->
+        <!-- ② 通话语音。**群模式下 JS 会把这一节整块隐掉** —— 通话只支持私聊。
+             这和通话界面顶部工具箱那颗按钮是同一个开关（chat.callVoiceEnabled），
+             多这个入口是因为那颗按钮必须先拨通才够得着，等翻出来点开，
+             开头几句已经出完了。
+             ★ 默认**收起**：一度默认展开（理由是"它正是用来提前打开的"），但一开弹窗
+               就有两节摊开，弹窗一屏装不下、还得先滚一段才看得见音色下拉。
+               展开状态由 openVoiceSettingDialog 每次开弹窗复位，别指望这里的 class ——
+               `open` 是运行时 toggle 上去的，弹窗全局共用同一份 DOM。 -->
+        <div class="collapsible-section" id="voice-setting-call-block">
+            <div class="collapsible-header">
+                <h4>通话语音</h4>
+                <span class="collapsible-arrow">▼</span>
+            </div>
+            <div class="collapsible-content">
+                <div class="form-group mb-0" style="display:flex; flex-direction:row;justify-content:space-between; align-items:center;">
+                    <!-- 保持 label：.form-group label 给的蓝色（--secondary-color）就靠它；
+                         补上 for 之后点文字也能拨动开关 -->
+                    <label for="voice-setting-call">通话中自动出声</label>
+                    <label class="switch">
+                        <input type="checkbox" id="voice-setting-call">
+                        <span class="slider round"></span>
+                    </label>
+                </div>
+                <!-- 这行文案是活的：开关打开后会如实报"现在还差什么"，见 _syncCallVoiceHint -->
+                <p class="field-hint" id="voice-setting-call-hint">开启后，语音/视频通话里对方说的每句话都会自动合成并播放。关着也照样存成语音条，事后能手动点播放。</p>
+            </div>
+        </div>
+
+        <!-- ③ 语气要求（注入语言模型，不是 TTS 参数） -->
         <div class="collapsible-section">
             <div class="collapsible-header">
                 <h4>语气要求</h4>
@@ -6184,8 +6321,9 @@
                     <option value="text">普通对话</option>
                     <option value="voice">语音消息</option>
                     <option value="photo-video">文字图片</option>
-                    <option value="display">用户剧情旁白</option>
+                    <option value="user-narration">用户剧情旁白</option>
                     <option value="narration">线下模式旁白</option>
+                    <option value="display">屏幕提示（通话/模式）</option>
                 </select>
             </div>
 
@@ -6755,21 +6893,54 @@
   <div id="call-connected" style="display:none">
 
 <div id="call-connected-bg"></div>
-    <!-- 固定右上角：历史记录（所有模式永远可见） -->
+    <!-- 固定右上角：工具箱（所有模式永远可见） -->
     <div class="app-header">
     <div class="placeholder-text"></div>
         <div class="title-container">
             <h1 class="title"></h1>
         </div>
-    <button id="call-history-btn" class="action-btn" title="通话记录">
+    <button id="call-toolbox-btn" class="action-btn" title="工具箱">
       <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-        <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87
-          3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06
-          l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28
-          2.54.72-1.21-3.5-2.08V8H12z"/>
+        <path d="M9.5 2h5A2.5 2.5 0 0 1 17 4.5V6h2.5A2.5 2.5 0 0 1 22 8.5V11h-7.5v-.5a1 1 0 0 0-1-1h-3a1 1 0 0 0-1 1v.5H2V8.5A2.5 2.5 0 0 1 4.5 6H7V4.5A2.5 2.5 0 0 1 9.5 2Zm0 2a.5.5 0 0 0-.5.5V6h6V4.5a.5.5 0 0 0-.5-.5h-5Z"/>
+        <path d="M2 12.5h7.5v.5a1 1 0 0 0 1 1h3a1 1 0 0 0 1-1v-.5H22v6A2.5 2.5 0 0 1 19.5 21h-15A2.5 2.5 0 0 1 2 18.5v-6Z"/>
       </svg>
     </button>
+
+    <!-- 工具菜单：塞在 app-header 里 inset:0 铺满，这样高度天然跟 header 一致
+         （header 被 .placeholder-text 撑到 96px，写死数值早晚对不上）。
+         黑底 + 灰白图标文字，按钮上 svg 下文字，排布照抄论坛底部 tab。 -->
+    <div id="call-toolbox-menu">
+      <button class="call-tool-item" id="call-history-btn" type="button">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M13 3a9 9 0 0 0-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87
+            3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06
+            l-1.42 1.42A8.954 8.954 0 0 0 13 21a9 9 0 0 0 0-18zm-1 5v5l4.28
+            2.54.72-1.21-3.5-2.08V8H12z"/>
+        </svg>
+        <span>通话记录</span>
+      </button>
+      <button class="call-tool-item" id="call-regen-btn" type="button">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-8 8s3.58 8 8 8
+            c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6
+            s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+        </svg>
+        <span>重新生成</span>
+      </button>
+      <!-- 语音开关：开着才会把对方每句话合成并自动连播（首句要等合成，约 20 秒）。
+           关着也照样把对白存成语音气泡，用户事后想听可以手动点播放补合成。
+           开关按角色存在 chat.callVoiceEnabled，逻辑全在 js/chat/chat_voice_call.js。 -->
+      <button class="call-tool-item" id="call-voice-btn" type="button">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6
+            c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5
+            c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/>
+        </svg>
+        <span>语音 · 关</span>
+      </button>
     </div>
+    </div>
+
 
     <!-- 中部内容块：旁白区 + 主行（头像+气泡）
     -->
@@ -7339,6 +7510,67 @@
 </div>
 
     <!-- 论坛弹窗 -->
+    <!-- 批量删帖：按时间范围（沿用总结范围弹窗那套 date-input 结构） -->
+    <div id="forum-batch-delete-modal" class="modal-overlay">
+        <div class="modal-window">
+            <h3>批量删除帖子</h3>
+            <div id="forum-del-range" class="form-group">
+                <label>起始时间：</label>
+                <div class="date-input-group">
+                    <input type="number" id="forum-del-start-year" class="date-input-field" placeholder="YYYY"
+                        style="width: 54px;">
+                    <span class="date-label">年</span>
+                    <input type="number" id="forum-del-start-month" class="date-input-field" placeholder="MM" min="1"
+                        max="12">
+                    <span class="date-label">月</span>
+                    <input type="number" id="forum-del-start-day" class="date-input-field" placeholder="DD" min="1"
+                        max="31">
+                    <span class="date-label">日</span>
+                    <input type="number" id="forum-del-start-hour" class="date-input-field" placeholder="HH" min="0"
+                        max="23">
+                    <span class="date-label">时</span>
+                </div>
+                <label>截止时间：</label>
+                <div class="date-input-group">
+                    <input type="number" id="forum-del-end-year" class="date-input-field" placeholder="YYYY"
+                        style="width: 54px;">
+                    <span class="date-label">年</span>
+                    <input type="number" id="forum-del-end-month" class="date-input-field" placeholder="MM" min="1"
+                        max="12">
+                    <span class="date-label">月</span>
+                    <input type="number" id="forum-del-end-day" class="date-input-field" placeholder="DD" min="1"
+                        max="31">
+                    <span class="date-label">日</span>
+                    <input type="number" id="forum-del-end-hour" class="date-input-field" placeholder="HH" min="0"
+                        max="23">
+                    <span class="date-label">时</span>
+                </div>
+                <div id="forum-del-range-result"
+                    style="font-size:12px; color:#888; text-align:center; margin-top:10px; min-height:18px; line-height:1.4;">
+                </div>
+            </div>
+            <!-- 过滤删除：两个开关默认都开着（HTML 的 checked + 每次打开弹窗时重置）。
+                 删帖不可恢复，安全方向是「少删」—— 想连收藏一起清的人自己关掉它。 -->
+            <div class="form-group"
+                style="display:flex; align-items:center; justify-content:space-between; margin-top:15px;">
+                <label for="forum-del-skip-fav" style="margin-bottom:0;">跳过收藏</label>
+                <label class="switch">
+                    <input type="checkbox" id="forum-del-skip-fav" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="form-group"
+                style="display:flex; align-items:center; justify-content:space-between; margin-top:10px;">
+                <label for="forum-del-skip-watching" style="margin-bottom:0;">跳过在看</label>
+                <label class="switch">
+                    <input type="checkbox" id="forum-del-skip-watching" checked>
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <button class="btn btn-primary" id="forum-del-confirm-btn" style="width:100%; margin-top:10px;">删除</button>
+        </div>
+    </div>
+
     <!-- 手动发帖弹窗 -->
     <div id="forum-create-post-modal" class="modal-overlay">
         <div class="modal-window">
@@ -7627,6 +7859,8 @@
     <script src="js/chat/chat_voice_service.js"></script>
 <!-- 语音功能里唯一认识 DOM 的模块，必须排在 chat_room / chat_bubble_factory 之前 -->
     <script src="js/chat/chat_voice_player.js"></script>
+<!-- 通话里的语音连播：抠对白/合成队列/逐条播完再弹下一条。用到 player 的 unlockVoiceAudio/playVoiceClipOnBubble -->
+    <script src="js/chat/chat_voice_call.js"></script>
 <!-- 聊天级语音设置（音色 + 语气要求合并的弹窗）。语气那句提示词只在这里定义，private/group_prompt 都要用它 -->
     <script src="js/chat/chat_voice_settings.js"></script>
     <script src="js/api/image_generation_api.js"></script>
@@ -7725,7 +7959,9 @@
     <script src="js/forum/forum_detail.js"></script>
     <script src="js/forum/forum_me_page.js"></script>
     <script src="js/forum/forum_bindings.js"></script>
+    <script src="js/forum/forum_admin.js"></script>
     <script src="js/forum/forum_favorites.js"></script>
+    <script src="js/forum/forum_multiselect.js"></script>
     <script src="js/forum/forum_share.js"></script>
     <script src="js/forum/forum_api.js"></script>
     <script src="js/forum/forum_generation.js"></script>
