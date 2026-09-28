@@ -329,8 +329,10 @@ function renderCustomizeForm() {
                                     <h6 style="margin: 0; font-size: 1em; color: #333;">隐藏头像</h6>
                                     <button type="button" class="btn btn-secondary btn-small copy-css-btn">复制</button>
                                 </div>
-                                <pre style="background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; max-height: 150px; overflow-y: auto;"><code>/* --- 隐藏聊天界面的所有头像和时间戳 --- */
-.message-info {
+                                <pre style="background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; max-height: 150px; overflow-y: auto;"><code>/* --- 隐藏聊天界面的所有头像 --- */
+/* 提示：外观 → 基础 里已经有「隐藏头像」开关和「头像弧度」滑块了，
+   一般不用手写这段。想连时间一起关掉就把「消息时间」选成「不显示」。 */
+.message-avatar {
     display: none !important;
 }
 
