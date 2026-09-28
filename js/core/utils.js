@@ -688,12 +688,17 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
 
             // 把 input-container 里的 input 临时替换成 select
             inputContainer.style.display = 'block';
-            inputContainer.innerHTML = `
-                <select id="global-dialog-select" class="appui-select">
-                    ${options.map(o =>
-                        `<option value="${String(o.value).replace(/"/g,'&quot;')}">${o.label}</option>`
-                    ).join('')}
-                </select>`;
+            inputContainer.innerHTML = '';
+            const selectEl = document.createElement('select');
+            selectEl.id = 'global-dialog-select';
+            selectEl.className = 'appui-select';
+            options.forEach(o => {
+                const optionEl = document.createElement('option');
+                optionEl.value = o.value;
+                optionEl.innerText = o.label;
+                selectEl.appendChild(optionEl);
+            });
+            inputContainer.appendChild(selectEl);
 
             const close = () => {
                 overlay.classList.remove('visible');
