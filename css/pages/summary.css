@@ -137,26 +137,31 @@
     text-align: center;
 }
 
-#time-range-full .date-input-field {
+/* 起止时间那排输入框的"好看版"。#forum-del-range 是论坛「管理」Tab 的批量删帖弹窗，
+   它照搬了这套 date-input 结构，所以并进同一条选择器 —— 两边只此一份，别复制到 forum.css 去 */
+#time-range-full .date-input-field,
+#forum-del-range .date-input-field {
     /* 1. 对齐全局表单 input 的样式 (components.css) */
     border: 1px solid #DAF0FC;
     border-radius: 10px;
     background-color: #fff;
     transition: border-color 0.3s;
     font-family: inherit;
-    
+
     text-align: center;
     font-size: 14px;
     padding: 8px 0; /* 减小左右 padding，避免挤占空间 */
     width: 38px;    /* 月、日、时的精简宽度 */
-    
+
     /* 2. 隐藏 Firefox 的默认数字箭头 */
-    -moz-appearance: textfield; 
+    -moz-appearance: textfield;
 }
 
 /* 隐藏 WebKit (Chrome/Safari) 的默认数字箭头，大幅节省空间且更美观 */
 #time-range-full .date-input-field::-webkit-outer-spin-button,
-#time-range-full .date-input-field::-webkit-inner-spin-button {
+#time-range-full .date-input-field::-webkit-inner-spin-button,
+#forum-del-range .date-input-field::-webkit-outer-spin-button,
+#forum-del-range .date-input-field::-webkit-inner-spin-button {
     -webkit-appearance: none;
     margin: 0;
 }

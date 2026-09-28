@@ -146,6 +146,25 @@
     margin-bottom:2px;
 }
 
+/* 头像外面那层壳，只为了「时间戳放头像下方」那个选项而存在（里面是头像 + .message-time-avatar）。
+   ★ 默认 display: contents —— 壳子不生成盒子，头像直接当 .message-bubble-row 的 flex item，
+     布局和没有这层壳时**逐像素一致**。这不是偷懒，是两件事逼出来的：
+     1. 「隐藏头像」生成的是 `.message-avatar { display:none }`（老预设里已经存着这一行，
+        用户不进外观页就永远不会重写）。要是这层壳是真 flex 盒，头像藏了它还在，
+        宽度塌成 0 但仍算一个 flex item，`.message-bubble-row` 的 gap:8px 照发 ——
+        气泡凭空右移 8px。和 .meta-time-only 那个 4px 坑是同一个病。
+     2. 折叠通话气泡和 peek 消息页（js/peek/peek_messages.js）都是裸的 img.message-avatar，
+        没这层壳。display:contents 让「有壳/没壳」表现一致，不用去同步那几处。
+   下面 flex-direction / align-items / gap 在 display:contents 下全是惰性的，
+   等「头像下方」那个选项把 display 翻成 flex（生成端在 bubble_css_preset.js）才生效。 */
+.message-avatar-col {
+    display: contents;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    gap: 2px;
+}
+
 .message-avatar {
     width: 38px;
     height: 38px;
@@ -212,9 +231,56 @@
 }
 
 
-.message-time {
+/* 每条消息的时间，一共三个槽位，气泡工厂对每条消息都把三个都画出来，
+   由外观 → 基础 →「消息时间」那个下拉决定放开哪一个（生成端见 bubble_css_preset.js 的
+   timePos 分支）。默认三个全关 = 「不显示」。
+     · .message-time        气泡上方（meta 行里，群聊那行还带身份标签和昵称）
+     · .message-time-avatar 头像下方（在 .message-avatar-col 里）
+     · .message-time-tail   气泡后（.message-bubble-row 的第三个 flex item）
+   ★ 为什么是"画三个 + CSS 挑一个"而不是"工厂按设置只画一个"：位置是跟着预设走的
+     per-chat CSS，纯 CSS 可切的话，用户在外观页拖下拉时**已经渲染出来的气泡**会立刻
+     跟着变，也不用让气泡工厂去解析预设 META。代价是每条消息多两个 span，
+     渲染窗口本来就只有一屏多，这点开销换掉一条跨模块依赖很值。
+   ★ 三个类名必须互不相同：以前只有 .message-time 一个类，生成端那条
+     `.message-time { display: inline }` 会把三个槽位一起放出来（同时冒出三个时间）。 */
+.message-time,
+.message-time-avatar,
+.message-time-tail {
     font-size: 10px;
     color: #aaa;
+    display: none;
+}
+
+/* 头像下方那份：宽度掐在头像上下，长格式就折行，不去把头像列撑宽 ——
+   撑宽会让每条消息的头像列宽度随时间文字长短变化，气泡左边缘参差不齐。 */
+.message-time-avatar {
+    max-width: 46px;
+    text-align: center;
+    line-height: 1.25;
+    word-break: break-all;
+}
+
+/* 气泡后那份：.message-bubble-row 的第三个 flex item，**在流内**，
+   所以既不会被 .message-area 的 overflow 裁掉，长格式时也只是把内容列挤窄一点。
+   （早先想过绝对定位，left:100% 一伸出去就撞上 #chat-room-screen 那层 overflow:hidden。）
+   align-self:flex-end 让它贴着气泡底边；sent 那侧 row-reverse 会自动把它甩到气泡左边，
+   不用再写一份镜像规则。 */
+.message-time-tail {
+    align-self: flex-end;
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding-bottom: 2px;
+}
+
+/* 私聊里 meta 行除了时间空无一物，时间一关这行就得**整行**消失。
+   ★ 只把上面那个 .message-time 藏掉是不够的：空行量出来是零高度没错，但它仍然算
+     .message-content-col 的一个 flex item，那条 gap:4px 照发，气泡被凭空顶下 4px、
+     不再和头像齐平 —— 这正是当初"加了时间就有条小空隙"、最后把时间整个删掉的原因。
+     实测：没有 meta 行 0px ／ 空 meta 行 4px ／ 整行 display:none 0px。
+   ★ 所以只有「气泡上方」那个选项才放开这一条；选「头像下方」或「气泡后」时
+     这行要继续整行收着（时间画在别的槽位里，meta 行仍然是空的）。
+   群聊的 meta 行里还有身份标签和昵称，不挂这个 class，照常显示。 */
+.message-meta-info.meta-time-only {
     display: none;
 }
 
@@ -644,20 +710,41 @@
 
 
 
+/* 我方旁白（用户自己在"+"面板发的剧情旁白）的**默认**样子：除了不画描边，其余和
+   对方（AI）旁白一致。
+   ★ 这条只是默认值，不是强制。外观里「旁白气泡」已经分我方/对方两套独立设置
+     （bubble_css_preset.js 的 narration_sent / narration_received），用户给我方调了描边
+     的话，生成端会出一条带 ID 作用域 + !important 的规则盖掉这里。
+     生成端曾经硬写过一条「我方一律 border:none」来区分两者 —— 拆成两套之后那条被删了，
+     留着它会让用户刚调好的我方描边当场消失。
+   ★ 这里的 border:none 要和 defaultBasicState.styles.narration_sent.strokeW = 0 对齐：
+     对不上的话一打开外观页就会凭空生成一段 CSS。 */
+.message-wrapper.narration-wrapper.narration-mine .narration-bubble {
+    border: none;
+}
+
+
 /* =========================================
    核心逻辑：仅针对“旁白”进行无缝拼接
+   ----------------------------------------
+   ★ 只和**同类**拼接：我方旁白只跟我方连，AI 旁白只跟 AI 连。
+     混着连的话一张大卡片会上半截没描边、下半截挂着描边，看着像画坏了。
+     区分靠 narration-mine：带它的是我方，:not(.narration-mine) 的是 AI。
+     生成端 bubble_css_preset.js 里那几条是照这个分组抄的，改这里要一起改。
    ========================================= */
 
-/* 
-   步骤 1: 处理【上方气泡】(我是旁白，且后面也是旁白)
+/*
+   步骤 1: 处理【上方气泡】(我是旁白，且后面是同类旁白)
    - 这个气泡可能是“第一个”，也可能是“中间的”
    - 目标: 强制把底部变平（去掉底部圆角和底部边框），并且拉近底部间距
 */
-.message-wrapper.narration-wrapper:has(+ .message-wrapper.narration-wrapper) {
+.message-wrapper.narration-wrapper:not(.narration-mine):has(+ .message-wrapper.narration-wrapper:not(.narration-mine)),
+.message-wrapper.narration-wrapper.narration-mine:has(+ .message-wrapper.narration-wrapper.narration-mine) {
     margin-bottom: 0 !important; /* 强制覆盖原生间距 */
 }
 
-.message-wrapper.narration-wrapper:has(+ .message-wrapper.narration-wrapper) .narration-bubble {
+.message-wrapper.narration-wrapper:not(.narration-mine):has(+ .message-wrapper.narration-wrapper:not(.narration-mine)) .narration-bubble,
+.message-wrapper.narration-wrapper.narration-mine:has(+ .message-wrapper.narration-wrapper.narration-mine) .narration-bubble {
     border-bottom-left-radius: 0 !important;
     border-bottom-right-radius: 0 !important;
     border-bottom: none !important;
@@ -665,16 +752,18 @@
     z-index: 2;
 }
 
-/* 
-   步骤 2: 处理【下方气泡】(我是旁白，且前面也是旁白)
+/*
+   步骤 2: 处理【下方气泡】(我是旁白，且前面是同类旁白)
    - 这个气泡可能是“最后一个”，也可能是“中间的”
    - 目标: 强制把顶部变平（去掉顶部圆角和顶部边框），防止双重边框
 */
-.message-wrapper.narration-wrapper + .message-wrapper.narration-wrapper {
-    margin-top: 0 !important; 
+.message-wrapper.narration-wrapper:not(.narration-mine) + .message-wrapper.narration-wrapper:not(.narration-mine),
+.message-wrapper.narration-wrapper.narration-mine + .message-wrapper.narration-wrapper.narration-mine {
+    margin-top: 0 !important;
 }
 
-.message-wrapper.narration-wrapper + .message-wrapper.narration-wrapper .narration-bubble {
+.message-wrapper.narration-wrapper:not(.narration-mine) + .message-wrapper.narration-wrapper:not(.narration-mine) .narration-bubble,
+.message-wrapper.narration-wrapper.narration-mine + .message-wrapper.narration-wrapper.narration-mine .narration-bubble {
     border-top-left-radius: 0 !important;
     border-top-right-radius: 0 !important;
     border-top: none !important;
@@ -1694,6 +1783,92 @@
     padding: 5px 10px;
     width: auto;
     height: auto;
+}
+
+/* 多选头部右边的「显示隐藏」。
+   `.app-header .action-btn` 把宽度写死成 40px，四个汉字塞不进去必须 width:auto。
+   关着时用描边、开着时填色 —— 它是个有状态的开关，不是一次性动作，
+   光靠文案切换（显示/收起）在扫一眼时不够醒目。 */
+#toggle-hidden-msg-btn {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--primary-color);
+    background-color: transparent;
+    border: 1px solid var(--primary-color);
+    border-radius: 10px;
+    padding: 4px 9px;
+    width: auto;
+    height: auto;
+    white-space: nowrap;
+}
+
+#toggle-hidden-msg-btn.active {
+    color: var(--white-color);
+    background-color: var(--primary-color);
+}
+
+/* 隐藏消息的占位行：只在多选开了「显示隐藏」时存在。
+   刻意做得和真气泡毫不相像（虚线框、灰字、无头像、贴左），
+   免得用户在多选里把它当成普通消息勾错 —— 见 chat_bubble_factory.js 的 createHiddenMessageRow。 */
+.hidden-msg-wrapper {
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+.hidden-msg-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 5px 8px;
+    border: 1px dashed var(--border-color, #d0d0d0);
+    border-radius: 8px;
+    background-color: rgba(128, 128, 128, 0.06);
+    font-size: 12px;
+    line-height: 1.5;
+    color: #8a8a8a;
+}
+
+.hidden-msg-tag {
+    flex-shrink: 0;
+    font-size: 11px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background-color: rgba(128, 128, 128, 0.18);
+    color: #6f6f6f;
+    white-space: nowrap;
+}
+
+.hidden-msg-text {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+/* 隐藏行被勾中时要**明显**：一屏里常有六七条长得几乎一样的通话 [system:…]，
+   而 .multi-select-selected 的淡蓝底色挂在外层 wrapper 上，被这里的灰底盖得
+   几乎看不出来。删除不可恢复，勾没勾中不能靠猜，所以边框也一起换成实线主色。 */
+.hidden-msg-wrapper.multi-select-selected .hidden-msg-row {
+    border-style: solid;
+    border-color: var(--primary-color);
+    background-color: rgba(144, 202, 249, 0.3);
+}
+
+/* 时间戳 `[time-divider]` 是**存在 history 里的真消息**（chat_room.js 插的，还会存盘），
+   气泡工厂给它画了 .message-wrapper 和 data-id，本来就该能勾 —— 只是下面
+   .time-divider-wrapper 的 pointer-events:none 把它点没了。那条是为了防普通模式下
+   误触长按，多选模式里长按早就被拦掉了（chat_actions.js 开头那句），所以
+   「显示隐藏」开着时放开它，让这条也能勾选删除。 */
+#chat-room-screen.show-hidden-msgs .time-divider-wrapper {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+#chat-room-screen.show-hidden-msgs .time-divider-wrapper.multi-select-selected .chat-time-divider {
+    background-color: var(--primary-color);
+    color: var(--white-color);
 }
 
 /* 时间分割线的外壳：强制居中且不可点击 */

@@ -733,6 +733,11 @@ color: var(--primary-color);
 #tab-view-bubbles .bubble-settings-item input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
 #tab-view-bubbles .bubble-settings-item input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
 #tab-view-bubbles .setting-hint { font-size: 12px; color: #999; margin-top: 10px; line-height: 1.4; }
+/* 「时间格式」那行的 label 里塞了个问号图标（点它弹 AppHelp 说明）。label 默认 inline，
+   图标会挂在基线上、比文字低半截。★ 只改这一行的 label，别写成
+   `.bubble-settings-item label` —— 那会把 <label class="switch"> 那个开关也变成
+   inline-flex，滑块当场散架。 */
+#tab-view-bubbles #time-format-row > label { display: inline-flex; align-items: center; }
 #tab-view-bubbles .bubble-settings-item input[type="range"] {
     width: 100%;
     cursor: pointer;

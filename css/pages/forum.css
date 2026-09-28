@@ -976,6 +976,143 @@
     flex-shrink: 0;
 }
 
+/* =========================================================
+   长按多选（主页列表）
+   顶栏就地换成「取消 + 计数」、底栏盖成「删除/收藏/转发」。
+   开关是 body 上的 .forum-multi-select-on，逻辑见 js/forum/forum_multiselect.js。
+   ========================================================= */
+
+/* 非多选态下这三个元素不占位 */
+.forum-multi-cancel-btn,
+.forum-multi-count,
+.forum-multi-spacer {
+    display: none;
+}
+
+/* 搜索框和两个圆钮让位 */
+body.forum-multi-select-on .forum-top-search-bar > input,
+body.forum-multi-select-on .forum-top-search-bar > .action-btn {
+    display: none;
+}
+
+body.forum-multi-select-on .forum-multi-cancel-btn {
+    display: block;
+    width: 48px;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: 15px;
+    font-family: var(--font-miao);
+    color: var(--primary-color);
+    text-align: center;
+    cursor: pointer;
+}
+
+body.forum-multi-select-on .forum-multi-count {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 600;
+    color: #333;
+}
+
+/* 右边补一个和「取消」等宽的空位，计数才是真居中的 */
+body.forum-multi-select-on .forum-multi-spacer {
+    display: block;
+    width: 48px;
+    flex-shrink: 0;
+}
+
+/* 选中的帖子：底色同聊天室多选的那层淡蓝，右侧盖一枚对勾。
+   ★ 对勾只能用 ::before —— .forum-post-card::after 已经被分割线占了。 */
+body.forum-multi-select-on .forum-post-card {
+    /* 给对勾留位，免得长标题钻到它底下 */
+    padding-right: 46px;
+}
+
+.forum-post-card.multi-selected {
+    background-color: rgba(144, 202, 249, 0.2);
+}
+
+.forum-post-card.multi-selected::before {
+    content: '✓';
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background-color: var(--primary-color);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* 底部操作条：位置/高度照抄 .bottom-tab-bar，盖在它上面一层。
+   ★ z-index 必须**和 .bottom-tab-bar 一样是 100**，不能图省事写 101：
+     全站 .modal-overlay 也是 100，靠「弹窗在 DOM 里排得更靠后」赢下平局
+     （61 个弹窗全部声明在导航栏之后）。写 101 就越过了这条线，
+     任何在多选态下弹出的弹窗都会被这条操作条盖住半截 —— 分享帖子那个
+     就这么中过招。盖住导航栏靠的是同一条规则：本元素紧跟在 </nav> 后面。
+   !important 只用在下面那条「藏掉导航栏」上：switchScreen 往导航栏写的是 inline style。 */
+.forum-multi-action-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: none;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 100;
+    box-shadow: 0 -2px 10px rgba(130, 170, 200, 0.1);
+}
+
+body.forum-multi-select-on .bottom-tab-bar {
+    display: none !important;
+}
+
+body.forum-multi-select-on .forum-multi-action-bar {
+    display: flex;
+}
+
+.forum-multi-action {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 10px 0;
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-size: 11px;
+    font-family: var(--font-miao);
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.forum-multi-action svg {
+    width: 26px;
+    height: 26px;
+}
+
+.forum-multi-action:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
 /* --- 内容区域调整 (适配顶部搜索栏和底部导航栏) --- */
 /* 发现页内容区 */
 /* --- 找到这一段并替换 --- */
@@ -1149,6 +1286,102 @@
     /* 底部导航栏是 absolute 悬浮的，会盖住列表最后几项；
        留出等高的内边距，保证滚动到底时最后一项完整可见 */
     padding-bottom: calc(70px + var(--safe-bottom, 0px));
+}
+
+/* 「管理」Tab 的滚动区。跟 .world-list-container 一个套路：flex 撑满 + 自己滚，
+   底部同样留出悬浮导航栏的高度，否则正文样式那个输入框会被盖住 */
+.world-admin-scroll {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding-bottom: calc(70px + var(--safe-bottom, 0px));
+}
+
+/* --- 世界页：内联样式收编 ---
+   全部限定在 #world-screen 之下，页外零影响；类名带 world- 前缀防撞名。
+   三个 Tab 的设置项共用 world-label / world-sublabel，小标题样式统一。 */
+
+/* 设置项标题组（角色 Tab 的「关联聊天记忆」、管理 Tab 的三项） */
+#world-screen .world-label-group {
+    display: flex;
+    flex-direction: column;
+}
+
+#world-screen .world-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+}
+
+#world-screen .world-sublabel {
+    font-size: 11px;
+    color: #999;
+}
+
+/* 「角色」Tab：关联聊天记忆那行的残留内联 */
+#world-tab-char .setting-row {
+    padding-top: 0;
+}
+
+#world-tab-char .world-history-controls {
+    display: flex;
+    align-items: center;
+}
+
+#world-tab-char .switch {
+    margin-right: -5px;
+}
+
+/* 条数输入框默认隐藏占位；开关勾上后 forum_bindings.js 写内联 opacity/pointerEvents 显出来，
+   内联权重更高，这里的默认值只负责初始态和取消勾选后的回落 */
+#world-history-limit {
+    width: 45px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+}
+
+/* 「管理」Tab */
+#world-tab-admin .world-admin-scroll {
+    display: flex;
+    flex-direction: column;
+}
+
+#world-tab-admin .world-admin-select {
+    max-width: 140px;
+    font-size: 13px;
+}
+
+#world-tab-admin .world-admin-action-btn {
+    width: auto;
+    margin: 0;
+}
+
+/* 正文 CSS 这一组：标题 + 输入框纵向排布，整组吃掉 Tab 剩余高度，
+   输入框在组内 flex:1 撑满（min-height 保底，屏矮时靠外层滚动）。
+   padding:0 5px 对齐 .setting-row 的横向内边距，标题才不会比上面两行靠左 */
+#world-tab-admin .world-admin-css-block {
+    margin-top: 6px;
+    padding: 0 5px;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* flex 列布局没有块级 margin 折叠，标题组和输入框之间留口气 */
+#world-tab-admin .world-admin-css-block .world-label-group {
+    margin-bottom: 6px;
+}
+
+/* 双 id 权重盖掉 .css-editor 的固定 height:160px，改为撑满剩余空间；
+   margin-bottom 在输入框和底部悬浮导航栏之间留空隙（padding-bottom 那 70px 减去导航栏
+   60px 只剩 10px，太近，flex 子项的 margin 会占住布局空间、不会被滚动容器吃掉） */
+#world-tab-admin #forum-detail-css-input {
+    flex: 1;
+    height: auto;
+    min-height: 220px;
+    margin-bottom: 12px;
 }
 
 /* --- 修改：世界页面微调 --- */

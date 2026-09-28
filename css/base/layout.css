@@ -172,7 +172,10 @@ body.peek-editing-mode .screen.active .transfer-station-messages {
 }
 
 /* 论坛 */
-.bottom-tab-bar {
+.bottom-tab-bar,
+.forum-multi-action-bar {
+    /* 多选操作条是盖在导航栏那一格上的，避让口径必须完全一致，
+       否则进多选时底部会跳一下高度 */
     padding-bottom: var(--safe-bottom);
     min-height: calc(60px + var(--safe-bottom));
 }

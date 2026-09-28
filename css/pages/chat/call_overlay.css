@@ -218,6 +218,82 @@
     color: #fff;
 }
 
+/* ── 工具菜单
+   塞在 app-header 里 absolute inset:0 铺满：高度、左右边界都跟着 header 走，
+   不用写死 52px 那类数值（header 被 .placeholder-text 撑到 96px，写死必然对不上）。
+   展开时只淡出 header 自己的标题和工具箱按钮，视觉上就是"顶栏变成了工具菜单"。
+   按钮排布照抄论坛的 .tab-item：上 svg 下文字、flex:1 均分。
+   ── */
+#call-toolbox-menu {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    padding: 0 16px;
+    background: #000;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
+    transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+#call-toolbox-menu.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+#call-connected .app-header > .title-container,
+#call-connected .app-header > .action-btn {
+    transition: opacity 0.18s ease;
+}
+
+#call-connected .app-header.toolbox-open > .title-container,
+#call-connected .app-header.toolbox-open > .action-btn {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.call-tool-item {
+    -webkit-appearance: none;
+    appearance: none;
+    background: none;
+    border: none;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 0;
+    color: #c9ccd1;            /* 灰白 */
+    font-size: 11px;
+    font-family: var(--font-miao);
+    cursor: pointer;
+    transition: color 0.2s, opacity 0.2s;
+}
+
+.call-tool-item svg {
+    width: 26px;
+    height: 26px;
+    fill: currentColor;
+}
+
+.call-tool-item:active { color: #fff; }
+
+/* 语音开关开启态。用 .is-on 不用 .active —— 上面那条 :active 是"按下去"的伪类，
+   再来个 .active 类，源码里两条几乎一样，必看花眼。这个蓝是通话页既有的
+   "活跃/AI"色（加载波形、头像光晕都用它）。 */
+.call-tool-item.is-on { color: rgba(144, 202, 249, 1); }
+
+.call-tool-item[disabled] {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
 /* 淡入动画 */
 .fade-in-element {
     opacity: 0;
