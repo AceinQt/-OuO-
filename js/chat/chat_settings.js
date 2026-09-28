@@ -269,7 +269,7 @@ function setupChatSettings() {
         });
     }
 
-    // 语音：音色 + 语气要求合并进一个折叠弹窗（同图像那套），只回填侧栏草稿，
+    // 语音：音色 + 通话开关 + 语气要求合并进一个折叠弹窗（同图像那套），只回填侧栏草稿，
     // 提交侧栏时才落库。
     // 取消（result === null）绝不能写 —— 空语气是"清空语气要求"这个合法意图，
     // 和"我点错了想退出"必须分开，否则误触一次就把设置好的语气悄悄清了。
@@ -278,14 +278,19 @@ function setupChatSettings() {
         voiceItem.addEventListener('click', async () => {
             if (typeof openVoiceSettingDialog !== 'function') return;
             const presetInput = document.getElementById('setting-chat-voice-preset');
+            const callInput = document.getElementById('setting-chat-voice-call');
             const toneInput = document.getElementById('setting-chat-voice-tone');
             const result = await openVoiceSettingDialog({
                 voicePresetId: presetInput ? presetInput.value : '',
+                callVoiceEnabled: callInput ? callInput.value === '1' : false,
                 voiceTonePrompt: toneInput ? toneInput.value : ''
             });
             if (!result) return;
             if (presetInput && result.voicePresetId !== undefined) {
                 presetInput.value = result.voicePresetId;
+            }
+            if (callInput && result.callVoiceEnabled !== undefined) {
+                callInput.value = result.callVoiceEnabled ? '1' : '0';
             }
             if (toneInput) toneInput.value = result.voiceTonePrompt;
             _refreshChatVoiceDisplay();
@@ -433,17 +438,22 @@ function loadSettingsToSidebar() {
             apiPresetSel.value = e.chatApiPreset || '';
         }
 
-        // 语音：音色 + 语气都存进隐藏 input 暂存，侧栏只显示一行摘要，内容走弹窗
+        // 语音：音色 + 通话开关 + 语气都存进隐藏 input 暂存，侧栏只显示一行摘要，内容走弹窗
         const voicePresetInput = document.getElementById('setting-chat-voice-preset');
+        const voiceCallInput = document.getElementById('setting-chat-voice-call');
         const voiceToneInput = document.getElementById('setting-chat-voice-tone');
         if (voicePresetInput || voiceToneInput) {
             const binding = typeof normalizeChatVoiceBinding === 'function'
                 ? normalizeChatVoiceBinding(e)
                 : {
                     voicePresetId: e.voicePresetId || 'off',
+                    callVoiceEnabled: !!e.callVoiceEnabled,
                     voiceTonePrompt: e.voiceTonePrompt || ''
                 };
             if (voicePresetInput) voicePresetInput.value = binding.voicePresetId;
+            // 每次开侧栏都从 db 重读：通话界面那颗按钮会绕过侧栏直接改这个字段，
+            // 草稿留着上一次的值就会在保存时把它覆盖回去
+            if (voiceCallInput) voiceCallInput.value = binding.callVoiceEnabled ? '1' : '0';
             if (voiceToneInput) voiceToneInput.value = binding.voiceTonePrompt;
             _refreshChatVoiceDisplay();
         }
@@ -506,17 +516,37 @@ function _refreshChatImageGenerationDisplay() {
     );
 }
 
-/** 按隐藏 input 的当前值刷新侧栏语音行文案（音色名 + 有没有设语气）。 */
+/**
+ * 刷新侧栏语音行：左边音色名，右边两枚小图标（通话出声 / 已设语气）。
+ * 图标是 index.html 里的静态 DOM，这里只切 .is-on —— 音色名是用户自己起的，
+ * 拼 innerHTML 塞进去就是一条没必要的注入面。
+ *
+ * 🛑 切显隐**必须**用 classList，不能写 `flag.hidden = !on`：`hidden` 是
+ *    HTMLElement 的 IDL 属性，这俩是 SVGElement，赋值只会挂个没人读的 expando，
+ *    图标永远不亮 —— 不报错、样式也看着没问题，纯静默。踩过一次。
+ */
 function _refreshChatVoiceDisplay() {
-    const display = document.getElementById('setting-chat-voice-display');
-    if (!display || typeof formatVoiceSettingLabel !== 'function') return;
+    const nameEl = document.getElementById('setting-chat-voice-name');
+    if (!nameEl || typeof formatVoiceSettingLabel !== 'function') return;
     const presetInput = document.getElementById('setting-chat-voice-preset');
+    const callInput = document.getElementById('setting-chat-voice-call');
     const toneInput = document.getElementById('setting-chat-voice-tone');
     // 侧栏此刻的真值在隐藏 input 里（可能还没保存），不能去读 db 里那份旧的
-    display.textContent = formatVoiceSettingLabel({
+    const binding = {
         voicePresetId: presetInput ? presetInput.value : '',
+        callVoiceEnabled: callInput ? callInput.value === '1' : false,
         voiceTonePrompt: toneInput ? toneInput.value : ''
-    });
+    };
+    nameEl.textContent = formatVoiceSettingLabel(binding);
+
+    // 哪枚该亮的判定在 voiceSettingRowFlags 里定义一次，这边不重抄
+    const flags = typeof voiceSettingRowFlags === 'function'
+        ? voiceSettingRowFlags(binding)
+        : { call: false, tone: false };
+    const callFlag = document.getElementById('setting-chat-voice-flag-call');
+    const toneFlag = document.getElementById('setting-chat-voice-flag-tone');
+    if (callFlag) callFlag.classList.toggle('is-on', flags.call);
+    if (toneFlag) toneFlag.classList.toggle('is-on', flags.tone);
 }
             
 // --- 替换 saveSettingsFromSidebar 函数 ---
@@ -567,10 +597,17 @@ async function saveSettingsFromSidebar() {
             e.chatApiPreset = apiPresetSel.value;
         }
 
-        // 语音：音色 + 语气。空语气要照样写回去（那是"清空语气要求"），所以只判元素存不存在
+        // 语音：音色 + 通话开关 + 语气。空语气要照样写回去（那是"清空语气要求"），
+        // 所以只判元素存不存在
         const voicePresetSave = document.getElementById('setting-chat-voice-preset');
         if (voicePresetSave) {
             e.voicePresetId = voicePresetSave.value || 'off';
+        }
+        // 和通话界面工具箱那颗按钮写的是同一个字段。那边改完当场 saveSingleChat，
+        // 这边跟着侧栏一起提交 —— 两个入口，一个字段，不要再各开一个
+        const voiceCallSave = document.getElementById('setting-chat-voice-call');
+        if (voiceCallSave) {
+            e.callVoiceEnabled = voiceCallSave.value === '1';
         }
         const voiceToneSave = document.getElementById('setting-chat-voice-tone');
         if (voiceToneSave) {
@@ -615,12 +652,24 @@ async function saveSettingsFromSidebar() {
 // 这是硬要求，不是巧合。这里以前是一套手写正则，预览是原样注入，
 // 两条通道语义不同，于是「预览生效、保存后不生效」（尤其是底栏）成了常态反馈。
 // 想改注入方式的话去改 bubble_css_scope.js，别在这里单独加逻辑。
+//
+// ★ 顺带把「消息时间格式」从这段 CSS 的 META 里捞出来放进全局。外观里的**位置**是纯 CSS
+//   （气泡工厂画三个槽位、CSS 放开一个），但**格式**是文字内容，CSS 变不出来，只能由
+//   气泡工厂在渲染时拼。选这里做落点是因为它是所有「进聊天室 / 换预设 / 存预设」
+//   路径的唯一汇合点（chat_room.js:866、本文件 :643、group_settings.js:847、
+//   bubble_css_preset.js 存/删预设那几处都调它），放别处必漏一条。
 function updateCustomBubbleStyle(chatId, css, enabled) {
     const styleId = `custom-bubble-style-for-${chatId}`;
     let styleElement = document.getElementById(styleId);
 
     const finalCss = (enabled && css && typeof scopeBubbleCss === 'function')
         ? scopeBubbleCss(css, chatId)
+        : '';
+
+    // 空串 = 用默认格式。必须**无条件**写一次：切到一个没设过格式的聊天时，
+    // 不写就会继续沿用上一个聊天的格式（下面那个 return 之前也得覆盖到）。
+    window.currentMessageTimeFormat = (enabled && css && typeof getMessageTimeFormatFromCss === 'function')
+        ? getMessageTimeFormatFromCss(css)
         : '';
 
     if (!finalCss) {

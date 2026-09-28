@@ -627,6 +627,14 @@ db.studyBooks.forEach(b => {
 //   （这些表恢复流程自身没有逐张显式写，依赖这里兜底）。
 //   刻意改名而不是保留 saveData 这个名字，是为了让任何遗漏的旧调用点
 //   直接抛 TypeError 暴露出来，而不是静默地继续做全量覆盖。
+//
+// ★ 但「兜底」只管上面那批老表（study 这边是 studyBooks / studyQuestions /
+//   studyRecords —— 恢复流程只 clear 它们、不写，全靠这里补）。后来加的
+//   studyBanks / studyExams / studyExamRecords 反过来：backup_data.js 的三条恢复路径
+//   （importJsonlStream / lazyImportBackupData / importBackupData）各自在调本函数
+//   【之前】就显式 bulkPut 了这三张 —— 它们只是被解析进了内存 db，不落表的话
+//   紧随其后的 loadData() 会拿 Dexie 空表把内存盖掉，恢复完就丢。
+//   新增恢复路径时要照着写这三张，别指望这里替你兜。
 window.restoreAllTablesToDB = async () => {
     // 1. 聊天 & 角色 & 组
     try {
@@ -715,6 +723,10 @@ window.restoreAllTablesToDB = async () => {
     // 9. 学习模块（独立表）
     // ★ V8：studyBooks 已不含 content / coreadMessages，正常 bulkPut 即可
     // ★ studyBookContents / studyCoreadMessages / studyPageCache 均由精准函数单独写，不在此处全量写
+    // ★ studyBooks / studyQuestions / studyRecords 靠这里兜底 —— 恢复流程只清表不写它们
+    // ★ studyExams / studyExamRecords 不在这里【不是漏写】：三条恢复路径在调本函数之前
+    //   就自己写过了（见函数头第二段）。下面 studyBanks 那行是这批里唯一也写在此处的，
+    //   属历史冗余，留着只为不改既有行为 —— 别照它的样子再给 exams 补两行上来。
     try {
         if (db.studyBooks     && db.studyBooks.length     > 0) await dexieDB.studyBooks.bulkPut(db.studyBooks);
         if (db.studyQuestions && db.studyQuestions.length > 0) await dexieDB.studyQuestions.bulkPut(db.studyQuestions);

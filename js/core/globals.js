@@ -25,6 +25,10 @@ window.currentGroupAction = { type: null, recipients: [] };
 window.longPressTimer = null;
 window.isInMultiSelectMode = false;
 window.selectedMessageIds = new Set();
+// 多选栏里的「显示隐藏」开关：只在多选模式内有效，退出多选一律复位。
+// 平时隐藏消息（[system:…] 那些给 AI 看的上下文）根本不进 DOM，开了它才画出来，
+// 好让用户逐条勾选删/转，不用再靠"整段批量删"这种笨办法。
+window.showHiddenInSelect = false;
 
 // --- 世界书与编辑器 ---
 window.currentEditingWorldBookId = null;

@@ -57,30 +57,14 @@ function forumCleanTitle(title) {
                     styleTag.textContent = '';
                 }
             }
-                        // --- 喵坛新增：底部导航栏逻辑 ---
-// --- 喵坛新增：底部导航栏逻辑 ---
-function setupBottomNavigation() {
-    // 改为选择全局唯一的导航栏
-    const nav = document.querySelector('.bottom-tab-bar'); 
-
-    if (nav) {
-        nav.addEventListener('click', (e) => {
-            // 找到被点击的图标容器
-            const tab = e.target.closest('.tab-item');
-            if (tab) {
-                const targetScreenId = tab.dataset.target;
-                
-                // 【关键修改】直接调用全局切换函数
-                // 这样 utils.js 里的 has-bottom-nav 判断才会生效！
-                if (typeof switchScreen === 'function') {
-                    switchScreen(targetScreenId);
-                } else {
-                    console.error("switchScreen 函数未定义");
-                }
-            }
-        });
-    }
-}
+                        // --- 喵坛底部导航栏 ---
+// ⚠️ 这里原来有个 setupBottomNavigation()：给 .bottom-tab-bar 绑 click → switchScreen。
+// 但 4 个 .tab-item 都带 data-target，main.js:315 的 body 委托
+// ([data-target] → navigateTo → switchScreen) 本来就会处理它们 —— 于是每点一下底部导航
+// switchScreen 跑两遍，下游每个 screen 的 MutationObserver 也跟着跑两遍
+//（世界页那个会把所有角色头像的 base64 重新塞一遍 DOM，就是「点世界栏目有点延迟」的由来）。
+// 已整个删掉，导航全交给 body 委托：它还多一道 isUiBusy 忙锁，比这里更严。
+// 别再在论坛这边重新绑一个 —— 要改导航行为就去改 main.js 那一处。
 
             function setupForumFeature() {
                 const refreshBtn = document.getElementById('forum-refresh-btn');
@@ -89,10 +73,11 @@ function setupBottomNavigation() {
                 const forumScreen = document.getElementById('forum-screen');
 
                 // 1. 初始化新模块
-                setupBottomNavigation();
                 setupMePageFeature();
                 setupForumBindingFeature();
+                setupForumAdminFeature();
                 setupFavoritesFeature();
+                setupForumMultiSelectFeature();
                 renderHotPosts();
 
 // 修改 JS 选择器
@@ -239,6 +224,12 @@ renderForumPosts(db.forumPosts);
                     postsContainer.addEventListener('click', (e) => {
                         const card = e.target.closest('.forum-post-card[data-id]');
                         if (card) {
+                            // 长按多选模式下，点卡片是勾选/取消勾选，不进详情
+                            // （长按抬手补的那一发 click 由 toggle 自己挡掉）
+                            if (typeof isForumMultiSelectActive === 'function' && isForumMultiSelectActive()) {
+                                toggleForumPostSelection(card.dataset.id);
+                                return;
+                            }
    // 1. 【新增】保存当前滚动条位置
             const scrollArea = document.querySelector('#forum-screen .forum-content-area');
             if (scrollArea) {
@@ -264,68 +255,69 @@ renderForumPosts(db.forumPosts);
                 }
 
                 // 5. 观察者
-                // --- 找到 setupForumFeature 末尾的 observer 并替换 ---
 
-const observer = new MutationObserver((mutations) => {
-    for (let mutation of mutations) {
-        if (mutation.attributeName === 'class') {
-            const isActive = forumScreen.classList.contains('active');
-            
-            if (isActive) {
-                // 1. 搜索框重置 (保持不变)
-                const searchInput = document.getElementById('forum-search-input');
-                if (searchInput) searchInput.value = '';
+// ★ 同世界页/我页/收藏页：只在「不活跃 → 活跃」跳变时干活。
+//   下面「列表已有内容就只恢复滚动位置」那个 hasContent 分支本来就挡住了重绘，
+//   但搜索框重置、底部导航高亮这些原先每条 class 变更记录都要跑一遍，白跑好几次
+//   （switchScreen 一次会攒出多条记录：先给所有 .screen 去 active、再给目标加 active）。
+let forumWasActive = forumScreen ? forumScreen.classList.contains('active') : false;
+const observer = new MutationObserver(() => {
+    const isActive = forumScreen.classList.contains('active');
+    if (isActive === forumWasActive) return;   // 同一次切换的其余记录，直接丢
+    forumWasActive = isActive;
+    if (!isActive) {
+        // 离开主页时把多选态收掉：底部那条操作条盖的是**全局**导航栏，
+        // 不收的话它会跟着用户去世界页/收藏页，还把导航栏一直压着
+        if (typeof exitForumMultiSelectMode === 'function') exitForumMultiSelectMode();
+        return;
+    }
 
-                // 2. 底部导航激活 (保持不变)
-                const bottomNav = document.querySelector('.bottom-tab-bar'); 
-     if (bottomNav) {
-        // 重置所有激活状态
+    // 1. 搜索框重置
+    const searchInput = document.getElementById('forum-search-input');
+    if (searchInput) searchInput.value = '';
+
+    // 2. 底部导航激活
+    const bottomNav = document.querySelector('.bottom-tab-bar');
+    if (bottomNav) {
         bottomNav.querySelectorAll('.tab-item').forEach(tab => tab.classList.remove('active'));
-        // 激活“发现页”的主页图标
         const discoverTab = bottomNav.querySelector('.tab-item[data-target="forum-screen"]');
         if (discoverTab) discoverTab.classList.add('active');
     }
 
-                // ==========================================
-                // 【核心修改逻辑】
-                // ==========================================
-                const postsContainer = document.getElementById('forum-posts-container');
-                const scrollArea = document.querySelector('#forum-screen .forum-content-area');
-                
-                // 判断当前列表是否有内容（排除 loading 和 占位符）
-                const hasContent = postsContainer.children.length > 0 && 
-                                   !postsContainer.querySelector('.placeholder-text') &&
-                                   !postsContainer.querySelector('.temp-loading');
+    // 3. 列表：已有内容就绝对不重绘，只恢复滚动位置
+    const postsContainer = document.getElementById('forum-posts-container');
+    const scrollArea = document.querySelector('#forum-screen .forum-content-area');
 
-                if (db.forumPosts && db.forumPosts.length > 0) {
-                    if (hasContent) {
-                        // A. 如果列表里已经有帖子了（说明是从详情页返回的，或者切了Tab又切回来）
-                        //    -> 绝对不要重绘！保留现有的DOM结构（包括你加载的那20页数据）
-                        //    -> 仅仅恢复滚动位置
-                        if (scrollArea && savedForumScrollY > 0) {
-                            // 稍微延迟一点点，确保浏览器切换显示的渲染完成
-                            requestAnimationFrame(() => {
-                                scrollArea.scrollTop = savedForumScrollY;
-                            });
-                        }
-                    } else {
-                        // B. 如果列表是空的（说明是第一次打开，或者被强制刷新过）
-                        //    -> 执行初始化渲染 (重置模式)
-                        renderForumPosts(db.forumPosts, false);
-                        renderHotPosts();
-                        
-                        // 既然是重新渲染，位置归零
-                        if (scrollArea) scrollArea.scrollTop = 0;
-                        savedForumScrollY = 0;
-                    }
-                }
+    // 判断当前列表是否有内容（排除 loading 和 占位符）
+    const hasContent = postsContainer.children.length > 0 &&
+                       !postsContainer.querySelector('.placeholder-text') &&
+                       !postsContainer.querySelector('.temp-loading');
+
+    if (db.forumPosts && db.forumPosts.length > 0) {
+        if (hasContent) {
+            // A. 列表里已经有帖子（从详情页返回，或切了 Tab 又切回来）
+            //    -> 绝对不要重绘！保留现有 DOM（包括已经翻出来的那几十页）
+            //    -> 仅恢复滚动位置
+            if (scrollArea && savedForumScrollY > 0) {
+                // 稍微延迟一点，确保浏览器切换显示的渲染完成
+                requestAnimationFrame(() => {
+                    scrollArea.scrollTop = savedForumScrollY;
+                });
             }
+        } else {
+            // B. 列表是空的（第一次打开，或被强制刷新过）-> 初始化渲染
+            renderForumPosts(db.forumPosts, false);
+            renderHotPosts();
+
+            // 既然是重新渲染，位置归零
+            if (scrollArea) scrollArea.scrollTop = 0;
+            savedForumScrollY = 0;
         }
     }
 });
 
                 if (forumScreen) {
-                    observer.observe(forumScreen, { attributes: true });
+                    observer.observe(forumScreen, { attributes: true, attributeFilter: ['class'] });
                 }
 
                 setupDetailScreenEvents();

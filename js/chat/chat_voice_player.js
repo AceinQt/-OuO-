@@ -17,6 +17,7 @@
 // 对外符号：
 //   handleVoiceBubbleClick / refreshVoiceBubbleState / toggleVoiceTranscript
 //   stopVoicePlayback / regenerateVoiceClip / downloadVoiceClip
+//   unlockVoiceAudio / playVoiceClipOnBubble   ← 通话连播（chat_voice_call.js）也用这两个
 // ============================================================
 
 // ── 播放器单例 ────────────────────────────────────────────────
@@ -24,6 +25,11 @@ let _voiceAudioEl = null;
 let _voiceCurrentUrl = '';       // 当前 blob URL，换曲/停止时必须 revoke
 let _voiceCurrentBtn = null;     // 当前正在播的那个按钮，用来复原状态
 let _voiceRafId = 0;             // 进度动画的 rAF 句柄
+
+// 等着"当前这条播完"的人（通话连播链靠它一条接一条）。
+// 挂在 _finishVoicePlayback 上而不是给每条 clip 各挂一个 ended 监听：
+// 那个函数是 ended / error / 主动 stop 三条路的唯一汇合点，挂在别处必漏其中一条。
+let _voiceEndWaiters = [];
 
 function _getVoiceAudio() {
     if (_voiceAudioEl) return _voiceAudioEl;
@@ -53,14 +59,121 @@ function _finishVoicePlayback(errored) {
         _voiceCurrentUrl = '';
     }
     if (typeof resumeKeepAliveAfterPlayback === 'function') resumeKeepAliveAfterPlayback();
+
+    // ★ 放在最后：状态复原、blob 回收都做完了才放下一条走，
+    //   否则连播链里下一条的 stopVoicePlayback() 会撞上还没收完尾的这一条。
+    // ★ 先清空再遍历：等待者回调里可能又播下一条、又挂新的等待者，
+    //   直接遍历 _voiceEndWaiters 会把刚挂上的那个也当场叫醒。
+    const waiters = _voiceEndWaiters;
+    _voiceEndWaiters = [];
+    waiters.forEach(fn => { try { fn(); } catch (error) { console.warn('语音播放收尾回调失败：', error); } });
 }
 
-/** 停止当前播放（换一条、离开聊天页时调） */
+/** 停止当前播放（换一条、挂断通话、离开聊天页时调） */
 function stopVoicePlayback() {
-    if (!_voiceAudioEl) return;
-    _voiceAudioEl.pause();
-    _voiceAudioEl.removeAttribute('src');
+    if (_voiceAudioEl) {
+        _voiceAudioEl.pause();
+        // ★ removeAttribute 单独用是**卸载不掉**的（规范里只有 load() 会重跑资源
+        //   选择算法），资源会一直挂在元素上，之后谁再 play() 一下就把它重播出来。
+        //   见 unlockVoiceAudio 里那段"发条消息最后一句又响一遍"的注释。
+        _voiceAudioEl.removeAttribute('src');
+        _voiceAudioEl.load();
+    }
+    // ★ 即使从没创建过 <audio> 也要走一遍收尾：连播链可能正挂在等待者队列上，
+    //   早退会让它永远等下去（症状是挂断后界面卡在"对方说话中"）。
     _finishVoicePlayback(false);
+}
+
+/**
+ * 借一次用户手势把播放器"解锁"。
+ *
+ * ★ iOS 的自动播放许可只在手势的**同一个事件循环**里有效。气泡那条路是点播放键
+ *   触发的，合成要 20 秒以上，等 ensureVoiceClip 返回时许可早失效了；通话那条路
+ *   更极端 —— 音频完全没有对应的点击动作。两边的解法一样：拿手边这次手势
+ *   （点播放键 / 拨号 / 接听 / 发消息）先对空音源 play() 一下 —— 声是出不来的，
+ *   但"用户激活"已经被记下，之后异步 play() 就不会被拦。
+ *
+ * ★ 漏调的症状是安卓和桌面全对、iPhone 上一声不响，而且不报错。
+ *
+ * 🛑 **这个函数是同步的，不返回 Promise，调用方也绝不许 await 它。**
+ *   空 src 的 play() 返回的那个 Promise **永远不会 settle**：没有 src 时资源选择
+ *   算法直接停在 NETWORK_EMPTY，既不 resolve 也不 reject（Chrome 实测如此），
+ *   非要等到有人调 pause() / 换 src，才会以 AbortError 把它拒掉。
+ *   这里原本写的是 await，一行同时造出两个 bug：
+ *     1. 点「接听」卡死在这一行，界面毫无反应 —— acceptIncomingCall 压根走不到切屏；
+ *     2. 用户只好改点挂断 → 挂断链路里的 stopVoicePlayback() 调了 pause() → 这行
+ *        才被拒绝放行 → 接听流程在**通话已经结束之后**接着往下跑，把 getAiReply()
+ *        放了出去，于是"接听后才该有的内容"落进了聊天室。
+ *   acceptIncomingCall 里另有一道会话守卫兜第 2 条，但根子在这里。
+ */
+function unlockVoiceAudio() {
+    // 正在播就不用解锁了（出得了声本来就说明已解锁），而且这时候去动播放器会把
+    // 正在响的那条搅乱 —— 通话里每次发消息都顺手调一次，必须让开。
+    if (_voiceCurrentUrl) return;
+
+    const audio = _getVoiceAudio();
+    // ★ 先把上一条**真正卸载掉**，再去做激活 play()。
+    //   播完的元素停在 currentTime == duration 上，资源仍挂在里面 ——
+    //   `URL.revokeObjectURL` 不卸载已经加载好的资源，`removeAttribute('src')`
+    //   也不卸载（规范里只有 load() 会重跑资源选择算法）。对这样一个元素 play()，
+    //   浏览器会「已播完 → 回到起点重播」，于是上一句语音又响一遍。
+    //   实机症状：一轮语音播完后在通话里发条消息，最后那句凭空重播；
+    //   看起来像"发送键带播放功能"，其实是解锁蹭到了没卸载干净的播放器。
+    //   实测 removeAttribute('src') + load() 之后再 play() 是彻底安静的。
+    audio.removeAttribute('src');
+    audio.load();
+
+    try {
+        const pending = audio.play();
+        // 挂个 catch：这条 Promise 迟早被后面某次 pause() / 换 src 以 AbortError 拒掉，
+        // 没人接就是一条 unhandledrejection。
+        if (pending && typeof pending.catch === 'function') pending.catch(() => {});
+    } catch (_) { /* 老浏览器 play() 直接抛，同样只为拿激活 */ }
+}
+
+/**
+ * 在指定气泡上播一段**已经拿到手**的音频。不负责合成、不负责找音色。
+ *
+ * ★ 气泡点击和通话连播共用这一份。两边各写一份的话，"进度条不动"
+ *   "blob 没回收"这类问题必然只修好其中一边。
+ *
+ * @param {HTMLElement} bubble .voice-bubble 元素
+ * @param {object} clip ensureVoiceClip 的返回值（要有 bytes / mime / duration）
+ * @returns {Promise<boolean>} resolve 在**播放结束那一刻**（播完 / 出错 / 被 stopVoicePlayback 打断）。
+ *          值 = 是否真的播起来了；false 通常是浏览器拦了自动播放。
+ */
+function playVoiceClipOnBubble(bubble, clip) {
+    const btn = bubble && bubble.querySelector('.voice-play-btn');
+    // 合成期间用户可能已经离开页面、或者这条气泡被重渲染换掉了
+    if (!btn || !clip || !clip.bytes || !bubble.isConnected) return Promise.resolve(false);
+
+    const audio = _getVoiceAudio();
+    _voiceCurrentUrl = URL.createObjectURL(new Blob([clip.bytes], { type: clip.mime }));
+    _voiceCurrentBtn = btn;
+    audio.src = _voiceCurrentUrl;
+
+    if (typeof suspendKeepAliveForPlayback === 'function') suspendKeepAliveForPlayback();
+
+    // ★ 必须在 play() **之前**挂等待者：很短的音频可能在 play() 的 promise 兑现前
+    //   就播完了，那时 ended 已经烧过，后挂的等待者永远等不到。
+    const ended = new Promise(resolve => _voiceEndWaiters.push(resolve));
+
+    return audio.play().then(
+        () => {
+            // 同样是上面那个竞态：走到这里时这条可能已经播完并收过尾了
+            //（_finishVoicePlayback 会把 _voiceCurrentBtn 清空），别再把它标回 playing
+            if (_voiceCurrentBtn === btn && !audio.paused) {
+                _setVoiceBubbleState(btn, 'playing', { duration: clip.duration });
+                _paintVoiceProgress();
+            }
+            return ended.then(() => true);
+        },
+        () => {
+            _setVoiceBubbleState(btn, 'ready', { duration: clip.duration });
+            _finishVoicePlayback(false);   // 顺手把上面那个 ended 叫醒
+            return ended.then(() => false);
+        }
+    );
 }
 
 // ── 波形进度 ──────────────────────────────────────────────────
@@ -161,7 +274,12 @@ async function refreshVoiceBubbleState(bubble, chat, chatType, senderId) {
     try {
         const hit = await peekVoiceClip(parsed.text, profile);
         // 已经有音频了就标 ready，并用真实时长替掉按字数估的那个占位
-        if (hit) _setVoiceBubbleState(btn, 'ready', { duration: hit.duration });
+        // ★ 正在播的那个别动。这是个 await 之后的写入：通话连播会在气泡刚建好、
+        //   这次 peek 还没返回时就把它切成 playing，回来一把盖掉就成了"在播但图标是待播"。
+        //   下面 onVoiceClipReady 那个监听器早就有同一道守卫，这里当初漏了。
+        if (hit && btn.dataset.voiceState !== 'playing') {
+            _setVoiceBubbleState(btn, 'ready', { duration: hit.duration });
+        }
     } catch (_) { /* 查缓存失败就当没有，保持 idle */ }
 }
 
@@ -218,9 +336,7 @@ function toggleVoiceTranscript(bubble) {
  * ★ 必须同步就把状态切成 loading —— 合成要 20 秒以上，中间没有任何反馈的话
  *   用户会以为没响应，然后连点好几下。
  * ★ 也正因为要 20 秒，播放不能等 ensureVoiceClip 返回再要用户手势：
- *   iOS 的自动播放许可只在手势的同一个事件循环里有效，20 秒后早失效了。
- *   解法是拿这次点击顺手把播放器"解锁"（播一个 0 长度的空音源），
- *   之后再 play() 就不需要新手势了。
+ *   借这次点击先把播放器解锁（见 unlockVoiceAudio）。
  */
 async function handleVoiceBubbleClick(bubble, chat, chatType, senderId) {
     const btn = bubble && bubble.querySelector('.voice-play-btn');
@@ -252,10 +368,9 @@ async function handleVoiceBubbleClick(bubble, chat, chatType, senderId) {
     // 换一条就把上一条停掉，顺带回收它的 blob
     stopVoicePlayback();
 
-    // ★ 借这次点击的用户手势解锁播放器。空 src 的 play() 会立刻失败，
-    //   但"用户激活"已经被记下，后面异步 play() 就不会被拦。
-    const audio = _getVoiceAudio();
-    try { await audio.play(); } catch (_) { /* 预期会失败，只为拿激活 */ }
+    // ★ 借这次点击的用户手势解锁播放器，之后的异步 play() 才不会被拦。
+    //   同步的，别加 await —— 见 unlockVoiceAudio 里那段"await 会把它挂死"的注释。
+    unlockVoiceAudio();
 
     _setVoiceBubbleState(btn, 'loading');
 
@@ -278,23 +393,10 @@ async function handleVoiceBubbleClick(bubble, chat, chatType, senderId) {
         return;
     }
 
-    // 合成期间用户可能已经点了别的、或者离开了页面
-    if (!bubble.isConnected) return;
-
-    _voiceCurrentUrl = URL.createObjectURL(new Blob([clip.bytes], { type: clip.mime }));
-    _voiceCurrentBtn = btn;
-    audio.src = _voiceCurrentUrl;
-
-    if (typeof suspendKeepAliveForPlayback === 'function') suspendKeepAliveForPlayback();
-
-    try {
-        await audio.play();
-        _setVoiceBubbleState(btn, 'playing', { duration: clip.duration });
-        _paintVoiceProgress();
-    } catch (error) {
-        _setVoiceBubbleState(btn, 'ready', { duration: clip.duration });
-        _finishVoicePlayback(false);
-        // 极少见：解锁没生效。告诉用户再点一次就好，别让他以为功能坏了
+    const started = await playVoiceClipOnBubble(bubble, clip);
+    // 极少见：解锁没生效。告诉用户再点一次就好，别让他以为功能坏了。
+    // 气泡已经不在页面上（重渲染 / 折叠了通话）时也会是 false，那种情况没什么好说的
+    if (!started && bubble.isConnected) {
         showToast('浏览器拦下了自动播放，再点一次播放键');
     }
 }

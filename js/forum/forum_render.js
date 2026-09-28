@@ -38,6 +38,10 @@
                     const item = document.createElement('div');
                     item.className = 'hot-post-item';
                     item.onclick = () => {
+                        // 热帖榜不参与长按多选（它是个 Top3 挂件，不是列表本体），
+                        // 但多选态下点进详情会顺手把多选清掉，等于误伤 —— 直接不响应
+                        if (typeof isForumMultiSelectActive === 'function' && isForumMultiSelectActive()) return;
+
                         const scrollArea = document.getElementById('detail-content-area');
                         if (scrollArea) {
                             savedForumScrollY = scrollArea.scrollTop;

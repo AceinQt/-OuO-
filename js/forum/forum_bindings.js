@@ -15,6 +15,13 @@
                 const tabs = document.querySelectorAll('.world-sidebar-btn');
                 const panes = document.querySelectorAll('.world-tab-pane');
 
+                // 顶部那句「勾选后请点击右上角保存」只对角色/世界书两个勾选列表成立，
+                // 「管理」Tab 里没有复选框，挂着会误导
+                const tipEl = document.getElementById('world-content-tips');
+                const syncTip = (tabName) => {
+                    if (tipEl) tipEl.style.display = (tabName === 'admin') ? 'none' : '';
+                };
+
                 // 1. Tab 切换逻辑
                 tabs.forEach(tab => {
                     const newTab = tab.cloneNode(true);
@@ -24,9 +31,13 @@
                         document.querySelectorAll('.world-sidebar-btn').forEach(t => t.classList.remove('active'));
                         newTab.classList.add('active');
 
-                        const targetId = newTab.dataset.tab === 'wb' ? 'world-tab-wb' : 'world-tab-char';
+                        // data-tab 直接映射到 world-tab-xxx，加 Tab 只要加 DOM，别再回来堆三元
+                        const targetId = `world-tab-${newTab.dataset.tab}`;
                         panes.forEach(pane => pane.classList.remove('active'));
-                        document.getElementById(targetId).classList.add('active');
+                        const targetPane = document.getElementById(targetId);
+                        if (targetPane) targetPane.classList.add('active');
+
+                        syncTip(newTab.dataset.tab);
                     });
                 });
 
@@ -74,6 +85,10 @@
                 function renderWorldPageList() {
                     if (!worldBookList || !charList) return;
 
+                    // 重进页面时上次停在哪个 Tab 是保留的，提示语要跟着那个 Tab 走
+                    const activeTab = document.querySelector('.world-sidebar-btn.active');
+                    syncTip(activeTab ? activeTab.dataset.tab : 'char');
+
                     // 获取当前数据
                     const currentBindings = db.forumBindings || { worldBookIds: [], charIds: [], groupIds: [], useChatHistory: false, historyLimit: 50 };
 
@@ -93,6 +108,9 @@ if (forumApiSel && typeof window.populateChatApiPresetSelect === 'function') {
     window.populateChatApiPresetSelect(forumApiSel);
     forumApiSel.value = currentBindings.apiPresetName || '';
 }
+
+                    // 「管理」Tab 的正文 CSS（DOM 在 world-tab-admin，逻辑在 forum_admin.js）
+                    if (typeof loadForumAdminPane === 'function') loadForumAdminPane();
 
                     // --- 填充世界书列表 ---
                     worldBookList.innerHTML = '';
@@ -184,6 +202,10 @@ if (forumApiSel && typeof window.populateChatApiPresetSelect === 'function') {
     apiPresetName: (document.getElementById('forum-api-preset-select') || {}).value || ''
 };
 
+// 「管理」Tab 的正文 CSS 也归这个保存按钮（写进 db.forumUserIdentity，
+// 跟 forumBindings 同属 saveForumMeta 的白名单，一次落盘）
+if (typeof saveForumAdminPane === 'function') saveForumAdminPane();
+
 await saveForumMeta();
 showToast('世界设定已保存');
                     });
@@ -194,16 +216,20 @@ showToast('世界设定已保存');
 
                 const worldScreen = document.getElementById('world-screen');
                 if (worldScreen && !worldScreen.dataset.observerAttached) {
-                    const observer = new MutationObserver((mutations) => {
-                        for (let mutation of mutations) {
-                            if (mutation.attributeName === 'class') {
-                                if (worldScreen.classList.contains('active')) {
-                                    renderWorldPageList();
-                                }
-                            }
-                        }
+                    // ★ 只在「不活跃 → 活跃」这一次跳变时重绘。
+                    //   switchScreen 一次会产生好几条 class 变更记录（先给所有 .screen 去 active，
+                    //   再给目标加 active），旧写法是「每条记录都重绘一次」，一次进页面能跑五六遍
+                    //   renderWorldPageList —— 而它每遍都 charList.innerHTML='' 再把每个角色/群的
+                    //   base64 头像重新塞进 DOM（几十 KB 一张，浏览器要重新解码），这就是
+                    //   「点世界栏目有点延迟」的主因。记住上次状态，跳变才干活。
+                    let wasActive = worldScreen.classList.contains('active');
+                    const observer = new MutationObserver(() => {
+                        const isActive = worldScreen.classList.contains('active');
+                        if (isActive === wasActive) return;   // 同一次切换的其余记录，直接丢
+                        wasActive = isActive;
+                        if (isActive) renderWorldPageList();
                     });
-                    observer.observe(worldScreen, { attributes: true });
+                    observer.observe(worldScreen, { attributes: true, attributeFilter: ['class'] });
                     worldScreen.dataset.observerAttached = "true";
                 }
             }

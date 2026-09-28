@@ -245,9 +245,13 @@ function createSearchResultItem(msg) {
     let previewText = msg.content;
     const textMatch = msg.content.match(/\[.*?的消息：([\s\S]+?)\]/);
     if (textMatch) previewText = textMatch[1];
-    else if (msg.content.includes('system-narration')) {
-        const narMatch = msg.content.match(/\[system-narration:([\s\S]+?)\]/);
-        previewText = narMatch ? narMatch[1] : '剧情旁白...';
+    else {
+        // 旁白两种壳都要剥：AI 的 `[system-narration:…]`、用户自己发的 `[剧情旁白：…]`，
+        // 不剥的话预览里带着一串方括号标记，看不出正文。
+        const narMatch = msg.content.match(/\[system-narration:([\s\S]+?)\]/)
+            || msg.content.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
+        if (narMatch) previewText = narMatch[1];
+        else if (msg.content.includes('system-narration')) previewText = '剧情旁白...';
     }
     
     // 简单清洗 HTML 标签 (如果 DOMPurify 可用最好用 DOMPurify.sanitize)

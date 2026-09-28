@@ -82,6 +82,13 @@ async function startCall(type) {
 
     const chat = db.characters.find(c => c.id === currentChatId);
     if (!chat) return;
+
+    // ★ 借这次点击（真实用户手势）把播放器解锁。通话里的语音是无手势自动播的，
+    //   iOS 只认手势同一轮事件循环里的激活，不在这里拿就永远拿不到 ——
+    //   症状是安卓和桌面全对、iPhone 一声不响且不报错。见 unlockVoiceAudio。
+    //   它是同步的，**不许 await** —— await 过一次，代价是整个拨号流程卡死在这行。
+    if (typeof unlockVoiceAudio === 'function') unlockVoiceAudio();
+
        if (typeof processTimePerception === 'function') {
         await processTimePerception(chat, currentChatId, currentChatType);
     }
@@ -143,6 +150,12 @@ async function endCall() {
         callAbortController.abort();
         callAbortController = null;
     }
+
+    // 停掉正在响的那句，并把还在等合成的位置放行。
+    // ★ 不放行的话，打字机循环会一直卡在 await 上（单条合成最长 180 秒），
+    //   而 isGenerating 要等它整个返回才解锁 —— 用户回到聊天室会发现几分钟内
+    //   发不出消息，且毫无提示。见 chat_voice_call.js 的 stopCallVoice。
+    if (typeof stopCallVoice === 'function') stopCallVoice();
 
     const type      = chat.callMode;
     const sessionId = chat.currentCallSessionId;
@@ -216,6 +229,9 @@ async function aiHangupCall() {
         callAbortController.abort();
         callAbortController = null;
     }
+
+    // 同 endCall：停声 + 放行还在等合成的位置
+    if (typeof stopCallVoice === 'function') stopCallVoice();
 
     const type      = chat.callMode;
     const sessionId = chat.currentCallSessionId;
@@ -293,14 +309,26 @@ function showIncomingCall(type, chat) {
 // 来电：接听
 // ------------------------------------------
 async function acceptIncomingCall() {
-    if (incomingCallTimeout) { clearTimeout(incomingCallTimeout); incomingCallTimeout = null; }
     const chat = db.characters.find(c => c.id === currentChatId);
-    if (!chat) return;
+
+    // ★ 只有「来电正在响」才接得起来。挂断 / 拒接 / 60 秒超时都会把这两个字段清掉。
+    //   少了这道守卫，一次**迟到的**接听 —— 接听流程中途被某个 await 卡住、
+    //   等挂断把它放行之后才继续跑 —— 会在通话已经结束之后把 getAiReply 放出去，
+    //   于是"接听之后才该有的内容"落进聊天室。实机上踩到过，肇事者是
+    //   `await unlockVoiceAudio()`（那个 Promise 永不 settle，要等 pause() 才被拒）。
+    //   源头已经修掉，这道守卫是第二层：以后再有谁在这函数里加 await 也不会重演。
+    if (!chat || !chat.callMode || !chat.isIncomingCall) return;
+
+    if (incomingCallTimeout) { clearTimeout(incomingCallTimeout); incomingCallTimeout = null; }
+
+    // ★ 同 startCall：拿这次「接听」的手势解锁播放器，否则 iOS 上连播一声不响。
+    //   同步的，不许 await。
+    if (typeof unlockVoiceAudio === 'function') unlockVoiceAudio();
 
     // 复用邀请时生成的 sessionId，而不是重新生成
     const sessionId = chat.currentCallSessionId || `call_${Date.now()}`;
     chat.currentCallSessionId = sessionId;
-    
+
     chat.isIncomingCall = false;
 
     const now = Date.now();
@@ -319,11 +347,17 @@ async function acceptIncomingCall() {
         callSessionId: sessionId
     };
     chat.history.push(instructionMsg);
-    await saveMessagesToDB([instructionMsg], currentChatId, currentChatType);
 
+    // 先切界面再落库：接听是用户点的，反馈不该排在两次 await 后面
     onCallConnected();
 
+    await saveMessagesToDB([instructionMsg], currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
+
+    // ★ 上面两个 await 之间用户完全可能已经把电话挂了（挂断会清空这两个字段）。
+    //   不复查就会在通话结束之后还去要一轮回复 —— 那一轮的内容会直接落进聊天室。
+    if (!chat.callMode || chat.currentCallSessionId !== sessionId) return;
+
     getAiReply(currentChatId, currentChatType);
 }
 
@@ -331,9 +365,12 @@ async function acceptIncomingCall() {
 // 来电：拒接
 // ------------------------------------------
 async function declineIncomingCall() {
-    if (incomingCallTimeout) { clearTimeout(incomingCallTimeout); incomingCallTimeout = null; }
     const chat = db.characters.find(c => c.id === currentChatId);
-    if (!chat) return;
+    // 同 acceptIncomingCall：只有铃在响的时候才有「拒接」可言。
+    // 连点两下会往历史里塞两条「已拒接」+ 两条系统指令，模型看了会当成拒了两次。
+    if (!chat || !chat.isIncomingCall) return;
+
+    if (incomingCallTimeout) { clearTimeout(incomingCallTimeout); incomingCallTimeout = null; }
 
     const callType = chat.callMode || 'voice';
     const typeName = callType === 'video' ? '视频通话' : '语音通话';
@@ -430,7 +467,7 @@ function clearCallDialogue() {
 // ------------------------------------------
 // 旁白（视频通话）
 // ------------------------------------------
-function appendCallNarration(text) {
+function appendCallNarration(text, msgId) {
     const chat = db.characters.find(c => c.id === currentChatId);
     if (chat && !chat.callConnected) {
         // 👉 新增：如果是 AI 发起的来电且用户还没点接听，拦截后续文字，不自动接通
@@ -446,11 +483,34 @@ function appendCallNarration(text) {
     const line = document.createElement('p');
     line.className = 'call-narration-line';
     line.textContent = text;
+    // 旁白区是整通电话的流水账，不像气泡区每轮都清空。
+    // 打上消息 id，「重新生成」才能精确撤掉被丢弃的那几行（见 dropCallNarrationFor）。
+    if (msgId) line.dataset.msgId = msgId;
 
     const botSpacer = area.querySelector('.narration-spacer-bottom');
     area.insertBefore(line, botSpacer);
 
     _setNarrationActive(area, line);
+}
+
+// ------------------------------------------
+// 重新生成时，撤掉被丢弃消息对应的旁白行
+// 由 handleRegenerate() 在 splice 之后调用；不在通话中就是空转。
+// ------------------------------------------
+function dropCallNarrationFor(messages) {
+    const area = document.getElementById('call-narration-area');
+    if (!area || !Array.isArray(messages) || !messages.length) return;
+
+    const ids = new Set(messages.map(m => m && m.id).filter(Boolean));
+    if (!ids.size) return;
+
+    area.querySelectorAll('.call-narration-line').forEach(line => {
+        if (ids.has(line.dataset.msgId)) line.remove();
+    });
+
+    // 撤完把高亮落回剩下的最后一行，否则 active 行没了、滚动停在空白处
+    const rest = area.querySelectorAll('.call-narration-line');
+    if (rest.length) _setNarrationActive(area, rest[rest.length - 1]);
 }
 
 // ★ 确保旁白区前后有 spacer，并将其高度设为容器一半
@@ -543,6 +603,50 @@ function clearCallUserArea() {
 }
 
 // ------------------------------------------
+// 顶部工具箱菜单
+// 菜单是 absolute 盖在 app-header 上的，header 同时淡出，
+// 视觉上就是"顶栏变成了工具菜单"。没有关闭按钮，点别处即收。
+// ------------------------------------------
+function toggleCallToolbox(show) {
+    const menu   = document.getElementById('call-toolbox-menu');
+    const header = document.querySelector('#call-connected .app-header');
+    if (!menu) return;
+
+    const next = (show === undefined) ? !menu.classList.contains('visible') : !!show;
+    menu.classList.toggle('visible', next);
+    header?.classList.toggle('toolbox-open', next);
+}
+
+function closeCallToolbox() {
+    toggleCallToolbox(false);
+}
+
+// ------------------------------------------
+// 工具箱 · 重新生成
+// 直接复用聊天页的 handleRegenerate()：它会砍掉最后一段 AI 回复、
+// 再走 getAiReply()，而 getAiReply 在通话中本来就会清空气泡区，所以
+// 这里只需要管好守卫和收菜单。
+// ------------------------------------------
+async function regenerateCallReply() {
+    if (typeof isGenerating !== 'undefined' && isGenerating) {
+        showToast('等待对方发言…');
+        return;
+    }
+
+    const chat = db.characters.find(c => c.id === currentChatId);
+    if (!chat || !chat.callMode) return;
+
+    closeCallToolbox();
+
+    // handleRegenerate 会 splice 掉这一轮并整页重渲染 —— 正在响的那句必须先停，
+    // 否则 blob 会挂在一个马上要被删掉的气泡上
+    if (typeof stopCallVoice === 'function') stopCallVoice();
+
+    if (typeof handleRegenerate !== 'function') return;
+    await handleRegenerate();
+}
+
+// ------------------------------------------
 // 通话历史侧边栏
 // ------------------------------------------
 function openCallHistory() {
@@ -563,25 +667,40 @@ function openCallHistory() {
     );
 
     list.innerHTML = '';
+
+    // 两侧取名规则对齐：都是「备注/昵称优先，真名兜底」（角色 remarkName→realName，
+    // 用户 myNickname→myName，和 private_prompt.js 喂给模型的那一套同源）。
+    // 以前用户这一侧硬写「用户」，同一份通话记录里一边是名字、一边是通称。
+    const userLabel = chat.myNickname || chat.myName || '用户';
+
     callMsgs.forEach(m => {
         const item = document.createElement('div');
         item.className = 'call-history-item';
 
         let label = '';
         let text  = m.content;
+        // 配色走这个键，不拿 label 文本反推：用户完全可以把自己的昵称设成「旁白」，
+        // 那一行就会串成旁白的颜色（以前判的是 label === '用户'，写死的通称才碰不上）
+        let kind  = '';
 
         if (m.role === 'user') {
-            label = '用户';
-            const match = m.content.match(/\[.*?的消息：([\s\S]+?)\]$/);
+            label = userLabel;
+            kind  = 'user';
+            // 通话里用户发的话也存成语音气泡（[我的语音：…]），所以两种格式都要认 ——
+            // 只认「的消息」的话，这通电话里自己说过的每一句都会在记录里显示成
+            // 带方括号的原始字符串
+            const match = m.content.match(/\[.*?(?:的消息|的语音)[:：]([\s\S]+?)\]$/);
             text = match ? match[1] : m.content;
         } else if (m.role === 'assistant') {
             label = chat.remarkName || chat.realName;
-            const dialogueMatch  = m.content.match(/\[.*?的消息：([\s\S]+?)\]$/);
+            kind  = 'ai';
+            const dialogueMatch  = m.content.match(/\[.*?(?:的消息|的语音)[:：]([\s\S]+?)\]$/);
             const narrationMatch = m.content.match(/^\[system-narration:([\s\S]+?)\]$/);
             if (dialogueMatch) {
                 text = dialogueMatch[1];
             } else if (narrationMatch) {
                 label = '旁白';
+                kind  = 'narration';
                 text  = narrationMatch[1];
             } else {
                 return;
@@ -590,24 +709,22 @@ function openCallHistory() {
             return;
         }
 
-        // 根据角色决定颜色类
-        let labelCls, textCls;
-        if (label === '旁白') {
-            labelCls = 'call-history-label call-history-label--narration';
-            textCls  = 'call-history-text call-history-text--narration';
-        } else if (label === '用户') {
-            labelCls = 'call-history-label call-history-label--user';
-            textCls  = 'call-history-text call-history-text--user';
-        } else {
-            labelCls = 'call-history-label call-history-label--ai';
-            textCls  = 'call-history-text call-history-text--ai';
-        }
+        // 两个 span 都用 textContent 拼：label 现在来自用户自己填的昵称，
+        // 原先那句 innerHTML 模板会把名字里的尖括号当标签吃掉（台词同理）
+        const labelEl = document.createElement('span');
+        labelEl.className = `call-history-label call-history-label--${kind}`;
+        labelEl.textContent = label;
+        const textEl = document.createElement('span');
+        textEl.className = `call-history-text call-history-text--${kind}`;
+        textEl.textContent = text;
 
-        item.innerHTML = `<span class="${labelCls}">${label}</span><span class="${textCls}">${text}</span>`;
+        item.appendChild(labelEl);
+        item.appendChild(textEl);
         list.appendChild(item);
     });
 
     panel.classList.add('visible');
+    closeCallToolbox();
     setTimeout(() => { list.scrollTop = list.scrollHeight; }, 50);
 }
 
@@ -673,6 +790,10 @@ function _showCallOverlay(callMode, chat, isIncoming = false) {
     if (titleEl) titleEl.textContent = '';
 
     overlay.classList.remove('input-mode-active');
+    closeCallToolbox();
+
+    // 按钮上要显示当前是开是关（开关按角色存在 chat.callVoiceEnabled）
+    if (typeof updateCallVoiceBtn === 'function') updateCallVoiceBtn();
 
     const waiting   = document.getElementById('call-waiting');
     const connected = document.getElementById('call-connected');
@@ -812,6 +933,11 @@ function _hideCallOverlay() {
     const overlay = document.getElementById('call-overlay');
     if (!overlay) return;
 
+    // 兜底停声。endCall / aiHangupCall 会更早调一次（它们要尽快放行等合成的那条），
+    // 这里管的是剩下几条路：拒接、超时未接、AI 未接听、意外中断恢复。
+    // stopCallVoice 是幂等的，重复调只是空转。
+    if (typeof stopCallVoice === 'function') stopCallVoice();
+
     overlay.style.display = 'none';
     overlay.classList.remove('input-mode-active');
     overlay.classList.remove('video-mode');
@@ -822,6 +948,7 @@ function _hideCallOverlay() {
     const wrapper = document.querySelector('.chat-input-wrapper');
     if (wrapper) wrapper.style.display = '';
 
+    closeCallToolbox();
     closeCallHistory();
 }
 
@@ -1008,8 +1135,22 @@ function initCallFeature() {
     document.getElementById('incoming-call-accept-btn')?.addEventListener('click', acceptIncomingCall);
     document.getElementById('incoming-call-decline-btn')?.addEventListener('click', declineIncomingCall);
 
+    document.getElementById('call-toolbox-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleCallToolbox();
+    });
+
     document.getElementById('call-history-btn')?.addEventListener('click', openCallHistory);
     document.getElementById('call-history-close-btn')?.addEventListener('click', closeCallHistory);
+
+    document.getElementById('call-regen-btn')?.addEventListener('click', regenerateCallReply);
+
+    // 语音开关。不收菜单 —— 另外两项是一次性动作，点完该收；这个是开关，
+    // 收掉的话用户看不到按钮变色，只能靠 toast 猜。
+    document.getElementById('call-voice-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof toggleCallVoiceSwitch === 'function') toggleCallVoiceSwitch();
+    });
 
     document.getElementById('call-mic-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1031,6 +1172,15 @@ function initCallFeature() {
     document.getElementById('call-overlay')?.addEventListener('click', (e) => {
         const overlay  = document.getElementById('call-overlay');
         const inputBar = document.getElementById('call-input-bar');
+
+        // 工具菜单：点菜单以外的任何地方收起（菜单自身没有关闭按钮）
+        const toolbox = document.getElementById('call-toolbox-menu');
+        if (toolbox?.classList.contains('visible')
+            && !toolbox.contains(e.target)
+            && !e.target.closest('#call-toolbox-btn')) {
+            closeCallToolbox();
+        }
+
         if (overlay?.classList.contains('input-mode-active')) {
             if (!inputBar.contains(e.target) && !e.target.closest('#call-mic-btn')) {
                 _toggleCallInput(false);
@@ -1045,6 +1195,10 @@ callSendBtn?.addEventListener('touchend', (e) => {
     e.preventDefault();                                  // 阻止 touch → click 的 blur
     const val = callInput?.value.trim();
     if (!val) return;
+    // ★ 顺手续一次播放器解锁。拨号/接听时已经解过一次，但 iOS 的激活状态会过期，
+    //   而发消息是通话里最频繁的真实手势 —— 不 await，play() 是同步发起的，
+    //   await 反而会把它挪出手势所在的那一轮事件循环。
+    if (typeof unlockVoiceAudio === 'function') unlockVoiceAudio();
     document.getElementById('message-input').value = val;
     callInput.value = '';
     // ★ 同 chat_room.js：sendMessage 不 await，异常必须显式接住，否则丢消息时毫无征兆
@@ -1057,6 +1211,7 @@ callSendBtn?.addEventListener('touchend', (e) => {
 callSendBtn?.addEventListener('click', () => {           // PC 端兜底
     const val = callInput?.value.trim();
     if (!val) return;
+    if (typeof unlockVoiceAudio === 'function') unlockVoiceAudio();
     document.getElementById('message-input').value = val;
     callInput.value = '';
     Promise.resolve().then(() => sendMessage()).catch(err => {

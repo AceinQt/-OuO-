@@ -128,6 +128,10 @@ window.searchMessagesInDB = async function (chatId, dateStr, keyword) {
                 if (contentToCheck.startsWith('[system-narration:')) {
                     const narMatch = contentToCheck.match(/\[system-narration:([\s\S]+?)\]/);
                     if (narMatch) contentToCheck = narMatch[1];
+                } else if (contentToCheck.startsWith('[剧情旁白')) {
+                    // 用户自己发的剧情旁白：壳不剥的话，搜"旁白"能搜到、搜正文反而搜不到
+                    const mineMatch = contentToCheck.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
+                    if (mineMatch) contentToCheck = mineMatch[1];
                 }
                 if (!contentToCheck.toLowerCase().includes(kw)) return;
             }

@@ -63,7 +63,11 @@ function createContextMenu(items, x, y) {
             if (!message) return;
 
             // --- 核心判断逻辑 ---
-            const isNarration = /\[system-narration:[\s\S]+?\]/.test(message.content);
+            // 旁白有两种来源，菜单一视同仁（复制/编辑/多选）：
+            //   `[system-narration:…]` AI 在线下模式/通话里写的
+            //   `[剧情旁白：…]`        用户自己在"+"面板发的（新格式，只有一条）
+            const isNarration = /\[system-narration:[\s\S]+?\]/.test(message.content)
+                || /^\[剧情旁白[:：][\s\S]+?\]$/.test(message.content);
             const isTimeSkip = /\[system-display:[\s\S]+?\]/.test(message.content);
             const isWithdrawn = message.isWithdrawn;
             const isOfflineMode = (currentChatType === 'private' && chat.offlineModeEnabled);
@@ -77,8 +81,9 @@ function createContextMenu(items, x, y) {
                 menuItems.push({
                     label: '复制', 
                     action: () => {
-                        // A. 尝试提取 [system-narration:...] 里面的内容
-                        const match = message.content.match(/\[system-narration:([\s\S]+?)\]/);
+                        // A. 尝试提取旁白壳里面的内容（两种格式都认）
+                        const match = message.content.match(/\[system-narration:([\s\S]+?)\]/)
+                            || message.content.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
                         let textToCopy = match ? match[1] : message.content;
                         
                         // B. 如果提取失败（可能是旧数据或格式不匹配），尝试去掉可能的首尾括号
@@ -255,7 +260,37 @@ function createContextMenu(items, x, y) {
            
             
               // --- 编辑功能 ---
-            
+
+// ============================================================
+// === 老版「用户剧情旁白」的孪生消息 ==========================
+// ============================================================
+// 旧数据里，用户发一条剧情旁白会存**两条**：
+//   可见：`msg_visual_*`  role system + isAiIgnore  `[system-display:正文]`
+//   隐藏：`msg_context_*` role user   + isHidden    `[剧情旁白：正文]`
+// 新发的只存一条了（chat_feature_basic.js 的 sendTimeSkipMessage），但旧数据照原样留着。
+//
+// 配对靠**时间戳**：两条是同一个 `now` 建出来的。原先那段按 id 后缀配对的
+// （`msg_visual_x` → `msg_context_x`）是死代码 —— 两条 id 的随机段各自 Math.random()
+// 生成，永远对不上，所以在此之前编辑旁白，模型读的那一份从来没被改过。
+//
+// ★ 只改写、绝不删除：总结存的是「第 N 条到第 M 条」的全局序号
+//   （lazy_load.js 的 getMessagesByGlobalRange 按 offset 取），删一条会让它后面
+//   所有消息的序号往前挪一格，历史总结引用的区间全部指偏。
+function findLegacyNarrationTwin(chat, message) {
+    if (!chat || !message || !message.timestamp) return null;
+    const isHiddenSide = !!message.isHidden;
+    return (chat.history || []).find(m => {
+        if (!m || m.id === message.id) return false;
+        if (m.timestamp !== message.timestamp) return false;
+        if (typeof m.content !== 'string') return false;
+        return isHiddenSide
+            // 自己是隐藏那条 → 找可见那条（老的 system-display，或已经改成新格式的）
+            ? (!m.isHidden && (/^\[system-display[:：]/.test(m.content) || /^\[剧情旁白[:：]/.test(m.content)))
+            // 自己是可见那条 → 找隐藏那条（模型真正读的那一份）
+            : (!!m.isHidden && /^\[剧情旁白[:：]/.test(m.content));
+    }) || null;
+}
+
 // --- 替换 startMessageEdit 函数 ---
 function startMessageEdit(messageId) {
     exitMultiSelectMode();
@@ -273,8 +308,10 @@ function startMessageEdit(messageId) {
 
     // --- 1. 智能识别当前类型并提取纯文本 ---
     
-    // A. 剧情旁白 [system-narration:...]
+    // A. 线下模式旁白 [system-narration:...]（AI 写的）
     const narrationMatch = contentToEdit.match(/^\[system-narration:([\s\S]+?)\]$/);
+    // A2. 用户自己发的剧情旁白 [剧情旁白：...]（新格式，单条）
+    const mineNarrationMatch = contentToEdit.match(/^\[剧情旁白[:：]([\s\S]+?)\]$/);
     // B. 屏幕通知/时间跳过 [system-display:...]
     const displayMatch = contentToEdit.match(/^\[system-display:([\s\S]+?)\]$/);
     // C. 纯系统指令 [system:...]
@@ -287,9 +324,15 @@ function startMessageEdit(messageId) {
     if (narrationMatch) {
         contentToEdit = narrationMatch[1].trim();
         currentType = 'narration';
+    } else if (mineNarrationMatch) {
+        contentToEdit = mineNarrationMatch[1].trim();
+        currentType = 'user-narration';
     } else if (displayMatch) {
         contentToEdit = displayMatch[1].trim();
-        currentType = 'display';
+        // 老的那对用户旁白（可见 system-display + 隐藏 剧情旁白）预选「剧情旁白」：
+        // 保存时就地升级成新格式，于是画成新样式的旁白气泡（条数不变，见 saveMessageEdit）。
+        // 找不到孪生的才是真·屏幕提示（通话起止、线下模式开关），保持 display。
+        currentType = findLegacyNarrationTwin(chat, message) ? 'user-narration' : 'display';
     } else if (systemMatch) {
         contentToEdit = systemMatch[1].trim();
         currentType = 'system';
@@ -353,20 +396,30 @@ async function saveMessageEdit() {
         senderName = sender ? sender.groupNickname : (chat.name || '未知成员');
     }
 
+    let legacyTwinToSave = null;
+
     if (selectedType === 'narration') {
         newContent = `[system-narration:${newText}]`;
+    } else if (selectedType === 'user-narration') {
+        newContent = `[剧情旁白：${newText}]`;
+        // 老数据是一对（见 findLegacyNarrationTwin 上面那段）：两条改成同一段新文本 ——
+        // 可见那条从此画成新样式的旁白气泡，隐藏那条继续当模型读的那一份。
+        // ★ 条数、时间戳、角色、标志位一律不动：删一条会把它后面所有消息的全局序号
+        //   往前挪一格，历史总结引用的区间全部指偏。
+        const twin = findLegacyNarrationTwin(chat, message);
+        if (twin) {
+            twin.content = newContent;
+            twin.parts = [{ type: 'text', text: newContent }];
+            legacyTwinToSave = twin;
+        } else if (message.isAiIgnore) {
+            // 孤儿（隐藏那条早被单独删掉了）：让这条自己升级成新格式的单条旁白，
+            // 否则它是一条"模型看不见的假旁白"。同样不增不减。
+            delete message.isAiIgnore;
+            message.role = 'user';
+            if (currentChatType === 'group' && !message.senderId) message.senderId = 'user_me';
+        }
     } else if (selectedType === 'display') {
         newContent = `[system-display:${newText}]`;
-        if (message.id.startsWith('msg_visual_')) {
-            const timestampSuffix = message.id.replace('msg_visual_', '');
-            const contextMsgId = `msg_context_${timestampSuffix}`;
-            const contextMsg = chat.history.find(m => m.id === contextMsgId);
-            if (contextMsg) {
-                const newContextContent = `[剧情旁白：${newText}]`;
-                contextMsg.content = newContextContent;
-                contextMsg.parts = [{ type: 'text', text: newContextContent }];
-            }
-        }
     } else if (selectedType === 'voice') {
         newContent = `[${senderName}的语音：${newText}]`;
     } else if (selectedType === 'photo-video') {
@@ -389,18 +442,26 @@ async function saveMessageEdit() {
     }
 
     await saveMessageToDB(chat.history[messageIndex], currentChatId, currentChatType);
+    if (legacyTwinToSave) {
+        await saveMessageToDB(legacyTwinToSave, currentChatId, currentChatType);
+    }
     await saveSingleChat(currentChatId, currentChatType);
-    
+
     // ==========================================
     // 【核心修复】原地 DOM 替换，解决跳转和消息丢失问题
     // ==========================================
-    
+
     // 1. 在页面上找到旧的消息气泡 DOM 元素
     const existingBubble = messageArea.querySelector(`.message-wrapper[data-id="${editingMessageId}"]`);
 
     // 2. 使用现有的函数生成一个新的气泡 DOM 元素
     // 注意：createMessageBubbleElement 依赖已更新的 chat.history 数据
-    const newBubble = createMessageBubbleElement(chat.history[messageIndex]);
+    // ★ 走 _bubbleOrHiddenRow 而不是直接进气泡工厂：isHidden 的消息不能画成完整气泡
+    //   （旧数据里那条隐藏的 `[剧情旁白：…]` 现在画得出旁白气泡，会和可见孪生重影）
+    const editedMsg = chat.history[messageIndex];
+    const newBubble = (typeof _bubbleOrHiddenRow === 'function')
+        ? _bubbleOrHiddenRow(editedMsg)
+        : (editedMsg.isHidden ? null : createMessageBubbleElement(editedMsg));
 
     if (existingBubble) {
         if (typeof releaseImageObjectUrlsWithin === 'function') {
@@ -420,9 +481,21 @@ async function saveMessageEdit() {
         // 4. 兜底：如果找不到旧元素（极少情况），才调用原来的重绘逻辑
         // 但为了防止丢失最新消息，这里建议什么都不做，或者只重绘
         // 只有当真的找不到元素时，我们才被迫重绘
-        renderMessages(false, false); 
+        renderMessages(false, false);
     }
-    
+
+    // 老旁白那对是一起改的，屏幕上那条孪生（通常是可见的那一条）也要跟着重画，
+    // 否则要等下次进聊天室才看得到新样式。
+    if (legacyTwinToSave) {
+        const twinNode = messageArea.querySelector(`.message-wrapper[data-id="${legacyTwinToSave.id}"]`);
+        if (twinNode) {
+            const rebuiltTwin = (typeof _bubbleOrHiddenRow === 'function')
+                ? _bubbleOrHiddenRow(legacyTwinToSave)
+                : (legacyTwinToSave.isHidden ? null : createMessageBubbleElement(legacyTwinToSave));
+            if (rebuiltTwin) twinNode.replaceWith(rebuiltTwin);
+        }
+    }
+
     cancelMessageEdit();
 }
 
@@ -442,12 +515,45 @@ function enterMultiSelectMode(initialMessageId) {
                 multiSelectBar.classList.add('visible');
                 chatRoomScreen.classList.add('multi-select-active');
                 selectedMessageIds.clear();
-                selectCount.textContent = '已选择 0 项';
-                deleteSelectedBtn.disabled = true;
-                if (forwardSelectedBtn) forwardSelectedBtn.disabled = true;
+                // 「显示隐藏」每次进多选都从关着开始：它是个临时视图，不该跨会话记着
+                showHiddenInSelect = false;
+                if (typeof _removeHiddenRows === 'function') _removeHiddenRows();
+                syncHiddenToggleBtn();
+                updateMultiSelectBar();
                 if (initialMessageId) {
                     toggleMessageSelection(initialMessageId);
                 }
+            }
+
+            // 多选栏的计数和两个按钮的可用态，就这三行，三个调用方共用
+            function updateMultiSelectBar() {
+                selectCount.textContent = `已选择 ${selectedMessageIds.size} 项`;
+                deleteSelectedBtn.disabled = selectedMessageIds.size === 0;
+                if (forwardSelectedBtn) forwardSelectedBtn.disabled = selectedMessageIds.size === 0;
+            }
+
+            // 把 showHiddenInSelect 反映到界面上：按钮文案/状态 + 屏幕上那个模式类。
+            // 模式类是给 CSS 用的 —— 时间戳 `[time-divider]` 本来就画在 DOM 里、也有 data-id，
+            // 只是 .time-divider-wrapper 写了 pointer-events:none 点不着，开关打开时靠它放开。
+            function syncHiddenToggleBtn() {
+                const on = !!showHiddenInSelect;
+                if (chatRoomScreen) chatRoomScreen.classList.toggle('show-hidden-msgs', on);
+                if (!toggleHiddenMsgBtn) return;
+                toggleHiddenMsgBtn.textContent = on ? '收起隐藏' : '显示隐藏';
+                toggleHiddenMsgBtn.classList.toggle('active', on);
+            }
+
+            // 「显示隐藏」：把平时画不出来的消息都摆出来，让用户能逐条勾选删或转。
+            // 判据是"普通视图里画不出可勾选的气泡"，不是 isHidden —— 详见
+            // chat_room.js 里 isShowingHiddenMessages 上面那段。
+            // 只增删 DOM 行，不重绘整页（见 applyHiddenMessageVisibility 注释）。
+            function toggleHiddenMessagesInSelect() {
+                if (!isInMultiSelectMode) return;
+                showHiddenInSelect = !showHiddenInSelect;
+                syncHiddenToggleBtn();
+                applyHiddenMessageVisibility();
+                // 收起时里面被勾上的那些会一起取消勾选，计数得跟着退回来
+                updateMultiSelectBar();
             }
 
             function exitMultiSelectMode() {
@@ -457,6 +563,11 @@ function enterMultiSelectMode(initialMessageId) {
                 document.querySelector('.chat-input-wrapper').style.display = 'block';
                 multiSelectBar.classList.remove('visible');
                 chatRoomScreen.classList.remove('multi-select-active');
+                // 隐藏行只属于多选模式，退出就得连行带勾选一起清掉，
+                // 不然它们会一直挂在 DOM 里，普通模式下点一下还会触发长按菜单之类的动作
+                showHiddenInSelect = false;
+                if (typeof _removeHiddenRows === 'function') _removeHiddenRows();
+                syncHiddenToggleBtn();
                 selectedMessageIds.forEach(id => {
                     const el = messageArea.querySelector(`.message-wrapper[data-id="${id}"]`);
                     if (el) el.classList.remove('multi-select-selected');
@@ -467,25 +578,36 @@ function enterMultiSelectMode(initialMessageId) {
             function toggleMessageSelection(messageId) {
                 const el = messageArea.querySelector(`.message-wrapper[data-id="${messageId}"]`);
                 if (!el) return;
+                // 折叠的通话气泡一勾就是整段通话的全部消息，见 idsForMessageSelection
+                const ids = idsForMessageSelection(el);
                 if (selectedMessageIds.has(messageId)) {
-                    selectedMessageIds.delete(messageId);
+                    ids.forEach(id => selectedMessageIds.delete(id));
                     el.classList.remove('multi-select-selected');
                 } else {
-                    selectedMessageIds.add(messageId);
+                    ids.forEach(id => selectedMessageIds.add(id));
                     el.classList.add('multi-select-selected');
                 }
-                selectCount.textContent = `已选择 ${selectedMessageIds.size} 项`;
-                deleteSelectedBtn.disabled = selectedMessageIds.size === 0;
-                if (forwardSelectedBtn) forwardSelectedBtn.disabled = selectedMessageIds.size === 0;
+                updateMultiSelectBar();
             }
 
             async function deleteSelectedMessages() {
                 if (selectedMessageIds.size === 0) return;
 
+                const chatForCount = (currentChatType === 'private')
+                    ? db.characters.find(c => c.id === currentChatId)
+                    : db.groups.find(g => g.id === currentChatId);
+                // 隐藏消息是给 AI 看的上下文（场景切换、通话起止……），成对出现的居多，
+                // 删一半会让 AI 那边的情节对不上，所以单独把条数说出来，别让人误以为在删普通消息
+                const hiddenCount = ((chatForCount && chatForCount.history) || [])
+                    .filter(m => selectedMessageIds.has(m.id) && m.isHidden).length;
+
                 // ★ 二次确认是必需的，不是礼貌：删除键旁边就是转发键，两个都在
                 //   多选栏右下角、指头底下差几毫米，误触一次就是不可恢复的删除。
+                const hiddenNote = hiddenCount
+                    ? `（其中 ${hiddenCount} 条是隐藏消息，是给 AI 看的上下文，删了可能影响剧情连贯）`
+                    : '';
                 const ok = await AppUI.confirm(
-                    `将删除选中的 ${selectedMessageIds.size} 条消息，删掉就找不回来了。`,
+                    `将删除选中的 ${selectedMessageIds.size} 条消息${hiddenNote}，删掉就找不回来了。`,
                     '删除消息', '删除', '取消'
                 );
                 if (!ok) return;
@@ -499,10 +621,12 @@ function enterMultiSelectMode(initialMessageId) {
                 chat.history = chat.history.filter(m => !selectedMessageIds.has(m.id));
                 await deleteMessagesFromDB(Array.from(selectedMessageIds));
     await saveSingleChat(currentChatId, currentChatType);
+                // ★ 先退出多选再重绘：反过来的话，重绘那一下「显示隐藏」还开着，
+                //   隐藏行会先画出来、紧接着被 exitMultiSelectMode 清掉，闪一下。
+                exitMultiSelectMode();
                 currentPage = 1;
                 renderMessages(false, true);
                 renderChatList();
-                exitMultiSelectMode();
                 showToast(`已删除 ${deletedCount} 条消息`);
             }
             

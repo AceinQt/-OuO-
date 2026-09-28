@@ -361,6 +361,8 @@ async function sendShareMessage(share) {
  *
  * 只管数据落盘，不碰 UI（不上气泡、不刷列表）—— 调用方比这里更清楚当前
  * 停在哪个页面。投到当前会话时要不要立刻上气泡，由调用方决定。
+ * （唯一的例外是时间感知，见 push 里的注释：那条分割线属于"数据"，
+ * 它得跟卡片一起落盘，不能指望调用方各自补。）
  *
  * @param {{charIds?: string[], groupIds?: string[]}} targets
  * @param {{title:string, category:string, body:string, extra?:string}} share
@@ -370,6 +372,22 @@ async function deliverShareToChats(targets, share) {
     const delivered = [];
 
     const push = async (chat, chatId, chatType, senderName) => {
+        if (!chat.history) chat.history = [];
+
+        // 时间感知必须在卡片入列**之前**跑。它按 history 末尾那条真互动算间隔
+        // （getLastValidInteractMsg），卡片先 push 进去就成了"上一次互动"，
+        // 间隔归零、分割线和 [系统情景通知] 永远不会出现 —— 症状就是「开着
+        // 时间感知，分享帖子却不触发时间流逝」。+ 号面板那条路径
+        // （sendShareMessage）一直是先感知后 push，这里漏了。
+        //
+        // 投给**别的**聊天也照跑，不用挑当前会话：processTimePerception 里
+        // 那个 addMessageBubble 拿到 [time-divider] 会按不可见消息提前 return，
+        // 不会把气泡画进当前聊天室、也不加未读、不弹通知条。
+        // 内部还会自己看 chat.timePerceptionEnabled，关着就直接返回。
+        if (typeof processTimePerception === 'function') {
+            await processTimePerception(chat, chatId, chatType);
+        }
+
         const content = buildShareMessageContent(senderName, share);
         const message = {
             id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
@@ -381,7 +399,6 @@ async function deliverShareToChats(targets, share) {
         // 群聊消息不带 senderId 的话，渲染层认不出是"我"发的，会当成未知成员
         if (chatType === 'group') message.senderId = 'user_me';
 
-        if (!chat.history) chat.history = [];
         chat.history.push(message);
         await saveMessageToDB(message, chatId, chatType);
         await saveSingleChat(chatId, chatType);
@@ -899,16 +916,41 @@ function _forwardSenderName(message, chat, chatType) {
 }
 
 /**
+ * 看不见的那些消息转成纯文本。
+ * 它们本来是给 AI 认的上下文（`[system: 场景切换：…]`、`[系统情景通知：…]`、
+ * `[剧情旁白：…]`、转账回执……），那层方括号壳和 `system:` 前缀只是标记，
+ * 转发到别的聊天里没有任何意义，脱掉。转过去就是一行普通文字，对面看得见。
+ */
+function _plainHiddenForwardText(message) {
+    const raw = (typeof message.content === 'string') ? message.content.trim() : '';
+    if (!raw) return '';
+    const unwrapped = raw.replace(/^\[([\s\S]*)\]$/, '$1');
+    return unwrapped.replace(/^system\s*[:：]\s*/i, '').trim();
+}
+
+/**
  * 一条消息在转发卡片里显示成什么。返回 { name, text }；返回 null = 不收录。
  *
  * 为什么不复用 chat_list.js 那套预览逻辑：那边要的是列表里一行摘要，语音和
  * 照片一律压成 [语音] [照片/视频] 就完事了，**正文全丢**。转发要的恰恰是
  * 正文本身，标签只是补个类型说明。两者目标不同，共用会两头不讨好。
+ *
+ * includeHidden 默认 false，聊天室里看不见的消息一律不收 —— 它们能出现在选中集里
+ * 只有一种情况：用户在多选里开了「显示隐藏」、亲手勾的。所以开关由调用方
+ * （sendForwardedMessages）按那个状态传，不在这里自己猜。
  */
-function describeForwardedMessage(message, chat, chatType) {
-    if (!message || message.isHidden) return null;
+function describeForwardedMessage(message, chat, chatType, includeHidden = false) {
+    if (!message) return null;
     const raw = (typeof message.content === 'string') ? message.content : '';
-    if (FORWARD_SKIP_REGEX.test(raw)) return null;
+    // 日期分隔线不是消息，转过去只是噪音，开关开着也不收
+    if (raw.trim() === '[time-divider]') return null;
+    if (message.isHidden || FORWARD_SKIP_REGEX.test(raw)) {
+        if (!includeHidden) return null;
+        // 署名写「隐藏」而不是 _forwardSenderName：这些消息的 role 多半是 'user'，
+        // 按发言人算会署成用户自己的名字，可那话根本不是他说的。
+        const text = _plainHiddenForwardText(message);
+        return text ? { name: '隐藏', text } : null;
+    }
 
     // --- 没有发言人的几种：旁白 / 系统通知 ---
     const narration = raw.match(/^\[system-narration:([\s\S]+?)\]$/)
@@ -979,10 +1021,10 @@ function describeForwardedMessage(message, chat, chatType) {
  *   备注名改成「标题」就正好踩上；多行 AI 回复里顶格写「附加信息：」也够常见。
  *   不过这道的话，卡片会从那行起被截掉，且**静默**发生。
  */
-function buildForwardTranscript(messages, chat, chatType) {
+function buildForwardTranscript(messages, chat, chatType, includeHidden = false) {
     const lines = [];
     (messages || []).forEach(m => {
-        const item = describeForwardedMessage(m, chat, chatType);
+        const item = describeForwardedMessage(m, chat, chatType, includeHidden);
         if (item) lines.push(`${item.name}：${item.text}`);
     });
     return sanitizeShareFieldText(lines.join('\n'));
@@ -1135,11 +1177,18 @@ async function sendForwardedMessages() {
     // 顺序**（用户完全可以先点新的再点旧的）。history 本身保证按时间升序，
     // 顺着它筛就白拿了时间顺序，不用另外排序。
     const picked = (sourceChat.history || []).filter(m => selectedMessageIds.has(m.id));
-    const body = buildForwardTranscript(picked, sourceChat, currentChatType);
+    // 隐藏消息只有在多选开着「显示隐藏」时才画得出来、才可能被勾上，
+    // 就按那个状态决定收不收（转过去是纯文本，不再隐藏）
+    const includeHidden = typeof isShowingHiddenMessages === 'function' && isShowingHiddenMessages();
+    const body = buildForwardTranscript(picked, sourceChat, currentChatType, includeHidden);
     if (!body.trim()) {
         showToast('选中的消息没有可转发的内容。');
         return;
     }
+    // 报数用"真进了卡片的条数"，不是 picked.length —— 选中的里头常有收转账回执、
+    // 改状态之类根本不收录的，拿 picked 报数会出现「已转发 5 条」但卡片只有 3 行
+    const forwardedCount = picked.filter(
+        m => describeForwardedMessage(m, sourceChat, currentChatType, includeHidden)).length;
 
     const noteInput = document.getElementById('forward-note-input');
     // 备注同样要过一道 —— 用户在这儿顶格打「附加信息：」就会切坏字段边界
@@ -1166,7 +1215,7 @@ async function sendForwardedMessages() {
 
     if (typeof renderChatList === 'function') renderChatList();
     showToast(delivered.length
-        ? `已转发 ${picked.length} 条消息给 ${delivered.length} 个聊天`
+        ? `已转发 ${forwardedCount} 条消息给 ${delivered.length} 个聊天`
         : '转发失败，没找到目标聊天。');
 }
 

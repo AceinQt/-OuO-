@@ -616,9 +616,18 @@ function goBackToContacts() {
                     let lastMessageText = '开始聊天吧...';
                     if (chat.history && chat.history.length > 0) {
                         const invisibleRegex = /\[.*?(?:接收|退回).*?的转账\]|\[.*?更新状态为：.*?\]|\[.*?已接收礼物\]|\[system:.*?\]|\[.*?邀请.*?加入了群聊\]|\[.*?将.*?移出了群聊\]|\[.*?修改群名为：.*?\]|\[system-display:.*?\]/;
-                        const visibleHistory = chat.history.filter(msg => !invisibleRegex.test(msg.content));
-                        if (visibleHistory.length > 0) {
-                            const lastMsg = visibleHistory[visibleHistory.length - 1];
+                        // 只要最后一条「可见」消息，所以从尾部往前找、命中即停。
+                        // 别改回 history.filter(...) 再取最后一个 —— 懒加载下每个会话内存里有
+                        // 最多 1500 条，那样等于拿这条 8 分支正则扫全部历史，只为了拿末尾一条；
+                        // 会话一多，进聊天列表就明显卡一下。绝大多数情况这里一次就跳出。
+                        let lastMsg = null;
+                        for (let i = chat.history.length - 1; i >= 0; i--) {
+                            if (!invisibleRegex.test(chat.history[i].content)) {
+                                lastMsg = chat.history[i];
+                                break;
+                            }
+                        }
+                        if (lastMsg) {
                             const urlRegex = /^(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|webp|bmp|svg)|data:image\/[a-z]+;base64,)/i;
                             const imageRecogRegex = /\[.*?发来了一张图片：\]/
                             const voiceRegex = /\[.*?的语音：.*?\]/;

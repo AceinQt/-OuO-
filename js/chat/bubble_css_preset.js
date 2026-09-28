@@ -89,21 +89,52 @@ async function _persistChatsAfterPresetChange() {
 }
 // =================================== 更新预览区域核心逻辑 ===================================
 
+// 从一段预设 CSS 的 META 注释里取出时间格式。
+// 位置是纯 CSS，格式不是 —— 它得由气泡工厂在渲染时拼成文字，所以要有人把它从 CSS 里
+// 捞出来。实际聊天室走 chat_settings.js 的 updateCustomBubbleStyle（所有换预设/进聊天室
+// 的唯一汇合点），预览走下面的 getDynamicBubblePreview，两边都调这一个函数，
+// 免得"预览里是这个格式、聊天室里是另一个"。
+function getMessageTimeFormatFromCss(css) {
+    if (!css) return '';
+    const m = String(css).match(/\/\* META:(.+?) \*\//);
+    if (!m) return '';
+    try {
+        const parsed = JSON.parse(m[1]);
+        return (typeof parsed.timeFormat === 'string') ? parsed.timeFormat : '';
+    } catch (e) {
+        return '';
+    }
+}
+
 // 全景气泡预览生成器：将所有的气泡都放在一个窗口里
-function getDynamicBubblePreview() {
+function getDynamicBubblePreview(timeFormat) {
     // 【教学指南：如何自己修改这里的预览气泡？】
     // 1. `getRow(isSent, html)` 是生成一行消息的函数，isSent 为 true 表示是我方发出的。
     // 2. 所有的预览内容都在下方的 `let html = ""` 中拼接。
     // 3. 如果你想改变它们在预览里的上下顺序，直接调换 `html += ...` 代码块的位置即可。
     // 4. 如果你想删掉某个预览（比如觉得太多了），直接删掉对应的 `html += ...` 行。
 
+    // 样例时间固定挑一个能把所有占位符都试出来的时刻：2026-09-27(周日) 下午 13:05:09。
+    // 分/秒故意带前导零，这样用户写 m 还是 mm 一眼看得出区别。
+    const sampleTime = (typeof formatMessageTimestamp === 'function')
+        ? formatMessageTimestamp(new Date(2026, 8, 27, 13, 5, 9).getTime(), timeFormat)
+        : '13:05';
+
+    // getRow 里的三个时间槽位必须和 chat_bubble_factory.js 真实那份结构一致
+    // （头像列里一个、meta 行里一个、气泡后一个），否则「消息时间」的位置在预览里
+    // 拨了没反应 —— 生成的规则正是冲着这三个 class 去的，缺哪个哪个位置就是空的。
     const getRow = (isSent, innerHtml) => `
         <div class="message-wrapper ${isSent ? 'sent' : 'received'}">
             <div class="message-bubble-row" ${isSent ? 'style="flex-direction: row-reverse;"' : ''}>
-                <img src="${isSent ? './png/avatar_default_me.jpg' : './png/avatar_default.jpg'}" class="message-avatar avatar">
+                <div class="message-avatar-col">
+                    <img src="${isSent ? './png/avatar_default_me.jpg' : './png/avatar_default.jpg'}" class="message-avatar avatar">
+                    <span class="message-time-avatar">${sampleTime}</span>
+                </div>
                 <div class="message-content-col" ${isSent ? 'style="align-items: flex-end;"' : ''}>
+                    <div class="message-meta-info meta-time-only"><span class="message-time">${sampleTime}</span></div>
                     ${innerHtml}
                 </div>
+                <span class="message-time-tail">${sampleTime}</span>
             </div>
         </div>
     `;
@@ -114,16 +145,23 @@ function getDynamicBubblePreview() {
     html += getRow(false, `<div class="message-bubble received">这是一条对方发来的普通消息。</div>`);
     html += getRow(true, `<div class="message-bubble sent">这是我方回复的普通消息。</div>`);
 
-// 2. 旁白气泡 (中立，不需要调 getRow，独立结构)
+// 2. 旁白气泡 (固定居中，不需要调 getRow，独立结构)
+//    分「对方」(AI 写的，:not(.narration-mine)) 和「我方」(用户在"+"面板发的剧情旁白，
+//    .narration-mine) 两类，各有一套独立设置，所以预览里必须两种都看得见 ——
+//    只画一种的话，调完另一种会以为"没生效"。
+//    连体拼接只在同类之间发生，所以预览里两组之间也应当是断开的。
     html += `
         <div class="message-wrapper system-notification narration-wrapper">
-            <div class="narration-bubble markdown-content">这是一段旁白气泡内容。</div>
+            <div class="narration-bubble markdown-content">这是【对方】的旁白，由 AI 写在【线下模式】和【通话】里，用来描述角色的行动。</div>
         </div>
         <div class="message-wrapper system-notification narration-wrapper">
-            <div class="narration-bubble markdown-content">旁白气泡不区分我方和对方。固定显示在屏幕中间位置。多个旁白气泡将连接为一整个气泡。</div>
+            <div class="narration-bubble markdown-content">旁白固定显示在屏幕中间位置。相邻的同类旁白会连接为一整个气泡。</div>
         </div>
-        <div class="message-wrapper system-notification narration-wrapper">
-            <div class="narration-bubble markdown-content">旁白气泡只在【线下模式】中出现，用于描述角色的行动。</div>
+        <div class="message-wrapper system-notification narration-wrapper narration-mine">
+            <div class="narration-bubble markdown-content">这是【我方】的旁白，是我自己在"+"面板里发的【剧情旁白】，样式单独一套。</div>
+        </div>
+        <div class="message-wrapper system-notification narration-wrapper narration-mine">
+            <div class="narration-bubble markdown-content">我方旁白默认不带描边，用来和对方的旁白一眼分开；想加也可以在左边选「我方」后自己调。</div>
         </div>
     `;
 
@@ -186,7 +224,8 @@ function getDynamicBubblePreview() {
 // 从 index.html 真实的 #chat-room-screen clone 一份，改成适合预览的样子。
 // 关键点是：不重写结构，只做「隐藏浮层 + 填示例内容」这两件事。
 // 这样以后改 index.html 的顶栏/底栏，预览自动跟着变，不会再漂移。
-function buildPreviewShellHtml() {
+// timeFormat 是一路透传给示例气泡的时间模板，来源是正在编辑的那段 CSS 的 META。
+function buildPreviewShellHtml(timeFormat) {
     const real = document.getElementById('chat-room-screen');
     if (!real) return '';
 
@@ -231,7 +270,7 @@ function buildPreviewShellHtml() {
 
     // 示例气泡塞进真实的 #message-area
     const area = clone.querySelector('#message-area');
-    if (area) area.innerHTML = getDynamicBubblePreview();
+    if (area) area.innerHTML = getDynamicBubblePreview(timeFormat);
 
     return clone.outerHTML;
 }
@@ -317,7 +356,9 @@ function updateBubbleCssPreview(previewContainer, css, useDefault, theme) {
         ? scopeBubbleCss(rawUserCss, PREVIEW_CHAT_ID)
         : '';
 
-    const shellHtml = buildPreviewShellHtml();
+    // 时间格式取自**同一段** rawUserCss 的 META，而不是编辑器里的 basicState ——
+    // 预览的口径始终是"这段 CSS 存下去会长什么样"，和位置/颜色那些保持一致
+    const shellHtml = buildPreviewShellHtml(getMessageTimeFormatFromCss(rawUserCss));
     const focusCss = PREVIEW_FOCUS_CSS[mode.focus] || '';
 
     doc.write(`
@@ -447,12 +488,28 @@ function setupBubblePresets() {
     }
 
     // ================== 进阶基础 UI 数据管理与 CSS 生成 ==================
+    // timePos: 消息时间放哪儿 —— 'none' 不显示 / 'avatar' 头像下方 / 'above' 气泡上方 / 'tail' 气泡后。
+    //   三个槽位在气泡工厂里都画了出来（见 chat_bubble_factory.js 的组装段），这里只负责
+    //   放开其中一个，所以换位置是纯 CSS 的事，已经渲染出来的气泡会立刻跟着动。
+    //   ★ 老预设存的是布尔 `showTime`，迁移在 syncBasicUiFromCss 里：true → 'above'。
+    // timeFormat: 时间文字的模板，**不是 CSS**，由气泡工厂在渲染时按它拼字符串
+    //   （解析器 formatMessageTimestamp，说明文案见本文件底部的 AppHelp.register）。
+    // avatarRadius: 头像圆角，0 = 方角，19 = 正圆（头像 38px，19px 正好是 50%）。
     const defaultBasicState = {
-        hideAvatar: false, customFont: '', 
+        hideAvatar: false, timePos: 'none', timeFormat: 'HH:mm', avatarRadius: 19, customFont: '',
         styles: {
             normal_sent:   { bg:'#0099FF', fontSize:16, fontColor:'#FFFFFF', opacity:1, blur:0, strokeW:0, strokeC:'#000000', radius:8, strokeSides:[] },
             normal_received:   { bg:'#FFFFFF', fontSize:16, fontColor:'#333333', opacity:1, blur:0, strokeW:0, strokeC:'#000000', radius:8, strokeSides:[] },
-            narration:     { bg:'#FFFFFF', fontSize:15, fontColor:'#555555', opacity:0.8, blur:0, strokeW:3, strokeC:'#0099FF', radius:6, strokeSides:['left'] },
+            // 旁白也分我方/对方，和普通气泡一个口径：
+            //   narration_received = AI 写的旁白（线下模式/通话），选择器 :not(.narration-mine)
+            //   narration_sent     = 用户自己在"+"面板发的「剧情旁白」，选择器 .narration-mine
+            // 曾经这两者共用一个 `narration` 键、我方靠生成端硬写一条 border:none 区分，
+            // 于是"我方想单独换个底色/描边"做不到。现在各自独立。
+            // ★ 我方的默认值 = 对方的默认值但描边归零，这样拆分前后长得一模一样
+            //   （chat_room.css 的 `.narration-mine .narration-bubble { border: none }` 就是它）。
+            //   改这里要同步 tests/narration_radius_stitch.test.cjs 的默认值断言。
+            narration_received: { bg:'#FFFFFF', fontSize:15, fontColor:'#555555', opacity:0.8, blur:0, strokeW:3, strokeC:'#0099FF', radius:6, strokeSides:['left'] },
+            narration_sent:     { bg:'#FFFFFF', fontSize:15, fontColor:'#555555', opacity:0.8, blur:0, strokeW:0, strokeC:'#0099FF', radius:6, strokeSides:[] },
             voice_sent:    { bg:'#0099FF', fontSize:14, fontColor:'#FFFFFF', opacity:1, blur:5, strokeW:0, strokeC:'#000000', radius:8, strokeSides:[] },
             voice_received:    { bg:'#FFFFFF', fontSize:14, fontColor:'#333333', opacity:1, blur:5, strokeW:0, strokeC:'#000000', radius:8, strokeSides:[] },
             transfer_sent: { bg:'#FF9900', fontSize:14, fontColor:'#FFFFFF', opacity:1, blur:0, strokeW:0, strokeC:'#000000', radius:8, strokeSides:[] },
@@ -490,9 +547,44 @@ function setupBubblePresets() {
         let hasChanges = false; // 核心标记：记录是否真的修改了基础样式
         
         // 判断全局设置是否修改
-        if (basicState.hideAvatar !== defaultBasicState.hideAvatar) { 
-            if (basicState.hideAvatar) basicCss += `.message-avatar { display: none !important; }\n`; 
-            hasChanges = true; 
+        if (basicState.hideAvatar !== defaultBasicState.hideAvatar) {
+            if (basicState.hideAvatar) basicCss += `.message-avatar { display: none !important; }\n`;
+            hasChanges = true;
+        }
+        // 头像圆角。默认 19 = 正圆，和 chat_room.css 里那条 border-radius:50% 是同一个意思，
+        // 所以不改就一个字节都不生成。到顶时输出 50% 而不是 19px —— 万一以后头像尺寸变了，
+        // 百分比还是正圆，19px 就变成一个莫名其妙的方角了。
+        if (basicState.avatarRadius !== defaultBasicState.avatarRadius) {
+            const r = basicState.avatarRadius >= 19 ? '50%' : `${basicState.avatarRadius}px`;
+            basicCss += `.message-avatar { border-radius: ${r} !important; }\n`;
+            hasChanges = true;
+        }
+        // 每条消息的时间放在哪儿。气泡工厂对每条消息画了三个槽位，默认全是 display:none
+        // （chat_room.css），这里按用户选的位置放开一个。
+        // ★「气泡上方」必须**同时**放开两条：时间本身，以及「整行只有时间」时被收掉的那整行。
+        //   少放开第二条的话，私聊里选了这个位置等于什么都没发生（整行还是 display:none）。
+        //   那一行为什么要整行收掉，见 chat_room.css 的 .meta-time-only 注释（gap:4px 的坑）。
+        // ★ 另外两个位置**不能**放开 .meta-time-only：时间画在别的槽位里，
+        //   meta 行仍然是空的，放开它就又把那 4px 空隙请回来了。
+        // ★ 'avatar' 还要把 .message-avatar-col 从 display:contents 翻成真正的 flex 列，
+        //   默认那个 contents 的用意见 chat_room.css 那段注释。
+        if (basicState.timePos !== defaultBasicState.timePos) {
+            if (basicState.timePos === 'above') {
+                basicCss += `.message-time { display: inline !important; }\n`;
+                basicCss += `.message-meta-info.meta-time-only { display: flex !important; }\n`;
+            } else if (basicState.timePos === 'avatar') {
+                basicCss += `.message-avatar-col { display: flex !important; }\n`;
+                basicCss += `.message-time-avatar { display: block !important; }\n`;
+            } else if (basicState.timePos === 'tail') {
+                basicCss += `.message-time-tail { display: block !important; }\n`;
+            }
+            hasChanges = true;
+        }
+        // 时间格式只影响文字内容、生成不出 CSS，但仍要让 hasChanges 为真 ——
+        // 否则整个自动生成区块（连同存着 timeFormat 的 META 注释）会被下面那段
+        // 「没改动就彻底删掉」的逻辑连锅端走，用户改的格式存不下来。
+        if (basicState.timeFormat !== defaultBasicState.timeFormat) {
+            hasChanges = true;
         }
         if (basicState.customFont !== defaultBasicState.customFont) {
             if (basicState.customFont) {
@@ -506,14 +598,23 @@ function setupBubblePresets() {
         for (const [typeKey, conf] of Object.entries(basicState.styles)) {
             if (typeKey.startsWith('voice_')) continue;
 
-            const isNarration = typeKey === 'narration';
+            const isNarration = typeKey.startsWith('narration');
             const baseType = isNarration ? 'narration' : typeKey.split('_')[0];
             const sel = classSelectorsMap[baseType];
             if(!sel) continue;
-            
+
+            // 旁白的「我方」是用户自己在"+"面板发的剧情旁白（.narration-mine），
+            // 「对方」是 AI 在线下模式/通话里写的（:not(.narration-mine)）。
+            // 下面主规则、圆角拼接、描边去内侧边三处都拿这一个 nwSelf 拼选择器 ——
+            // 分头硬写过一次，结果是调我方圆角会把对方的拼接规则一起盖掉。
+            const nwSelf = !isNarration ? ''
+                : (typeKey === 'narration_sent'
+                    ? '.message-wrapper.narration-wrapper.narration-mine'
+                    : '.message-wrapper.narration-wrapper:not(.narration-mine)');
+
             let ruleSel = '';
             if (isNarration) {
-                ruleSel = `.message-wrapper.narration-wrapper ${sel}`;
+                ruleSel = `${nwSelf} ${sel}`;
             } else {
                 const sideClass = typeKey.split('_')[1] === 'recv' ? 'received' : typeKey.split('_')[1];
                 ruleSel = sel.split(',').map(s => {
@@ -582,15 +683,21 @@ function setupBubblePresets() {
                 // 所以这里必须把拼接规则按用户的新半径重新生成一遍：
                 // 首条只圆上两角、末条只圆下两角、中间四角全平。
                 if (isNarration) {
-                    const nw = '.message-wrapper.narration-wrapper';
+                    // ★ 只和**同类**拼接：AI 旁白是 :not(.narration-mine)，用户自己发的
+                    //   剧情旁白是 .narration-mine。分组方式必须和 chat_room.css 那几条
+                    //   一模一样，否则"默认样式下谁跟谁连"和"自定义之后谁跟谁连"会分叉。
+                    //   两类各有自己的圆角，所以这里只生成 nwSelf 这一类 —— 早先是一次把
+                    //   两类都按同一个 conf.radius 生成，拆开之后那样会让后遍历到的那类
+                    //   把前一类刚生成的拼接规则按错误半径重写一遍。
                     const r = `${conf.radius}px`;
-                    // 后面还有旁白 → 我不是最后一条 → 底部两角压平
+                    const nw = nwSelf;
+                    // 后面还有同类旁白 → 我不是最后一条 → 底部两角压平
                     basicCss += `${nw}:has(+ ${nw}) ${sel} {`
                         + ` border-bottom-left-radius: 0 !important;`
                         + ` border-bottom-right-radius: 0 !important;`
                         + ` border-top-left-radius: ${r} !important;`
                         + ` border-top-right-radius: ${r} !important; }\n`;
-                    // 前面还有旁白 → 我不是第一条 → 顶部两角压平
+                    // 前面还有同类旁白 → 我不是第一条 → 顶部两角压平
                     basicCss += `${nw} + ${nw} ${sel} {`
                         + ` border-top-left-radius: 0 !important;`
                         + ` border-top-right-radius: 0 !important; }\n`;
@@ -637,13 +744,19 @@ function setupBubblePresets() {
                     typeCss += ` border: none !important;`;
                 }
 
-                // 旁白的上下描边同样要「只描整组的外沿」，理由和圆角那条一样：
+                // ★ 这里曾经硬写一条「我方旁白一律 border: none」—— 那是两类共用一套设置
+                //   时用来区分谁写的。现在我方是独立的一类（narration_sent，默认 strokeW:0），
+                //   描边归用户自己调，硬写会让他刚调好的我方描边当场消失。
+                //   "默认不画描边"这件事由默认值 + chat_room.css 那条静态规则负责。
+
+                // 旁白的上下描边要「只描整组的外沿」，理由和圆角那条一样：
                 // 选了上+下的话，每条旁白都会各自画一条上边和一条下边，
                 // 相邻两条的接缝处就叠出两条横线，横穿本该是一整张的大卡片。
                 // 所以把内侧那条边去掉：不是最后一条就没有下边，不是第一条就没有上边。
                 // 左右边不用管 —— 它们沿着卡片侧面连成一条，本来就是想要的效果。
+                // ★ 只处理 nwSelf 这一类：两类的描边各调各的，跨类去边会误伤。
                 if (isNarration && conf.strokeW > 0) {
-                    const nw = '.message-wrapper.narration-wrapper';
+                    const nw = nwSelf;
                     if (sides.length === 4 || sides.includes('bottom')) {
                         // 后面还有旁白 → 我不是最后一条 → 去掉下边
                         basicCss += `${nw}:has(+ ${nw}) ${sel} { border-bottom: none !important; }\n`;
@@ -704,9 +817,34 @@ function setupBubblePresets() {
         }
     }
 
+    // 两个条件行：头像弧度只在「显示头像」时有意义，时间格式只在时间真的显示时有意义。
+    // 收行用 display:'none' / 复原用 ''（让 CSS 里的 flex 生效），别写死 'flex' ——
+    // .row 和 .col 两种行的 flex-direction 不一样，写死会把竖排的滑块行压成横排。
+    function syncConditionalRows() {
+        const radiusRow = document.getElementById('avatar-radius-row');
+        if (radiusRow) radiusRow.style.display = basicState.hideAvatar ? 'none' : '';
+        const fmtRow = document.getElementById('time-format-row');
+        if (fmtRow) fmtRow.style.display = (basicState.timePos === 'none') ? 'none' : '';
+
+        // 头像藏了就不该还能选「头像下方」：那一档生成的是「把头像列翻成 flex 列」，
+        // 头像本身 display:none 之后列里只剩一个时间，宽度由时间文字决定，
+        // 气泡左边缘会随每条消息的时间长短参差不齐。选中时强制退回「气泡上方」。
+        const posSelect = document.getElementById('setting-time-pos');
+        if (posSelect) {
+            const avatarOpt = posSelect.querySelector('option[value="avatar"]');
+            if (avatarOpt) avatarOpt.disabled = basicState.hideAvatar;
+        }
+    }
+
     function updateUIFromState() {
         document.getElementById('setting-hide-avatar').checked = basicState.hideAvatar;
+        document.getElementById('setting-time-pos').value = basicState.timePos;
+        document.getElementById('setting-time-format').value = basicState.timeFormat;
+        document.getElementById('setting-avatar-radius').value = basicState.avatarRadius;
+        document.getElementById('val-avatar-radius').textContent =
+            basicState.avatarRadius >= 19 ? '正圆' : `${basicState.avatarRadius}px`;
         document.getElementById('setting-custom-font').value = basicState.customFont;
+        syncConditionalRows();
         const typeConf = basicState.styles[currentSelectType];
         
         // 色值同步
@@ -743,14 +881,39 @@ function syncBasicUiFromCss(css) {
             if (metaMatch && metaMatch[1]) {
                 try {
                     const parsed = JSON.parse(metaMatch[1]);
-                    if (parsed.styles && parsed.styles.narration_sent) {
-                        parsed.styles.narration = parsed.styles.narration_sent;
-                        delete parsed.styles.narration_sent; delete parsed.styles.narration_received;
+                    // 兼容迁移：旁白曾经是**一个** `narration` 键（两侧共用一套设置，
+                    // 我方靠生成端硬写 border:none 区分）。现在拆成 narration_sent /
+                    // narration_received 两键，所以把老值往两边各复制一份。
+                    // ★ 我方那份必须把描边清零 —— 老版本我方**实际渲染出来**就是没描边的，
+                    //   原样复制过去会让老预设一加载就凭空长出一圈描边（用户看到的是
+                    //   "我啥也没动，我方旁白怎么多了条线"）。
+                    // ★ 比这更老的预设里也出现过 narration_sent/narration_received 这两个键名
+                    //   （那时候还没有"我方旁白"这个概念，是另一套语义）。它们键名正好对得上，
+                    //   原样放行即可，不值得为那批数据再猜一层。
+                    if (parsed.styles && parsed.styles.narration) {
+                        const legacy = parsed.styles.narration;
+                        if (!parsed.styles.narration_received) {
+                            parsed.styles.narration_received = { ...legacy };
+                        }
+                        if (!parsed.styles.narration_sent) {
+                            parsed.styles.narration_sent = { ...legacy, strokeW: 0, strokeSides: [] };
+                        }
+                        delete parsed.styles.narration;
                     }
 
                     // 【核心修复】使用深度合并，坚决防止 defaultBasicState 里的默认属性被意外覆盖为 undefined
                     basicState = JSON.parse(JSON.stringify(defaultBasicState));
                     if (parsed.hideAvatar !== undefined) basicState.hideAvatar = parsed.hideAvatar;
+                    // 时间位置：老预设存的是布尔 showTime（那时候只有"气泡上方"一个位置），
+                    // 迁移成 timePos。两个都在时以新的为准 —— 生成端已经不写 showTime 了，
+                    // 还留着的一定是更老的那份。
+                    if (parsed.timePos !== undefined) {
+                        basicState.timePos = parsed.timePos;
+                    } else if (parsed.showTime !== undefined) {
+                        basicState.timePos = parsed.showTime ? 'above' : 'none';
+                    }
+                    if (parsed.timeFormat !== undefined) basicState.timeFormat = parsed.timeFormat;
+                    if (parsed.avatarRadius !== undefined) basicState.avatarRadius = parsed.avatarRadius;
                     if (parsed.customFont !== undefined) basicState.customFont = parsed.customFont;
                     if (parsed.marginY !== undefined) basicState.marginY = parsed.marginY;
                     if (parsed.marginX !== undefined) basicState.marginX = parsed.marginX;
@@ -864,7 +1027,8 @@ function syncBasicUiFromCss(css) {
                 const classMap = {
                     'normal_sent': /\.message-bubble\.sent\s*(?:,[^{]*)?\{([^}]+)\}/ig,
                     'normal_received': /\.message-bubble\.received\s*(?:,[^{]*)?\{([^}]+)\}/ig,
-                    'narration': /\.narration-bubble[^{]*\{([^}]+)\}/ig,
+                    'narration_received': /\.narration-bubble[^{]*\{([^}]+)\}/ig,
+                    'narration_sent': /\.narration-bubble[^{]*\{([^}]+)\}/ig,
                     'voice_sent': /\.sent\s+\.voice-bubble\s*(?:,[^{]*)?\{([^}]+)\}/ig,
                     'voice_received': /\.received\s+\.voice-bubble\s*(?:,[^{]*)?\{([^}]+)\}/ig,
                     'transfer_sent': /\.sent(?:-transfer|\s+\.transfer-card)\s*(?:,[^{]*)?\{([^}]+)\}/ig,
@@ -881,9 +1045,43 @@ function syncBasicUiFromCss(css) {
                     }
                 }
 
+                // 我方旁白（.narration-mine）的专属规则最后再盖一次：上面两侧都先吃了一遍
+                // 通用的 `.narration-bubble`，这一遍把"我方单独改过的那部分"补上。
+                // 已知不精确：那条通用正则也会吃到 `.narration-mine … .narration-bubble`，
+                // 于是我方的值会渗进对方那份。这条回退路径只在**手写 CSS 且没有 META 注释**时
+                // 才跑（生成端一律带 META），不值得为它再写一个选择器解析器。
+                const mineNarrationRegex = /\.narration-mine[^{]*\.narration-bubble[^{]*\{([^}]+)\}/ig;
+                let mineMatch; let mineRules = "";
+                while ((mineMatch = mineNarrationRegex.exec(css)) !== null) { mineRules += mineMatch[1] + ";"; }
+                if (mineRules) {
+                    parseRulesToState(mineRules, basicState.styles['narration_sent']);
+                }
+
                 if (/(?:\.message-avatar|\.avatar|avatar)[^{]*\{[^}]*(?:display:\s*none|opacity:\s*0|visibility:\s*hidden)/i.test(css) ||
                     /\.message-info[^{]*\{[^}]*display:\s*none/i.test(css)) {
-                    basicState.hideAvatar = true; 
+                    basicState.hideAvatar = true;
+                }
+
+                // 手写 CSS 里把某个时间槽位放出来了就把下拉回显到对应位置，否则用户一碰别的
+                // 滑块，生成端会按"当前是不显示"补一段规则，把他自己写的那条顶掉。
+                // 顺序即优先级：三个都写了的话按"最靠后的那个位置"算，反正手写成这样本来就没定论。
+                if (/\.message-time\b[^{]*\{[^}]*display:\s*(?!none)[a-z-]+/i.test(css)) {
+                    basicState.timePos = 'above';
+                }
+                if (/\.message-time-avatar[^{]*\{[^}]*display:\s*(?!none)[a-z-]+/i.test(css)) {
+                    basicState.timePos = 'avatar';
+                }
+                if (/\.message-time-tail[^{]*\{[^}]*display:\s*(?!none)[a-z-]+/i.test(css)) {
+                    basicState.timePos = 'tail';
+                }
+
+                // 头像圆角同理。`50%` 和 19px 都算正圆（头像 38px）。
+                const avatarRadiusMatch = css.match(/\.message-avatar\s*\{[^}]*border-radius:\s*([\d.]+)(px|%)/i);
+                if (avatarRadiusMatch) {
+                    const num = parseFloat(avatarRadiusMatch[1]);
+                    basicState.avatarRadius = (avatarRadiusMatch[2] === '%')
+                        ? 19
+                        : Math.max(0, Math.min(19, Math.round(num)));
                 }
                 
                 const fontFaceMatch = css.match(/@font-face\s*\{[^}]*src:\s*url\(['"]([^'"]+)['"]\)/i);
@@ -900,29 +1098,58 @@ function syncBasicUiFromCss(css) {
     function updateTypeLabel() {
         const t = typeSelect.value;
         const s = sideSelect.value;
-        if (t === 'narration') {
-            sideSelect.disabled = true;
-            currentSelectType = 'narration';
-            document.getElementById('current-type-label').textContent = '旁白气泡 (中立)';
-        } else {
-            sideSelect.disabled = false;
-            currentSelectType = `${t}_${s}`;
-            const tName = typeSelect.options[typeSelect.selectedIndex].text;
-            const sName = sideSelect.options[sideSelect.selectedIndex].text;
-            document.getElementById('current-type-label').textContent = `${tName} - ${sName}`;
-        }
+        // 旁白以前是「中立」的一类、side 下拉被禁用；现在和普通气泡一样分两侧：
+        // 我方 = 用户自己发的剧情旁白，对方 = AI 写的旁白。
+        sideSelect.disabled = false;
+        currentSelectType = `${t}_${s}`;
+        const tName = typeSelect.options[typeSelect.selectedIndex].text;
+        const sName = sideSelect.options[sideSelect.selectedIndex].text;
+        document.getElementById('current-type-label').textContent = `${tName} - ${sName}`;
         updateUIFromState();
-        currentPreviewMode = 0; 
+        currentPreviewMode = 0;
         updatePreview();
     }
     typeSelect.addEventListener('change', updateTypeLabel);
-    sideSelect.addEventListener('change', updateTypeLabel);['setting-hide-avatar', 'setting-custom-font'].forEach(id => {
+    sideSelect.addEventListener('change', updateTypeLabel);['setting-hide-avatar', 'setting-time-pos', 'setting-time-format', 'setting-custom-font'].forEach(id => {
         document.getElementById(id).addEventListener('change', (e) => {
-            if(id === 'setting-hide-avatar') basicState.hideAvatar = e.target.checked;
+            if(id === 'setting-hide-avatar') {
+                basicState.hideAvatar = e.target.checked;
+                // 藏头像的同时正停在「头像下方」的话，把位置退回「气泡上方」——
+                // 理由见 syncConditionalRows 里那段注释（头像列宽度会随时间文字变化）
+                if (basicState.hideAvatar && basicState.timePos === 'avatar') {
+                    basicState.timePos = 'above';
+                    document.getElementById('setting-time-pos').value = 'above';
+                }
+            }
+            if(id === 'setting-time-pos') basicState.timePos = e.target.value;
+            if(id === 'setting-time-format') basicState.timeFormat = e.target.value.trim() || defaultBasicState.timeFormat;
             if(id === 'setting-custom-font') basicState.customFont = e.target.value;
+            syncConditionalRows();
             generateCssFromState();
         });
     });
+
+    // 时间格式用 input 而不是 change：边打字边在预览里看效果，不用先失焦
+    const timeFormatInput = document.getElementById('setting-time-format');
+    if (timeFormatInput) {
+        timeFormatInput.addEventListener('input', (e) => {
+            basicState.timeFormat = e.target.value.trim() || defaultBasicState.timeFormat;
+            generateCssFromState();
+        });
+    }
+
+    // 头像弧度滑块。到顶显示「正圆」而不是「19px」—— 用户要的是那个语义，
+    // 而且头像尺寸一改，19 这个数字就不成立了
+    const avatarRadiusInput = document.getElementById('setting-avatar-radius');
+    if (avatarRadiusInput) {
+        avatarRadiusInput.addEventListener('input', (e) => {
+            const v = parseInt(e.target.value, 10) || 0;
+            basicState.avatarRadius = v;
+            const disp = document.getElementById('val-avatar-radius');
+            if (disp) disp.textContent = v >= 19 ? '正圆' : `${v}px`;
+            generateCssFromState();
+        });
+    }
 
     const inputsMap = {
         'setting-bg':['bg', 'color'], 'setting-bg-text': ['bg', 'text'],
@@ -1318,3 +1545,40 @@ function syncBasicUiFromCss(css) {
 
 // 确保页面加载完成后执行绑定
 window.setupBubblePresets = setupBubblePresets;
+
+// ================================================================
+// === 「时间格式」那个问号弹窗的文案 ==============================
+// ================================================================
+// AppHelp 的约定是「谁的功能谁注册自己的文案」（见 js/core/utils.js 的那段说明），
+// 所以放在这里而不是 utils 里攒成大字典。HTML 那边是 showHelp('bubble', 'timeFormat')。
+// ★ 正文最终走 AppUI.alert，而它用的是 innerText —— 换行写 \n，不要写 <br>。
+if (typeof AppHelp !== 'undefined' && typeof AppHelp.register === 'function') {
+    AppHelp.register('bubble', {
+        timeFormat: {
+            title: '时间格式怎么写',
+            content:
+                '直接写你想看到的样子，字母会被换成对应的时间，其它字符原样保留。\n'
+                + '比如 HH:mm 会显示成 13:05，M月D日 HH:mm 会显示成 9月27日 13:05。\n\n'
+                + '【可用的字母】\n'
+                + 'YYYY 年份四位(2026)　YY 年份两位(26)\n'
+                + 'MM 月份两位(09)　　　M 月份(9)\n'
+                + 'DD 日期两位(27)　　　D 日期(27)\n'
+                + 'HH 小时两位(13)　　　H 小时(13)\n'
+                + 'hh 小时两位(13)　　　h 小时(13)\n'
+                + 'mm 分钟两位(05)　　　m 分钟(5)\n'
+                + 'ss 秒两位(09)　　　　s 秒(9)\n'
+                + 'A 上午/下午　　　　　a AM/PM\n'
+                + 'ddd 周日　　　　　　 dddd 星期日\n\n'
+                + '【关于 12 小时制】\n'
+                + '默认一律是 24 小时制，hh 和 HH 一个意思（13 点就显示 13）。\n'
+                + '只有当你写了 A 或 a 的时候，小时才会切成 12 小时制 ——\n'
+                + '比如 A hh:mm 显示成「下午 01:05」。\n'
+                + '（这点和网上常见的写法不同：那边 hh 单独用就是 12 小时制，\n'
+                + '于是 13:05 会变成没头没尾的 01:05，看着像出了 bug。）\n\n'
+                + '【想原样显示某个字母】\n'
+                + '用方括号括起来，比如 [at] HH:mm 会显示成「at 13:05」；\n'
+                + '不括的话 a 会被当成 AM/PM 换掉。\n\n'
+                + '留空的话按 HH:mm 算。'
+        }
+    });
+}

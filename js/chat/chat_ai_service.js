@@ -177,7 +177,17 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
     const capturedCallSessionId = (targetChatType === 'private' && chat?.currentCallSessionId)
         ? chat.currentCallSessionId : null;
     let newMessagesForDB = [];
-    try {        
+    // 落库收尾。正常路径在 try 末尾调一次；循环里那两处"挂断就 return"会跳过它，
+    // 靠函数末尾的 finally 兜底 —— 详见那里的注释。
+    let replyPersisted = false;
+    const persistReply = async () => {
+        if (replyPersisted) return;
+        replyPersisted = true;
+        await saveMessagesToDB(newMessagesForDB, targetChatId, targetChatType);
+        await saveSingleChat(targetChatId, targetChatType);
+        renderChatList();
+    };
+    try {
         let cleanResponse = fullResponse;
         cleanResponse = cleanResponse.replace(/^```\w*\s*$/gm, '');
         cleanResponse = cleanResponse.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
@@ -229,19 +239,37 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             const lines = processed.split('\n');
             let isFirstLine = true;
 
-            for (let line of lines) {
-                line = line.trim();
-                
+            // ★ 视频通话的语音预扫描。**只在 callMode === 'video' 时跑** ——
+            //   这个分支是和线下模式共用的，误触发就会平白给线下剧情配音。
+            //   返回的数组和 lines **下标一一对应**，不是对白的位置是 null。
+            //   旁白（第三人称描写）永远拿不到 plan，所以天然不发声。
+            const callVoicePlans = (chat.callMode === 'video' && typeof planCallVoiceForLines === 'function')
+                ? planCallVoiceForLines(lines, chat)
+                : null;
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+
                 if (!line || line === '[' || line === ']' || line === '[]' || line === '][') continue;
                 if (/^[\d]+\.\s/.test(line)) continue;
                 if (line.includes('意图：') || line.includes('情绪：') || line.includes('锚点：')) continue;
                 if (line.includes('问题：') || line.includes('优点：')) continue;
 
-                const cleanTextForCalc = line.replace('>>>', '').replace(/\[.*?\]/g, '');
-                const delay = calculateTypingDelay(cleanTextForCalc, isFirstLine);
-                await new Promise(r => setTimeout(r, delay));
-                
+                // 同普通分支：要出声的行，"打字机延迟"换成"等它的音频合成好"。
+                // 旁白和拿不到音频的行照旧按字数估延迟。
+                const voicePlan = callVoicePlans && callVoicePlans[i];
+                const voiceClip = (voicePlan && typeof waitCallVoiceClip === 'function')
+                    ? await waitCallVoiceClip(voicePlan)
+                    : null;
+
+                if (!voiceClip) {
+                    const cleanTextForCalc = line.replace('>>>', '').replace(/\[.*?\]/g, '');
+                    const delay = calculateTypingDelay(cleanTextForCalc, isFirstLine);
+                    await new Promise(r => setTimeout(r, delay));
+                }
+
                 // ★ 挂断中止：通话期间若会话已结束则停止继续生成
+                //   （落库由函数末尾的 finally 兜，见那里的注释）
                 if (capturedCallSessionId && chat.currentCallSessionId !== capturedCallSessionId) return;
                 isFirstLine = false;
 
@@ -270,7 +298,15 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 }
 
                 let messageContent = "";
-                if (line.startsWith('>>>')) {
+                if (voicePlan) {
+                    // ★ 通话里的对白一律存成语音气泡，**和开关无关**（开关只管出不出声）。
+                    //   台词取预扫描抠好的那一份，绝不在这里重新推导 —— 差一个引号，
+                    //   合成时算出的缓存键就和气泡对不上，钱花了却找不到音频，且完全静默。
+                    messageContent = typeof buildCallVoiceContent === 'function'
+                        ? buildCallVoiceContent(chat.realName, voicePlan.text)
+                        : `[${chat.realName}的消息：${voicePlan.text}]`;
+                }
+                else if (line.startsWith('>>>')) {
                     let speech = line.substring(3).trim();
                     speech = speech.replace(/\]+$/, '');
                     speech = speech.replace(/^["'「『""'']+/, '').replace(/["'」』""'']+$/, '');
@@ -312,17 +348,26 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 };
                 if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                 chat.history.push(message);
-                addMessageBubble(message, targetChatId, targetChatType);
+                // ★ 要 await：下面 speakCallBubble 靠 data-voice-msg-id 回查刚建的那个气泡，
+                //   不等它贴进 DOM 就查，查到的是 null，于是静默不出声。
+                await addMessageBubble(message, targetChatId, targetChatType);
                 if (chat.callMode === 'video' && typeof appendCallNarration === 'function') {
                     const narrationMatch = messageContent.match(/^\[system-narration:([\s\S]+?)\]$/);
-                    const dialogueMatch = messageContent.match(/\[.*?的消息：([\s\S]+?)\]$/);
                     if (narrationMatch) {
-                        appendCallNarration(narrationMatch[1]);
-                    } else if (dialogueMatch) {
-                        appendCallDialogue(dialogueMatch[1]);
+                        appendCallNarration(narrationMatch[1], message.id);
+                    } else if (voicePlan) {
+                        appendCallDialogue(voicePlan.text);
+                    } else {
+                        const dialogueMatch = messageContent.match(/\[.*?的消息：([\s\S]+?)\]$/);
+                        if (dialogueMatch) appendCallDialogue(dialogueMatch[1]);
                     }
                 }
                 newMessagesForDB.push(message);
+
+                // 音频上面已经等到手了，弹出来就播，**播完才进下一条**
+                if (voiceClip && typeof speakCallBubble === 'function') {
+                    await speakCallBubble(message.id, voiceClip);
+                }
             }
         } else {
             let processedResponse = cleanResponse;
@@ -358,6 +403,17 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 messages = getMixedContent(processedResponse).filter(item => item.content.trim() !== '');
             }
 
+            // ★ 通话走的是另一套调度，见 js/chat/chat_voice_call.js 顶部。
+            //   两套**不能叠**：prepareVoiceForMessages 是 Promise.all 整批等齐，
+            //   叠上去会把"逐条 await、第一句好了就先播"的好处全抵消掉
+            //   （3 句就得等满两轮 ≈ 50 秒才开口）。
+            //   预扫描无论开关开没开都要跑 —— 它同时负责抠出台词，
+            //   而"通话里的对白一律存成语音气泡"和开关无关。
+            const inCall = targetChatType === 'private' && !!chat.callMode;
+            const callVoicePlans = (inCall && typeof planCallVoiceForItems === 'function')
+                ? planCallVoiceForItems(messages, chat)
+                : null;
+
             // ★ 语音合成：整批合成完，才让打字机开始逐条推送。
             //   这样气泡一出现就能点播放，不会出现"点了再等 20 秒"。
             //   为什么可以这么等：发请求前上面已经把「"某某"正在输入中…」打出来了
@@ -366,7 +422,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             //   反过来如果边演边等，会在弹出几条之后突然卡住 —— 那才像坏了。
             //   只在「收到就自动合成」开着时才等；内部有 120 秒上限且不抛异常，
             //   TTS 挂了或者慢得离谱都不会把回复压住。
-            if (typeof prepareVoiceForMessages === 'function') {
+            if (!inCall && typeof prepareVoiceForMessages === 'function') {
                 await prepareVoiceForMessages(messages, chat, targetChatType);
             }
 
@@ -381,12 +437,23 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             let isFirstMsg = true;
 
             for (const item of messages) {
-                let textLen = item.content.replace(/\[.*?：/g, '').replace(/\]/g, '').length;
-                if (textLen < 5) textLen = 5;
-                const delay = calculateTypingDelay('x'.repeat(textLen), isFirstMsg);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                
-                // ★ 挂断中止
+                // ★ 通话里要出声的那几条，"打字机延迟"换成"等它的音频合成好"：
+                //   气泡弹出即播放，所以合成没好之前不能弹。等待期间通话界面上那圈
+                //   15 根竖条的波形一直在动，看起来就是"对方在想"，很自然。
+                //   拿不到音频（开关关着 / 合成失败 / 被挂断打断）就退回原来的节奏。
+                const voicePlan = callVoicePlans && callVoicePlans.get(item);
+                const voiceClip = (voicePlan && typeof waitCallVoiceClip === 'function')
+                    ? await waitCallVoiceClip(voicePlan)
+                    : null;
+
+                if (!voiceClip) {
+                    let textLen = item.content.replace(/\[.*?：/g, '').replace(/\]/g, '').length;
+                    if (textLen < 5) textLen = 5;
+                    const delay = calculateTypingDelay('x'.repeat(textLen), isFirstMsg);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+
+                // ★ 挂断中止（落库由函数末尾的 finally 兜，见那里的注释）
                 if (capturedCallSessionId && chat.currentCallSessionId !== capturedCallSessionId) return;
                 isFirstMsg = false;
 
@@ -450,9 +517,16 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     const aiQuoteRegex = /\[.*?引用["“](.*?)["”]并回复[:：]([\s\S]*?)\]/;
                     const aiQuoteMatch = item.content.match(aiQuoteRegex);
 
-                    if (standardMsgMatch) {
-                        const contentText = standardMsgMatch[2];
-                        const fixedContent = `[${character.realName}的消息：${contentText}]`;
+                    if (standardMsgMatch || voicePlan) {
+                        // ★ 通话里的对白一律存成语音气泡，**和开关无关**：这样事后翻
+                        //   通话记录还能点开重听，没合成过的也能当场补合成。
+                        // ★ 台词取预扫描抠好的那一份，绝不在这里重新推导一遍 ——
+                        //   差一个引号，合成时算出的缓存键就和气泡对不上，
+                        //   钱花了、音频也在，气泡却死活找不到它，而且完全静默。
+                        const contentText = voicePlan ? voicePlan.text : standardMsgMatch[2];
+                        const fixedContent = (inCall && typeof buildCallVoiceContent === 'function')
+                            ? buildCallVoiceContent(character.realName, contentText)
+                            : `[${character.realName}的消息：${contentText}]`;
                         const message = {
                             id: `msg_${Date.now()}_${Math.random()}`,
                             role: 'assistant',
@@ -462,12 +536,18 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         };
                         if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
                         chat.history.push(message);
-                        addMessageBubble(message, targetChatId, targetChatType);
+                        // ★ 这里要 await：下面 speakCallBubble 靠 data-voice-msg-id 回查刚建的
+                        //   那个气泡，不等它贴进 DOM 就查，查到的是 null，于是静默不出声。
+                        await addMessageBubble(message, targetChatId, targetChatType);
                         if (chat.callMode && typeof appendCallDialogue === 'function') {
-                            const match = fixedContent.match(/\[.*?的消息：([\s\S]+?)\]$/);
-                            if (match) appendCallDialogue(match[1]);
+                            appendCallDialogue(contentText);
                         }
                         newMessagesForDB.push(message);
+
+                        // 音频上面已经等到手了，弹出来就播，**播完才进下一条**
+                        if (voiceClip && typeof speakCallBubble === 'function') {
+                            await speakCallBubble(message.id, voiceClip);
+                        }
 
                     } else if (aiQuoteMatch) {
                         const quotedText = aiQuoteMatch[1];
@@ -644,9 +724,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             if (unreadDelta > 0) chat.unreadCount = (chat.unreadCount || 0) + unreadDelta;
         }
 
-        await saveMessagesToDB(newMessagesForDB, targetChatId, targetChatType);
-        await saveSingleChat(targetChatId, targetChatType);
-        renderChatList();
+        await persistReply();
 
         // 兜底：正常路径的图已经在推气泡前就画好了（prepareImageForMessages），
         // 那条消息带着 media 出场，这里会被 !isImageMediaMessage 直接跳过。
@@ -662,6 +740,14 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
 
     } catch (error) {
         console.error("🔴 处理 AI 回复时发生错误:", error);
+    } finally {
+        // ★ 这个 finally 是为"挂断"存在的。
+        //   打字机循环里有两处 `挂断了就 return`，它们原本会直接跳过上面那次落库 ——
+        //   已经弹在屏幕上的气泡一条都没进数据库，刷新就凭空消失。
+        //   以前循环只跑几秒，这个窗口小到没人注意；现在通话要"等音频播完再弹下一条"，
+        //   循环能拉到几十秒，挂断几乎必然踩中。
+        //   persistReply 自带幂等，正常路径走到这里是空转。
+        await persistReply();
     }
 }
 
@@ -768,6 +854,26 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
         const historySlice = rawHistory.filter(msg => {
             if (msg.isAiIgnore) return false;
             return true;
+        }).map(msg => {
+            // ★ 通话里的对白**存**的是「的语音」（气泡要画成语音条、事后能回放），
+            //   但**喂给模型**时还原成「的消息」：提示词教它输出的就是「的消息」，
+            //   历史里混进「的语音」会让它挂断回到文字聊天后继续发语音消息 ——
+            //   而且是静默漂移，等发现时已经隔了几十轮，根本查不到源头。
+            //   通话期间模型看到的内容因此和加这个功能之前逐字一致。
+            //
+            // ⚠️ historySlice 里是 chat.history 的**真实引用**，必须克隆后再改。
+            //    就地改会把内存和随后落库的格式一起改掉，气泡当场退化成普通文字条。
+            // ⚠️ content 和 parts[].text 两边都要改 —— 下面两个 provider 分支
+            //    读的是 parts，只改 content 等于没改。
+            if (!msg || !msg.callSessionId) return msg;
+            const swap = t => (typeof t === 'string' ? t.replace(/的语音[:：]/g, '的消息：') : t);
+            return {
+                ...msg,
+                content: swap(msg.content),
+                parts: Array.isArray(msg.parts)
+                    ? msg.parts.map(p => (p && typeof p.text === 'string' ? { ...p, text: swap(p.text) } : p))
+                    : msg.parts
+            };
         });
 
         let offlineReinforcement = null;
@@ -1137,6 +1243,10 @@ async function handleRegenerate() {
         showToast('未找到AI的回复，无法重新生成。');
         return;
     }
+
+    // 通话中：气泡区每轮都会被 getAiReply 清空，但视频通话的旁白区是整通电话的
+    // 流水账，不撤的话被丢弃的那一版描写会留在屏幕上，和新生成的叠在一起。
+    if (typeof dropCallNarrationFor === 'function') dropCallNarrationFor(removedMessages);
 
     if (currentChatType === 'private') {
         const statusRegex = /更新状态为[:：](.*?)(?:\]|$)/;

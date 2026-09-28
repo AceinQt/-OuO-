@@ -574,37 +574,36 @@
 
     const now = Date.now();
 
-    // 1. UI 展示消息 (保持不变，用 system-display 是为了触发你的CSS样式)
-    const visualMessage = {
-        id: `msg_visual_${now}_${Math.random().toString(36).substr(2, 6)}`, 
-        role: 'system',
-        content: `[system-display:${text}]`, // 这里保留 system-display 是为了前端渲染样式，反正是给用户看的，不给AI看
-        parts: [],
-        timestamp: now,
-        isAiIgnore: true // AI 看不到这条
+    // 用户写的剧情旁白：**只存一条**，同一条既画成气泡也直接喂给模型。
+    //
+    // 历史上这里存的是一对：可见的 `[system-display:…]`（role system + isAiIgnore）
+    // 加隐藏的 `[剧情旁白：…]`（role user + isHidden），分工是"一条给眼睛、一条给模型"。
+    // 那个分工没换来任何好处，代价倒是一串：编辑只改得动其中一条（chat_actions 里
+    // 按 id 后缀配对的同步是死代码 —— 两条 id 的随机段各自 Math.random()，永远对不上，
+    // 所以编辑旁白时模型看到的一直是旧文本）、搜索出双份、删一条留下孤儿、
+    // 两条一个带 isAiIgnore 一个带 isHidden 于是双双被总结排除。
+    //
+    // 合成一条时内容沿用 `[剧情旁白：…]`：模型侧逐字不变（private_prompt.js 里
+    // 教的就是这个格式，也没有任何 transform 碰它），变的只是它从"隐藏"变成"画得出来"。
+    // 不要改用 `[system-narration:…]` —— chat_ai_service.js 在非线下、非通话时会把那个
+    // 壳剥成裸文本，模型反而失去"这是旁白"的标记。
+    //
+    // ★ 旧数据一条不动：旧的那对里隐藏那条带 isHidden，chat_room.js 的 _bubbleOrHiddenRow
+    //   先判 isHidden 再进气泡工厂，所以它永远不会被新的旁白分支画出来变成重影。
+    const content = `[剧情旁白：${text}]`;
+
+    const message = {
+        id: `msg_narration_${now}_${Math.random().toString(36).substr(2, 6)}`,
+        role: 'user',
+        content: content,
+        parts: [{ type: 'text', text: content }],
+        timestamp: now
     };
+    if (currentChatType === 'group') message.senderId = 'user_me';
 
-    // 2. AI 上下文消息 (修改这里！)
-    // 去掉 system，改为更自然的描述标签
-    const contextContent = `[剧情旁白：${text}]`; 
-    
-    const contextMessage = {
-        id: `msg_context_${now}_${Math.random().toString(36).substr(2, 6)}`, 
-        role: 'user', // 既然是用户写的旁白，用 user 角色最合适
-        content: contextContent,
-        parts: [{ type: 'text', text: contextContent }],
-        timestamp: now,
-        isHidden: true // 用户界面不显示这条
-    };
-
-    if (currentChatType === 'group') {
-        contextMessage.senderId = 'user_me';
-        visualMessage.senderId = 'user_me';
-    }
-
-    chat.history.push(visualMessage, contextMessage);
-    addMessageBubble(visualMessage, currentChatId, currentChatType);
-    await saveMessagesToDB([visualMessage, contextMessage], currentChatId, currentChatType);
+    chat.history.push(message);
+    addMessageBubble(message, currentChatId, currentChatType);
+    await saveMessageToDB(message, currentChatId, currentChatType);
     await saveSingleChat(currentChatId, currentChatType);
     // renderChatList(); // 不需要调用
 }

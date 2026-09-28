@@ -221,7 +221,8 @@
         let t = contentOf(message);
         if (!t) return '';
         // 线下动作旁白(system-narration)是用户能看到的正文，应作为一条消息通知，取其内容预览
-        const narr = t.match(/\[system-narration:([\s\S]*)\]/);
+        // 用户自己发的 `[剧情旁白：…]` 同样是看得见的正文，壳一起剥掉
+        const narr = t.match(/\[system-narration:([\s\S]*)\]/) || t.match(/^\[剧情旁白[:：]([\s\S]*)\]$/);
         if (narr) {
             let nt = narr[1].trim();
             if (nt.length > 80) nt = nt.slice(0, 80) + '…';

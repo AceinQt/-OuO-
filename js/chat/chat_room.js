@@ -76,15 +76,265 @@ function _getNewerRenderStart(chat) {
     return Math.min(chat.history.length, Math.max(domBottom, floor));
 }
 
+// 实时追加一条消息后把底部游标推到数组末尾 —— addMessageBubble 开头调它。
+//
+// ★ 为什么非得有这一步：底部游标原来只有三条路径在维护 —— 全量重绘(= history.length)、
+//   前插平移、下翻分页。`addMessageBubble` 这条"实时追加"的路径（30+ 个调用点）一条都不占。
+//   追加**可见**气泡时看不出问题，因为气泡自己就在 DOM 里，_getRenderedRange 能从 DOM 把底
+//   反推出来；但只进 history、不进 DOM 的那些就漏了：
+//     · 时间流逝一次 push 两条：`[time-divider]`(可见，画出来了) + `[系统情景通知：…]`(画不出来)，
+//       游标停在时间戳那条，情景通知落在渲染窗口**之外**；
+//     · `[X接收了Y的转账]` / `[…更新状态为：…]`：走 addMessageBubble 的早返回分支，只改状态不画气泡。
+//   它们全落在 [_renderTopCeil, _renderBottomFloor) 外面 → _injectHiddenRows 扫不到 →
+//   多选开「显示隐藏」看不见刚生成的那条，**退出聊天室再进才出现**（全量重绘把游标
+//   重置成 history.length）。症状只在"刚生成的"那几条上，很容易误判成生成端没存盘。
+//
+// ★ 只在视图本来就贴着最新时才推。用户翻在历史里时推了，会让 _isViewingLatest 误判成
+//   "在最新"，sendMessage 就不再重置回底部，新气泡被追加到几天前那段 DOM 的下面。
+//   判据是「已覆盖到这条消息之前」(covered >= 它的下标)：调用时还没 append，贴底时
+//   DOM 实际底恰好等于这条消息的下标，而同一批 push 的兄弟（时间流逝那两条）排在它
+//   后面，一并被这次 history.length 覆盖进来。
+function _advanceRenderFloorToLatest(message) {
+    if (!message) return;
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+    if (!chat || !chat.history) return;
+    const idx = chat.history.findIndex(m => m.id === message.id);
+    if (idx === -1) return;                          // 还没 push 进 history，轮不到推游标
+    if (_getNewerRenderStart(chat) < idx) return;    // 视图停在历史里，别动
+    window._renderBottomFloor = Math.max(Number(window._renderBottomFloor) || 0, chat.history.length);
+}
+
 // 下面还有没有"值得渲染"的东西（用于滚动门槛）：
 // 末尾常挂着 isHidden 的 context 消息，只看下标会导致反复空转转圈，所以要求至少有一条可见消息。
+// ★ 例外：多选开了「显示隐藏」时看不见的消息**本身就是**要渲染的东西，这时候不能再把它们当空气 ——
+//   否则末尾那串通话 [system:…] 永远翻不出来，而那恰恰是用户最想删的一批。
 function _hasMoreNewerToRender(chat) {
     if (!chat || !chat.history) return false;
+    const showHidden = isShowingHiddenMessages();
     const start = _getNewerRenderStart(chat);
     for (let i = start; i < chat.history.length; i++) {
-        if (!chat.history[i].isHidden) return true;
+        if (showHidden || !chat.history[i].isHidden) return true;
     }
     return false;
+}
+
+// ==========================================
+// ★★★ 多选模式下的「显示隐藏」
+//
+// 判据是**「普通视图里画不出可勾选的气泡」**，不是 `isHidden`。这两者不等价，
+// 而且差集正好是用户实际删不掉的那几类（都存在 history 里、批量删除按序号看得见）：
+//   · `isHidden` 的上下文          `[system: 场景切换：…]`
+//   · 不带 isHidden、但撞上气泡工厂 invisibleRegex 被 return null 的：
+//       `[系统情景通知：距离上一次互动已经过去…]`（时间流逝提示）
+//       `[小明接收了小猫的转账]` / `[…更新状态为：…]` / `[…已接收礼物]`
+// 按字段分类过一版，结果就是漏掉后面那一整排。所以改成照常调 createMessageBubbleElement，
+// **它画不出来才退回隐藏行** —— 以后再冒出新的"画不出来"的形状也自动被覆盖。
+//
+// 另外两类不是"画不出来"，而是"画出来了点不着"，各自单独修：
+//   · `[time-divider]` 时间戳：有 .message-wrapper 和 data-id，但 CSS 写了
+//     pointer-events:none。开关打开时用 .show-hidden-msgs 把它放开（见 chat_room.css）。
+//   · 折叠的通话气泡：原先只有 data-call-session-id、没有 data-id，
+//     toggleMessageSelection 拿到 undefined 直接 bail —— 点它什么都不会发生。
+//     现在补了 data-id，且勾一下等于勾整段通话的全部消息（见 idsForMessageSelection）。
+// ==========================================
+function isShowingHiddenMessages() {
+    return typeof isInMultiSelectMode !== 'undefined' && isInMultiSelectMode
+        && typeof showHiddenInSelect !== 'undefined' && showHiddenInSelect;
+}
+
+// 渲染一条消息：能画正常气泡就画，画不出来的（isHidden / 撞 invisibleRegex）
+// 在「显示隐藏」开着时退回极简行，否则照旧当空气。
+// ★ isHidden 的不进气泡工厂：它们全是 role:'user'，走完整气泡会顶着用户头像渲染成
+//   自己发的蓝气泡和真消息混在一起；旧数据里那条隐藏的 `[剧情旁白：…]` 还会被气泡工厂
+//   认成旁白气泡，和它那条可见的 `[system-display:…]` 孪生叠成重影。
+function _bubbleOrHiddenRow(msg) {
+    const bubble = msg.isHidden ? null : createMessageBubbleElement(msg);
+    if (bubble) return bubble;
+    return isShowingHiddenMessages() ? createHiddenMessageRow(msg) : null;
+}
+
+// 折叠成一个气泡的那段通话。展开后的容器**不算** —— 那时 session 里每条各归各位。
+function _collapsedCallNode(sid) {
+    return sid
+        ? messageArea.querySelector(`.collapsed-call-bubble[data-call-session-id="${sid}"]`)
+        : null;
+}
+
+// 一段通话在 DOM 里的节点（折叠成一个气泡，或展开后的容器）
+function _callSessionNode(sid) {
+    if (!sid) return null;
+    return _collapsedCallNode(sid)
+        || messageArea.querySelector(`[data-call-session-expanded-container="${sid}"]`)
+        || null;
+}
+
+// 【定位用】一条消息在 DOM 里落在哪个节点上。折叠通话气泡代表整段通话，session 里任一条都算它。
+function _findRenderedNodeFor(msg) {
+    if (!msg) return null;
+    return messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`)
+        || _callSessionNode(msg.callSessionId);
+}
+
+// 【判据用】这条消息在 DOM 里"有没有被代表"。
+// ★ 和上面那个**不是**一个问题，混用过一次就踩了坑（见下面折叠/展开的分野）。
+function _isRepresentedInDom(msg) {
+    if (!msg) return true;
+    if (messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`)) return true;
+
+    // 折叠气泡 = 整段通话压成一条，**连里面的隐藏消息一起代表**。勾它就是勾整段
+    // （idsForMessageSelection 按 callSessionId 筛 history，隐藏的也一并带走），
+    // 所以块外面不该再补出任何一行。
+    // ★ 这里一度写作 `!msg.isHidden && ...`，于是通话起止那两条隐藏指令
+    //   （`[system: 场景切换：…]` / `[system: …已结束…]`）被判成"还没画"，补成了折叠块
+    //   **外面**的两行 —— 一行在块前、一行在块后。后果不只是位置难看：用户去点那一行
+    //   想"把它也选上"，而它早已被折叠块连带勾上了，这一点等于取消勾选，
+    //   删完整块之后正好剩下这两条。
+    // ★ 反过来也别整段免判：展开状态下隐藏消息必须照常补出来，
+    //   漏了就是"开了显示隐藏，通话那段还是少几行"（这条是 _collapsedCallNode
+    //   只认折叠气泡、不认展开容器的全部理由）。
+    if (_collapsedCallNode(msg.callSessionId)) return true;
+
+    // 展开状态：可见的那几条各自成气泡（上面第一个 querySelector 就命中了），
+    // 走到这儿还没命中的是气泡工厂画不出来的，交给 _injectHiddenRows 补进容器里。
+    return !msg.isHidden && !!_callSessionNode(msg.callSessionId);
+}
+
+// 勾一下要连带勾中哪些消息 id。
+// 折叠的通话气泡是一整段通话压成的一个气泡，勾它就得勾这段通话的**全部**消息
+// （含中间那几条隐藏的）—— 只勾首条的话，删完会剩下半段孤零零的通话，AI 那边也对不上。
+// 这里按 callSessionId 直接筛 history，不走 getCallSessionRange：那个函数会滤掉
+// isHidden 的，而隐藏的恰恰是这里必须一起带走的。
+function idsForMessageSelection(el) {
+    // 绑死在折叠气泡这个类上，而不是"有 data-call-session-id 就算"：
+    // 通话展开后的单条气泡将来要是也挂上这个属性，连带勾选会静默打开 ——
+    // 那时点一条却"已选择 5 项"、屏幕上只有一条高亮，对不上。
+    const sid = (el && el.classList && el.classList.contains('collapsed-call-bubble'))
+        ? el.dataset.callSessionId : null;
+    if (!sid) return [el.dataset.id];
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+    const ids = ((chat && chat.history) || [])
+        .filter(m => m.callSessionId === sid).map(m => m.id);
+    return ids.length ? ids : [el.dataset.id];
+}
+
+// 开关隐藏行时保住视觉位置。
+// ★ 不能图省事直接 renderMessages(false,false) 重绘：那条路走的是「场景 C 初始化」，
+//   里面有 forceToBottom + 50ms 定时器 + 图片 onload 监听，会把用户翻了半天的
+//   位置一路拽到底部。所以只增删隐藏行，再按锚点把 scrollTop 补回去。
+function _withScrollAnchored(mutate) {
+    const areaTop = messageArea.getBoundingClientRect().top;
+    // 锚点只从"不会被这次增删动到"的元素里挑（隐藏行自己随时会被删掉）
+    const candidates = messageArea.querySelectorAll(
+        '.message-wrapper:not(.hidden-msg-wrapper), .collapsed-call-bubble');
+    let anchor = null;
+    for (const el of candidates) {
+        if (el.getBoundingClientRect().bottom >= areaTop) { anchor = el; break; }
+    }
+    const before = anchor ? (anchor.getBoundingClientRect().top - areaTop) : 0;
+    // 贴底时保持贴底：看不见的消息多半堆在末尾，新画出来的行就在那儿，锚点算法会把它们推出视野
+    const atBottom = (messageArea.scrollHeight - messageArea.scrollTop - messageArea.clientHeight) < 40;
+
+    mutate();
+
+    messageArea.style.scrollBehavior = 'auto';
+    if (atBottom) {
+        messageArea.scrollTop = messageArea.scrollHeight;
+    } else if (anchor && anchor.isConnected) {
+        messageArea.scrollTop += (anchor.getBoundingClientRect().top - areaTop) - before;
+    }
+}
+
+// 游标只许前进，不许倒退。
+// ★ 折叠通话气泡代表整个 session，session 里**每一条**消息都回查到同一个气泡。
+//   一段通话是「可见起点 → 隐藏若干条 → 可见终点 → 还有隐藏的收尾」，走到"可见终点"
+//   时 _findRenderedNodeFor 又给出那个折叠气泡，游标就退回了通话气泡本身，
+//   于是收尾那条被插在前面几条之前 —— 症状是隐藏行乱序（CALL h3 h1 h2）。
+function _advanceCursor(cursor, node) {
+    if (!node) return cursor;
+    if (!cursor || node === cursor) return cursor || node;
+    return (cursor.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)
+        ? node : cursor;
+}
+
+// 把当前已渲染窗口 [_renderTopCeil, _renderBottomFloor) 内"没被 DOM 代表"的消息补成隐藏行。
+// ★ 判据 _isRepresentedInDom 和渲染循环那边的 `_bubbleOrHiddenRow` 同源：
+//   那边问"气泡工厂画得出来吗"，这边问"画出来的东西在不在"，两个问题同一个答案。
+//   这样两条路径不会各持一套规则慢慢分叉（这仓库里"两条通道必须一致"已经栽过几次）。
+// cursor 记着"上一条已处理消息的落点"，一路 after() 下去，这样连着好几条
+// 也能保持时间顺序（每次都 insertBefore 下一个可见节点的话会插成倒序）。
+function _injectHiddenRows(chat) {
+    if (!chat || !chat.history) return;
+    const h = chat.history;
+    const top = Math.max(0, Number(window._renderTopCeil) || 0);
+    // 底部取「游标 ∪ DOM 实际底」，和下翻那条路径共用 _getNewerRenderStart 这一套校正：
+    // 游标是别人维护的，实时追加的气泡可能已经贴进 DOM 而游标还没跟上。读裸游标的话
+    // 窗口会比屏幕上实际画出来的还窄，末尾几条补不出来。
+    const bottom = Math.min(h.length, _getNewerRenderStart(chat));
+    let cursor = null;
+
+    for (let i = top; i < bottom; i++) {
+        const msg = h[i];
+        if (!msg) continue;
+        if (_isRepresentedInDom(msg)) {
+            cursor = _advanceCursor(cursor, _findRenderedNodeFor(msg));
+            continue;
+        }
+
+        const row = createHiddenMessageRow(msg);
+        if (!row) continue;
+        // 这一条属于一段**展开着**的通话时，它的位置在容器里面。
+        // ★ 尤其是打头那条隐藏的场景切换：游标此刻还停在通话之前的气泡上，
+        //   照常 cursor.after() 会把它甩到容器外面 —— 正是折叠态那个老毛病的展开版。
+        const expandedBox = msg.callSessionId
+            ? messageArea.querySelector(`[data-call-session-expanded-container="${msg.callSessionId}"]`)
+            : null;
+        if (expandedBox && !(cursor && expandedBox.contains(cursor))) {
+            expandedBox.prepend(row);
+        } else if (cursor) {
+            cursor.after(row);
+        } else {
+            // 窗口顶部就是看不见的消息：插在第一个气泡前面（loading 指示器要留在最上面）
+            const first = messageArea.querySelector('.message-wrapper, .collapsed-call-bubble');
+            if (first) first.before(row); else messageArea.appendChild(row);
+        }
+        cursor = row;
+    }
+}
+
+// 把某个子树里的隐藏行从选中集里摘掉（不删行，只退勾选）。
+// 行要被移出 DOM 之前调它：id 还留在 selectedMessageIds 里的话，屏幕上什么都没高亮，
+// 删除时却会连着一条看不见的消息一起删。
+function _unselectHiddenRowsIn(root) {
+    if (!root || typeof selectedMessageIds === 'undefined') return;
+    root.querySelectorAll('.hidden-msg-wrapper').forEach(el => {
+        selectedMessageIds.delete(el.dataset.id);
+    });
+    if (typeof updateMultiSelectBar === 'function') updateMultiSelectBar();
+}
+
+function _removeHiddenRows() {
+    messageArea.querySelectorAll('.hidden-msg-wrapper').forEach(el => {
+        // 取消勾选：行没了但 id 还留在选中集里，会连着一条看不见的消息一起删
+        if (typeof selectedMessageIds !== 'undefined' && selectedMessageIds.has(el.dataset.id)) {
+            selectedMessageIds.delete(el.dataset.id);
+        }
+        el.remove();
+    });
+}
+
+// showHiddenInSelect 改动后调它：把 DOM 对齐到新状态（不重绘整页）
+function applyHiddenMessageVisibility() {
+    const chat = (currentChatType === 'private')
+        ? db.characters.find(c => c.id === currentChatId)
+        : db.groups.find(g => g.id === currentChatId);
+    _withScrollAnchored(() => {
+        if (isShowingHiddenMessages()) _injectHiddenRows(chat);
+        else _removeHiddenRows();
+    });
 }
 
 // 当前视图是否已经贴着"最新"（决定发消息时要不要先重置回底部视图）
@@ -104,6 +354,7 @@ const chatRoomScreen = document.getElementById('chat-room-screen'),
                 chatRoomHeaderDefault = document.getElementById('chat-room-header-default'),
                 chatRoomHeaderSelect = document.getElementById('chat-room-header-select'),
                 cancelMultiSelectBtn = document.getElementById('cancel-multi-select-btn'),
+                toggleHiddenMsgBtn = document.getElementById('toggle-hidden-msg-btn'),
                 multiSelectTitle = document.getElementById('multi-select-title'),
                 chatRoomTitle = document.getElementById('chat-room-title'),
                 chatRoomStatusText = document.getElementById('chat-room-status-text'),
@@ -446,6 +697,9 @@ let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
     if (forwardSelectedBtn && typeof openForwardMessagesModal === 'function') {
         forwardSelectedBtn.addEventListener('click', openForwardMessagesModal);
     }
+    if (toggleHiddenMsgBtn) {
+        toggleHiddenMsgBtn.addEventListener('click', toggleHiddenMessagesInSelect);
+    }
 
     document.getElementById('cancel-reply-btn').addEventListener('click', cancelQuoteReply);
     initCallFeature();
@@ -734,7 +988,13 @@ function collapseCallSession(sessionId) {
     if (!range) return;
 
     const isSentByUser = range.msgs.some(m => m.id?.includes('_start_vis_'));
-    
+
+    // 折叠会把容器连里面的隐藏行一起换掉，勾选得跟着退掉 —— 同 _removeHiddenRows 那条
+    // 「行没了但 id 还留在选中集里，会连着一条看不见的消息一起删」。
+    // （真要删整段，勾折叠气泡就行，它代表 session 的全部消息。）
+    _unselectHiddenRowsIn(
+        messageArea.querySelector(`[data-call-session-expanded-container="${sessionId}"]`));
+
     // --- 【修改点2】：优先寻找新增的包裹容器进行折叠还原 ---
     const container = messageArea.querySelector(`[data-call-session-expanded-container="${sessionId}"]`);
 
@@ -951,8 +1211,6 @@ for (const sid of sessionIds) {
     let renderedCount = 0; // 统计本页实际渲染的气泡数（不含 loading indicator）
 
     messagesToRender.forEach(msg => {
-        if (msg.isHidden) return;
-
         if (isLoadMore) {
             const existingBubble = messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`);
             if (existingBubble) return;
@@ -971,7 +1229,7 @@ for (const sid of sessionIds) {
             return;
         }
 
-        const bubble = createMessageBubbleElement(msg);
+        const bubble = _bubbleOrHiddenRow(msg);
         if (bubble) {
             if (forceScrollToBottom) bubble.classList.add('new-message-anim');
             fragment.appendChild(bubble);
@@ -1276,8 +1534,6 @@ async function renderNewerMessages(startIndex) {
     let renderedCount = 0; // 统计本页实际渲染的气泡数
 
     messagesToRender.forEach(msg => {
-        if (msg.isHidden) return;
-
         // 防重检查
         const exists = messageArea.querySelector(`.message-wrapper[data-id="${msg.id}"]`);
         if (exists) return;
@@ -1294,7 +1550,7 @@ async function renderNewerMessages(startIndex) {
             return;
         }
 
-        const bubble = createMessageBubbleElement(msg);
+        const bubble = _bubbleOrHiddenRow(msg);
         if (bubble) {
             fragment.appendChild(bubble);
             renderedCount++;
@@ -1411,6 +1667,11 @@ if (isInvisible) return;
                 }
 
                 // --- Original logic for when the chat is active ---
+                // ★ 先推底部游标再做别的：下面几个分支（改状态/收转账/收礼物）会直接 return，
+                //   画不出气泡的消息只有这一次机会被纳入渲染窗口，否则「显示隐藏」扫不到它。
+                //   详见 _advanceRenderFloorToLatest 的注释。
+                _advanceRenderFloorToLatest(message);
+
                 if (currentChatType === 'private') {
                     const character = db.characters.find(c => c.id === currentChatId);
                     const updateStatusRegex = new RegExp(`\\[${character.realName}更新状态为：(.*?)\\]`);
@@ -1458,7 +1719,9 @@ if (statusEl) statusEl.textContent = character.status;
                             await saveSingleChat(currentChatId, currentChatType);
                         }
                     } else {
-                        const bubbleElement = createMessageBubbleElement(message);
+                        // isHidden 的一律不进气泡工厂，理由同 _bubbleOrHiddenRow 顶上那段：
+                        // 旧数据里那条隐藏的 `[剧情旁白：…]` 现在画得出旁白气泡，会跟它的可见孪生重影。
+                        const bubbleElement = message.isHidden ? null : createMessageBubbleElement(message);
                         if (bubbleElement) {
                             
  bubbleElement.classList.add('new-message-anim');                           messageArea.appendChild(bubbleElement);
@@ -1472,7 +1735,8 @@ if (statusEl) statusEl.textContent = character.status;
                         }
                     }
                 } else { // For group chats
-                    const bubbleElement = createMessageBubbleElement(message);
+                    // 同上：isHidden 的不进气泡工厂
+                    const bubbleElement = message.isHidden ? null : createMessageBubbleElement(message);
                     if (bubbleElement) {
    bubbleElement.classList.add('new-message-anim');                     
                         messageArea.appendChild(bubbleElement);
@@ -1612,7 +1876,18 @@ const contextContent = `[系统情景通知：距离上一次互动已经过去$
                 } else {
                     let userText = text;
 
-                    messageContent = `[${myName}的消息：${userText}]`;
+                    // ★ 通话里自己说的话也存成语音气泡（和 AI 那边同一条规则，
+                    //   见 chat_voice_call.js 顶部）：这样事后展开通话记录，
+                    //   整通电话两边都是语音条，而不是一半语音一半文字。
+                    //   注意自己发的语音**永远合不出音频**（没有"我"的音色，
+                    //   _voiceProfileForBubble 对 sent 气泡直接返回 null），
+                    //   那个播放键点下去是"看文字稿"，这是既有行为。
+                    // ★ 喂给模型时会被还原成「的消息」（chat_ai_service.js 的
+                    //   historySlice 那一处），所以提示词一个字都不用改。
+                    const inCall = currentChatType === 'private' && chat.callMode;
+                    messageContent = (inCall && typeof buildCallVoiceContent === 'function')
+                        ? buildCallVoiceContent(myName, userText)
+                        : `[${myName}的消息：${userText}]`;
                 }
 
                 const message = {

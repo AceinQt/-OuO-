@@ -155,16 +155,16 @@ showToast(`已${actionName}`);
                 // 自动刷新监听
                 const favScreen = document.getElementById('favorites-screen');
                 if (favScreen && !favScreen.dataset.observerAttached) {
-                    const observer = new MutationObserver((mutations) => {
-                        for (let mutation of mutations) {
-                            if (mutation.attributeName === 'class') {
-                                if (favScreen.classList.contains('active')) {
-                                    renderFavoritesList();
-                                }
-                            }
-                        }
+                    // ★ 同世界页/我页：只在「不活跃 → 活跃」跳变时刷新，
+                    //   别让一次 switchScreen 的多条 class 记录各刷一遍列表
+                    let wasActive = favScreen.classList.contains('active');
+                    const observer = new MutationObserver(() => {
+                        const isActive = favScreen.classList.contains('active');
+                        if (isActive === wasActive) return;
+                        wasActive = isActive;
+                        if (isActive) renderFavoritesList();
                     });
-                    observer.observe(favScreen, { attributes: true });
+                    observer.observe(favScreen, { attributes: true, attributeFilter: ['class'] });
                     favScreen.dataset.observerAttached = "true";
                 }
             }

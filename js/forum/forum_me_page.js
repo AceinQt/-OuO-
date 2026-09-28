@@ -14,7 +14,7 @@ function setupMePageFeature() {
     const anonCodeInput = document.getElementById('me-anon-code-input');
     const realNameInput = document.getElementById('me-realname-input');
     const personaInput = document.getElementById('me-persona-input');
-    const customCssInput = document.getElementById('me-custom-css-input');
+    // 正文 CSS 已搬到世界页「管理」Tab（forum_admin.js），这页不再读写 customDetailCss
     
     const loadPersonaBtn = document.getElementById('me-load-persona-btn');
     const saveBtn = document.getElementById('me-save-btn');
@@ -57,7 +57,6 @@ function setupMePageFeature() {
 
         if (realNameInput) realNameInput.value = identity.realName || '';
         if (personaInput) personaInput.value = identity.persona || '';
-        if (customCssInput) customCssInput.value = identity.customDetailCss || '';
 
         // 人设绑定：记录当前论坛身份来源的 user 人设 ID（读取人设后未保存的临时值在此重置）
         window._forumMeBindPersonaId = identity.boundPersonaId || null;
@@ -330,7 +329,6 @@ function setupMePageFeature() {
                 const currentNickname = document.getElementById('me-nickname-input');
                 const currentRealName = document.getElementById('me-realname-input');
                 const currentPersona = document.getElementById('me-persona-input');
-                const currentCss = document.getElementById('me-custom-css-input');
 
                 // 处理人设绑定：手动改过内容视为脱离绑定，避免之后被 user 人设覆盖
                 let bindId = window._forumMeBindPersonaId || null;
@@ -351,9 +349,11 @@ function setupMePageFeature() {
                     persona: currentPersona?.value.trim() || '',
                     realName: currentRealName?.value.trim() || '',
                     anonCode: finalCode,
-                    customDetailCss: currentCss?.value || '',
+                    // 正文 CSS 归世界页「管理」Tab 管，这里原样带过去 ——
+                    // 读 DOM 的话（那个 textarea 已经不在这页了）会把它冲成空
+                    customDetailCss: (db.forumUserIdentity || {}).customDetailCss || '',
                     boundPersonaId: bindId
-                };                
+                };
 
                 // ✅ 修复7: 调用保存函数
                 if (typeof saveForumMeta === 'function') {
@@ -395,20 +395,19 @@ function setupMePageFeature() {
     const meScreen = document.getElementById('me-screen'); 
 
     if (meScreen && !meScreen.dataset.observerAttached) {
-        const observer = new MutationObserver((mutations) => {
-            for (let mutation of mutations) {
-                // 监听 class 变化 (当 class 变成 "screen active" 时)
-                if (mutation.attributeName === 'class') {
-                    if (meScreen.classList.contains('active')) {
-                        console.log("进入了个人主页，自动刷新数据...");
-                        loadMeData(); // <--- 关键：进入时重新读取数据库
-                    }
-                }
-            }
+        // ★ 同世界页：只在「不活跃 → 活跃」跳变时刷新。旧写法每条 class 变更记录都刷一次，
+        //   一次进页面能跑五六遍 loadMeData，而它在懒加载下每遍都要 countMyForumPosts()
+        //   ——那是 forumPosts 的全表 .each() 扫描，等于并发好几次全表扫。
+        let wasActive = meScreen.classList.contains('active');
+        const observer = new MutationObserver(() => {
+            const isActive = meScreen.classList.contains('active');
+            if (isActive === wasActive) return;
+            wasActive = isActive;
+            if (isActive) loadMeData();
         });
-        
+
         // 开始监听
-        observer.observe(meScreen, { attributes: true });
+        observer.observe(meScreen, { attributes: true, attributeFilter: ['class'] });
         meScreen.dataset.observerAttached = "true"; // 防止重复绑定
     }
 }
