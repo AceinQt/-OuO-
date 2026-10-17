@@ -339,7 +339,12 @@
                                     <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
                             </button>
-                            <input type="file" id="global-bubble-import-input" accept=".json" style="display: none;">
+                            <!-- accept 列了四种而不是光一个 .json：安卓的文件选择器按 MIME 过滤，
+                                 Chrome 把 `.json` 翻成 application/json，而早期版本导出的文件
+                                 （走 `data:text/json` 那套写法）在 MediaStore 里记的是 text/json，
+                                 只写 .json 的话那些文件在列表里根本看不见。导出端已经改成
+                                 Blob + application/json，这里多列几种是为了捞回用户手上的旧文件。 -->
+                            <input type="file" id="global-bubble-import-input" accept=".json,application/json,text/json,text/plain" style="display: none;">
                         </div>
                     </div>
                 </div>
@@ -356,9 +361,12 @@
             <!-- 下半部分：分栏卡片 (侧边Tab + 内容区) -->
             <div class="appearance-card" id="bottom-content-card">
                 <div class="bottom-btn-card" id="bottom-btn-card">
+                    <!-- data-tab 是「分组」而不是面板 id：「基础」下面挂着三块面板
+                         （气泡/顶栏/底栏），具体显示哪一块由预览翻到了哪个视图决定，
+                         见 bubble_css/css_io.js 的 BASIC_PANE_IDS / syncAppearancePane。 -->
                     <div class="bottom-btn">
-                        <button class="side-tab-btn active" data-pane="pane-basic">基础</button>
-                        <button class="side-tab-btn" data-pane="pane-css">高级</button>
+                        <button class="side-tab-btn active" data-tab="basic">基础</button>
+                        <button class="side-tab-btn" data-tab="css">高级</button>
                     </div>
                     <button type="button" class="action-btn" id="reset-basic-css-btn">
                         <svg viewBox="0 0 24 24">
@@ -367,6 +375,14 @@
                     </button>
                 </div>
                 <div id="pane-basic" class="content-pane active">
+                    <div class="settings-group-title">
+                        <span>• 头像与时间</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'bubbleAvatarTime')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
                     <div class="bubble-settings-item row">
                         <label>隐藏头像</label>
                         <label class="switch"><input type="checkbox" id="setting-hide-avatar"><span class="slider round"></span></label>
@@ -385,7 +401,9 @@
                             <option value="tail">气泡后</option>
                         </select>
                     </div>
-                    <!-- 时间格式：选了「不显示」以外的位置才出现，由 JS 整行收放 -->
+                    <!-- 时间格式：选了「不显示」以外的位置才出现，由 JS 整行收放。
+                         说明挂在这一行自己的问号上（内容是一张格式字母表，只跟这个输入框
+                         有关），不往上面的小标题里并。 -->
                     <div class="bubble-settings-item row" id="time-format-row">
                         <label>时间格式
                             <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'timeFormat')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -396,9 +414,25 @@
                         </label>
                         <input type="text" id="setting-time-format" placeholder="例如: HH:mm">
                     </div>
+                    <div class="settings-group-title">
+                        <span>• 文字</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'bubbleFont')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
                     <div class="bubble-settings-item row">
                         <label>字体：</label>
                         <input type="text" id="setting-custom-font" placeholder="例如: https://.../font.ttf">
+                    </div>
+                    <div class="settings-group-title">
+                        <span>• 气泡</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'bubbleTypes')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
                     </div>
                     <div class="bubble-settings-item row">
                         <label>气泡类型：</label>
@@ -407,6 +441,10 @@
                             <option value="narration">旁白气泡</option>
                             <option value="transfer">转账气泡</option>
                             <option value="quote">引用气泡</option>
+                            <option value="msgtime">消息时间</option>
+                            <option value="timediv">时间分割线</option>
+                            <option value="systip">系统提示</option>
+                            <option value="groupname">群昵称</option>
                         </select>
                         <select id="setting-bubble-side">
                             <option value="sent">我方</option>
@@ -477,9 +515,276 @@
                     </div>
                 </div>
 
+                <!-- 「基础」的第二块：顶栏。预览翻到「顶部栏」视图时顶替上面那块。
+                     ★ 说明一律不铺在页面上，收进小标题右边的问号 —— 文案注册在
+                     bubble_css/help_text.js 的 AppHelp.register('bubble', …)，弹窗机制在
+                     js/core/utils.js 的 AppHelp。以前这里是 5 条摊开的 .setting-hint，
+                     加起来比设置项本身还高，一屏装不下两个开关。 -->
+                <div id="pane-basic-header" class="content-pane">
+                    <div class="settings-group-title">
+                        <span>• 布局</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'headerLayout')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>昵称位置：</label>
+                        <select id="setting-header-name-pos">
+                            <option value="left">靠左（默认）</option>
+                            <option value="center">居中</option>
+                            <option value="right">靠右</option>
+                        </select>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>隐藏状态</label>
+                        <label class="switch"><input type="checkbox" id="setting-header-hide-status"><span class="slider round"></span></label>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>收纳通话</label>
+                        <label class="switch"><input type="checkbox" id="setting-header-collapse-call"><span class="slider round"></span></label>
+                    </div>
+                    <div class="settings-group-title">
+                        <span>• 背景与分割线</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'headerBg')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>背景颜色：</label>
+                        <input type="color" id="setting-header-bg">
+                        <input type="text" id="setting-header-bg-text" placeholder="#HEX">
+                    </div>
+                    <div class="bubble-settings-item col">
+                        <label>不透明度：<span class="val-display" id="val-header-opacity">0.85</span></label>
+                        <input type="range" class="bubble-slider" id="setting-header-opacity" step="0.05" min="0" max="1">
+                    </div>
+                    <div class="bubble-settings-item col">
+                        <label>模糊度：<span class="val-display" id="val-header-blur">8</span>px</label>
+                        <input type="range" class="bubble-slider" id="setting-header-blur" min="0" max="20" step="1">
+                    </div>
+                    <div class="bubble-settings-item col">
+                        <label>分割线粗细：<span class="val-display" id="val-header-div-w">0</span>px</label>
+                        <input type="range" class="bubble-slider" id="setting-header-div-w" min="0" max="6" step="1">
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>分割线颜色：</label>
+                        <input type="color" id="setting-header-div-c">
+                        <input type="text" id="setting-header-div-c-text" placeholder="#HEX">
+                    </div>
+                    <div class="settings-group-title">
+                        <span>• 图标与部件</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'headerBlocks')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>图标颜色：</label>
+                        <input type="color" id="setting-header-btn-c">
+                        <input type="text" id="setting-header-btn-c-text" placeholder="#HEX">
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>修改对象：</label>
+                        <select id="setting-header-target">
+                            <option value="back">返回键</option>
+                            <option value="title">昵称栏</option>
+                            <option value="group">右侧按钮组</option>
+                        </select>
+                    </div>
+
+                    <div id="header-target-settings-box">
+                        <div class="bubble-settings-item"><label>当前正在修改：<span style="color:var(--primary-color);" id="current-header-label">返回键</span></label></div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>底色：</label>
+                            <input type="color" id="setting-hdrblk-bg">
+                            <input type="text" id="setting-hdrblk-bg-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>不透明度：<span class="val-display" id="val-hdrblk-opacity">0</span></label>
+                            <input type="range" class="bubble-slider" id="setting-hdrblk-opacity" step="0.05" min="0" max="1">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>内边距：<span class="val-display" id="val-hdrblk-pad">0</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-hdrblk-pad" min="0" max="20" step="1">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>边角弧度：<span class="val-display" id="val-hdrblk-radius">0</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-hdrblk-radius" min="0" max="30" step="1">
+                        </div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>描边颜色：</label>
+                            <input type="color" id="setting-hdrblk-stroke-c">
+                            <input type="text" id="setting-hdrblk-stroke-c-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>描边宽度：<span class="val-display" id="val-hdrblk-stroke-w">0</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-hdrblk-stroke-w" min="0" max="5" step="1">
+                        </div>
+                        <!-- 「宽度占比」只对昵称栏有意义，整行由 syncConditionalRows 收放。
+                             它的说明挂在这一行自己的问号上、不挂到小标题 —— 行收起来时
+                             说明跟着一起走，不用再单独管一个 hint 元素的显隐
+                             （同「时间格式」那行的套路）。 -->
+                        <div class="bubble-settings-item col" id="hdrblk-width-row">
+                            <label>宽度占比：<span class="val-display" id="val-hdrblk-width">100</span>%
+                                <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'headerWidth')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                    <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                </svg>
+                            </label>
+                            <input type="range" class="bubble-slider" id="setting-hdrblk-width" min="20" max="100" step="5">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 「基础」的第三块：底栏。三个对象（发送键 / AI 回复键 / 输入栏）
+                     共用下面同一组控件，靠「修改对象」下拉切换，和气泡那块一个套路。
+                     说明同样收进小标题右边的问号（见上面那块的注释）。 -->
+                <div id="pane-basic-footer" class="content-pane">
+                    <div class="settings-group-title">
+                        <span>• 布局</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'footerLayout')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>隐藏发送按钮</label>
+                        <label class="switch"><input type="checkbox" id="setting-footer-hide-send"><span class="slider round"></span></label>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>收纳工具栏</label>
+                        <label class="switch"><input type="checkbox" id="setting-footer-collapse-toolbar"><span class="slider round"></span></label>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>收纳 AI 回复</label>
+                        <label class="switch"><input type="checkbox" id="setting-footer-collapse-reply"><span class="slider round"></span></label>
+                    </div>
+                    <div class="settings-group-title">
+                        <span>• 背景与分割线</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'footerBg')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>背景颜色：</label>
+                        <input type="color" id="setting-footer-bar-bg">
+                        <input type="text" id="setting-footer-bar-bg-text" placeholder="#HEX">
+                    </div>
+                    <div class="bubble-settings-item col">
+                        <label>不透明度：<span class="val-display" id="val-footer-bar-opacity">0.85</span></label>
+                        <input type="range" class="bubble-slider" id="setting-footer-bar-opacity" step="0.05" min="0" max="1">
+                    </div>
+                    <div class="bubble-settings-item col">
+                        <label>模糊度：<span class="val-display" id="val-footer-bar-blur">8</span>px</label>
+                        <input type="range" class="bubble-slider" id="setting-footer-bar-blur" min="0" max="20" step="1">
+                    </div>
+                    <div class="bubble-settings-item col">
+                        <label>分割线粗细：<span class="val-display" id="val-footer-div-w">1</span>px</label>
+                        <input type="range" class="bubble-slider" id="setting-footer-div-w" min="0" max="6" step="1">
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>分割线颜色：</label>
+                        <input type="color" id="setting-footer-div-c">
+                        <input type="text" id="setting-footer-div-c-text" placeholder="#HEX">
+                    </div>
+                    <div class="settings-group-title">
+                        <span>• 工具栏图标</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'footerIcon')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>图标颜色：</label>
+                        <input type="color" id="setting-footer-btn-c">
+                        <input type="text" id="setting-footer-btn-c-text" placeholder="#HEX">
+                    </div>
+                    <!-- 这里曾经还有一个「线条粗细」滑块（发 --bar-icon-stroke）。删了：
+                         工具栏 6 颗里只有语音和钱包是线型（.ic-line），另外 4 颗是面型、
+                         粗细画死在路径里调不动 —— 于是那个滑块只会把 2 颗调粗、6 颗粗细不一致，
+                         越调越难看。想整体换粗细只能换素材，不是加个旋钮能解决的。 -->
+                    <div class="settings-group-title">
+                        <span>• 部件</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'footerBlocks')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
+                    <div class="bubble-settings-item row">
+                        <label>修改对象：</label>
+                        <select id="setting-footer-target">
+                            <option value="send">发送按钮</option>
+                            <option value="reply">AI 回复按钮</option>
+                            <option value="input">输入栏</option>
+                        </select>
+                    </div>
+
+                    <div id="footer-target-settings-box">
+                        <div class="bubble-settings-item"><label>当前正在修改：<span style="color:var(--primary-color);" id="current-footer-label">发送按钮</span></label></div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>颜色：</label>
+                            <input type="color" id="setting-footer-bg">
+                            <input type="text" id="setting-footer-bg-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item row">
+                            <label>文字颜色：</label>
+                            <input type="color" id="setting-footer-color">
+                            <input type="text" id="setting-footer-color-text" placeholder="#HEX">
+                        </div>
+                        <hr>
+                        <div class="bubble-settings-item row">
+                            <label>描边颜色：</label>
+                            <input type="color" id="setting-footer-stroke-c">
+                            <input type="text" id="setting-footer-stroke-c-text" placeholder="#HEX">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>描边宽度：<span class="val-display" id="val-footer-stroke-w">0</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-footer-stroke-w" min="0" max="5" step="1">
+                        </div>
+                        <div class="bubble-settings-item col">
+                            <label>边角弧度：<span class="val-display" id="val-footer-radius">5</span>px</label>
+                            <input type="range" class="bubble-slider" id="setting-footer-radius" min="0" max="30" step="1">
+                        </div>
+                    </div>
+                </div>
+
                 <!-- 栏目二：自定义 CSS -->
+                <!-- 两个框：上面可编辑、只装用户手写的；下面只读、装自动生成的区块（默认折叠）。
+                     拆开的原因见 bubble_css/css_io.js 顶部那段注释 —— 合在一个 textarea 里时
+                     用户改自己那几行很容易连带改到生成区块。落盘仍然是一个字段。 -->
                 <div id="pane-css" class="content-pane">
+                    <div class="settings-group-title">
+                        <span>• 我的 CSS</span>
+                        <svg class="settings-group-info-icon" onclick="showHelp('bubble', 'customCss')" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                        </svg>
+                    </div>
                     <textarea id="global-bubble-custom-css" placeholder="在此输入高级 CSS 代码..."></textarea>
+                    <div class="collapsible-section" id="bubble-generated-css-section">
+                        <div class="collapsible-header">
+                            <span>自动生成的样式（只读）<span class="val-display" id="bubble-generated-css-hint">暂无</span></span>
+                            <span class="collapsible-arrow">▼</span>
+                        </div>
+                        <div class="collapsible-content">
+                            <pre id="bubble-generated-css" class="readonly-css-box"></pre>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -787,10 +1092,20 @@
                 </div>
                 <div class="action-btn-group">
                     <button class="action-btn" id="video-call-btn" title="视频电话">
-                        <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
-                            <path transform="scale(1.4) translate(0.5 0.5)"
-                                d="M3.654 1.328a.678.678 0 0 0-1.015-.063L1.605 2.3c-.483.484-.661 1.169-.45 1.77a17.568 17.568 0 0 0 4.168 6.608 17.569 17.569 0 0 0 6.608 4.168c.601.211 1.286.033 1.77-.45l1.034-1.034a.678.678 0 0 0-.063-1.015l-2.307-1.794a.678.678 0 0 0-.58-.122l-2.19.547a1.745 1.745 0 0 1-1.657-.459L5.482 8.062a1.745 1.745 0 0 1-.46-1.657l.548-2.19a.678.678 0 0 0-.122-.58L3.654 1.328zM1.83 1.83l.002-.001-.002.001z"
-                                fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"
+                        <!-- 线型话筒。原先是张 16 viewBox 的图靠 transform:scale(1.4) 硬撑到 24，
+                             描边跟着缩放一起被放大、边角发虚，和旁边那颗设置键的线宽也对不上。
+                             现在这张（参考用资料/phone/call-svgrepo-com (1).svg）机身是两条平行边，
+                             比上一版 phone-rounded 那种椭圆轮廓方正，不会显得太圆。
+                             ★ 好消息：chat_bubble_factory.js 里通话记录气泡用的就是这一张
+                             （不旋转时方向一致，只有拒接才套 rotate(135)）—— 所以顶栏这颗
+                             和聊天里那条通话气泡现在是同一个图形，等于是把一套视觉补齐了。
+                             ⚠️ 和"+"面板里的收纳位（chat_room.js 的 relay-call）必须是**同一张几何**
+                             —— 同一个功能的两个入口，两边各画一张，用户拨一下「收纳通话」
+                             就会觉得功能都换了。颜色/线宽各随所在栏（这里 currentColor + 1.5，
+                             面板那边一个字不写、全交给 .ic-line），所以只有 d 要保持一致。 -->
+                        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21.97 18.33C21.97 18.69 21.89 19.06 21.72 19.42C21.55 19.78 21.33 20.12 21.04 20.44C20.55 20.98 20.01 21.37 19.4 21.62C18.8 21.87 18.15 22 17.45 22C16.43 22 15.34 21.76 14.19 21.27C13.04 20.78 11.89 20.12 10.75 19.29C9.6 18.45 8.51 17.52 7.47 16.49C6.44 15.45 5.51 14.36 4.68 13.22C3.86 12.08 3.2 10.94 2.72 9.81C2.24 8.67 2 7.58 2 6.54C2 5.86 2.12 5.21 2.36 4.61C2.6 4 2.98 3.44 3.51 2.94C4.15 2.31 4.85 2 5.59 2C5.87 2 6.15 2.06 6.4 2.18C6.66 2.3 6.89 2.48 7.07 2.74L9.39 6.01C9.57 6.26 9.7 6.49 9.79 6.71C9.88 6.92 9.93 7.13 9.93 7.32C9.93 7.56 9.86 7.8 9.72 8.03C9.59 8.26 9.4 8.5 9.16 8.74L8.4 9.53C8.29 9.64 8.24 9.77 8.24 9.93C8.24 10.01 8.25 10.08 8.27 10.16C8.3 10.24 8.33 10.3 8.35 10.36C8.53 10.69 8.84 11.12 9.28 11.64C9.73 12.16 10.21 12.69 10.73 13.22C11.27 13.75 11.79 14.24 12.32 14.69C12.84 15.13 13.27 15.43 13.61 15.61C13.66 15.63 13.72 15.66 13.79 15.69C13.87 15.72 13.95 15.73 14.04 15.73C14.21 15.73 14.34 15.67 14.45 15.56L15.21 14.81C15.46 14.56 15.7 14.37 15.93 14.25C16.16 14.11 16.39 14.04 16.64 14.04C16.83 14.04 17.03 14.08 17.25 14.17C17.47 14.26 17.7 14.39 17.95 14.56L21.26 16.91C21.52 17.09 21.7 17.3 21.81 17.55C21.91 17.8 21.97 18.05 21.97 18.33Z"
+                                fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
                                 stroke-linejoin="round" />
                         </svg>
                     </button>
@@ -825,54 +1140,128 @@
                     <button id="cancel-reply-btn">×</button>
                 </div>
                 <div class="message-input-area" id="message-input-default">
-                    <input type="text" id="message-input" placeholder="输入消息...">
+                    <!-- 输入框和「AI 回复」键包在同一层里，只为了「收纳 AI 回复」那一档：
+                         按钮要 absolute 到**输入框内部**右侧，而 absolute 得有个定位祖先，
+                         <input> 自己装不了子元素，所以得有这么一层。
+                         ⚠️ 平时这层是 `display: contents`（chat_room.css）—— 不生成盒子，
+                         里面两个元素照旧是 .message-input-area 的直接 flex 项，
+                         布局和没这层时一模一样。代价是 DOM 顺序变成
+                         「输入框 → AI 回复 → + → 发送」，所以 #get-reply-btn 带了一条
+                         `order: 1` 把自己放回最右边，删了它平时就跑到发送键左边去了。
+                         ⚠️ 为什么不像下面 #inline-plus-btn 那样另画一颗：这颗按钮**有状态**
+                         （等 AI 回话时 disabled 整颗变淡，告诉用户别再发），还进了外观页底栏的
+                         「修改对象」下拉（用户能单独调它的色/弧度/描边）。画两颗就是两套 CSS
+                         加两处置淡，必漂；加号那颗能画两份是因为它没状态也不进那个下拉。 -->
+                    <div class="message-input-box">
+                        <input type="text" id="message-input" placeholder="输入消息...">
+                        <button id="get-reply-btn" class="icon-btn">
+                            <svg viewBox="0 0 24 24">
+                                <path
+                                    d="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 1,1 20,12A8,8 0 0,1 12,20M16.24,7.76C15.07,6.58 13.53,6 12,6V12L7.76,16.24C10.1,18.58 13.9,18.58 16.24,16.24C18.58,13.9 18.58,10.1 16.24,7.76Z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <!-- 收纳工具栏时才出现的 "+"：外观→底栏→「收纳工具栏」打开后，#sticker-bar 整条收起来，
+                         由它顶替原来那颗 #placeholder-plus-btn。两颗按钮各自绑定、行为一致，
+                         不能只留一颗 —— CSS 搬不动跨容器的节点，而底栏布局是按预设存的、每个聊天可以不一样。
+                         ⚠️ 故意**不挂** .icon-btn：那个 class 会把它染成和「发送」「AI 回复」一样的蓝方块，
+                         一行三个蓝块太重，而且它没进底栏外观的「修改对象」下拉、用户改不了色。
+                         样式照抄它顶替的那颗工具栏按钮（透明底 + 灰图标），见 chat_room.css。 -->
+                    <button id="inline-plus-btn" title="更多">
+                        <!-- 和工具栏那颗 #placeholder-plus-btn 必须是同一张图：同一时刻只露一颗，
+                             开面板时都转 45° 变 ×，两边不一致用户切收纳开关就会发现图标换了。 -->
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M13 8C13 7.44772 12.5523 7 12 7C11.4477 7 11 7.44772 11 8V11H8C7.44772 11 7 11.4477 7 12C7 12.5523 7.44772 13 8 13H11V16C11 16.5523 11.4477 17 12 17C12.5523 17 13 16.5523 13 16V13H16C16.5523 13 17 12.5523 17 12C17 11.4477 16.5523 11 16 11H13V8Z" />
+                            <path fill-rule="evenodd" clip-rule="evenodd"
+                                d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12Z" />
+                        </svg>
+                    </button>
                     <button id="send-message-btn" class="icon-btn send-btn">发送</button>
-                    <button id="get-reply-btn" class="icon-btn">
-                        <svg viewBox="0 0 24 24">
-                            <path
-                                d="M12,2A10,10 0 1,0 22,12A10,10 0 0,0 12,2M12,20A8,8 0 1,1 20,12A8,8 0 0,1 12,20M16.24,7.76C15.07,6.58 13.53,6 12,6V12L7.76,16.24C10.1,18.58 13.9,18.58 16.24,16.24C18.58,13.9 18.58,10.1 16.24,7.76Z" />
-                        </svg>
-                    </button>
                 </div>
+                <!-- 工具栏图标。两族共存，靠 .ic-line 区分，配色/线宽全在 chat_room.css
+                     开头那两个变量上（--bar-icon-color / --bar-icon-stroke）：
+                       · 面型：evenodd 挖空出来的"环"，环宽画死在路径里是 2/24，只能靠 fill 上色；
+                       · 线型（.ic-line）：这里只留几何，连 stroke / stroke-width 都不写 ——
+                         CSS 优先级高于表现属性，写了也只是摆设，反而让人以为改它有用。
+                     素材来自 参考用资料/替换，原文件线宽不齐（转账是 1.5、其余 2），
+                     统一交给 CSS 之后就都对齐到 2/24 了。 -->
                 <div id="sticker-bar">
-                    <button class="sticker-bar-btn" id="regenerate-btn" title="重回">
-                        <svg viewBox="0 0 24 24" fill="currentColor">
-                            <path
-                                d="M17.65,6.35C16.2,4.9,14.21,4,12,4A8,8,0,0,0,4,12A8,8,0,0,0,12,20C15.73,20,18.84,17.45,19.73,14H17.65C16.83,16.33,14.61,18,12,18A6,6,0,0,1,6,12A6,6,0,0,1,12,6C13.66,6,15.14,6.69,16.22,7.78L13,11H20V4L17.65,6.35Z" />
-                        </svg>
-                    </button>
                     <button class="sticker-bar-btn" id="voice-message-btn">
-                        <svg viewBox="0 0 24 24">
-                            <path
-                                d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
+                        <svg viewBox="0 0 24 24" class="ic-line">
+                            <rect x="8" y="2" width="8" height="13" rx="4" />
+                            <path d="M20,10v1a8,8,0,0,1-8,8h0a8,8,0,0,1-8-8V10" />
+                            <line x1="12" y1="19" x2="12" y2="22" />
                         </svg>
                     </button>
                     <button class="sticker-bar-btn" id="image-recognition-btn">
                         <svg viewBox="0 0 24 24">
-                            <!-- 外框 -->
+                            <!-- 相框里的太阳 -->
                             <path
-                                d="M20,4H4C2.9,4,2,4.9,2,6v12c0,1.1,0.9,2,2,2h16c1.1,0,2-0.9,2-2V6C22,4.9,21.1,4,20,4z M20,18H4v-4.57l5.36-4.91l4.06,3.72l3.43-3.09L20,12.27V18z" />
+                                d="M8.5 10C9.32843 10 10 9.32843 10 8.5C10 7.67157 9.32843 7 8.5 7C7.67157 7 7 7.67157 7 8.5C7 9.32843 7.67157 10 8.5 10Z" />
+                            <!-- 外框 + 远近两座山 -->
+                            <path fill-rule="evenodd" clip-rule="evenodd"
+                                d="M11.0055 2H12.9945C14.3805 1.99999 15.4828 1.99999 16.3716 2.0738C17.2819 2.14939 18.0575 2.30755 18.7658 2.67552C19.8617 3.24477 20.7552 4.1383 21.3245 5.23415C21.6925 5.94253 21.8506 6.71811 21.9262 7.62839C22 8.5172 22 9.61946 22 11.0054V12.9945C22 13.6854 22 14.306 21.9909 14.8646C22.0049 14.9677 22.0028 15.0726 21.9846 15.175C21.9741 15.6124 21.9563 16.0097 21.9262 16.3716C21.8506 17.2819 21.6925 18.0575 21.3245 18.7658C20.7552 19.8617 19.8617 20.7552 18.7658 21.3245C18.0575 21.6925 17.2819 21.8506 16.3716 21.9262C15.4828 22 14.3805 22 12.9946 22H11.0055C9.61955 22 8.5172 22 7.62839 21.9262C6.71811 21.8506 5.94253 21.6925 5.23415 21.3245C4.43876 20.9113 3.74996 20.3273 3.21437 19.6191C3.20423 19.6062 3.19444 19.5932 3.185 19.5799C2.99455 19.3238 2.82401 19.0517 2.67552 18.7658C2.30755 18.0575 2.14939 17.2819 2.0738 16.3716C1.99999 15.4828 1.99999 14.3805 2 12.9945V11.0055C1.99999 9.61949 1.99999 8.51721 2.0738 7.62839C2.14939 6.71811 2.30755 5.94253 2.67552 5.23415C3.24477 4.1383 4.1383 3.24477 5.23415 2.67552C5.94253 2.30755 6.71811 2.14939 7.62839 2.0738C8.51721 1.99999 9.61949 1.99999 11.0055 2ZM20 11.05V12.5118L18.613 11.065C17.8228 10.2407 16.504 10.2442 15.7182 11.0727L11.0512 15.9929L9.51537 14.1359C8.69326 13.1419 7.15907 13.1746 6.38008 14.2028L4.19042 17.0928C4.13682 16.8463 4.09606 16.5568 4.06694 16.2061C4.0008 15.4097 4 14.3905 4 12.95V11.05C4 9.60949 4.0008 8.59025 4.06694 7.79391C4.13208 7.00955 4.25538 6.53142 4.45035 6.1561C4.82985 5.42553 5.42553 4.82985 6.1561 4.45035C6.53142 4.25538 7.00955 4.13208 7.79391 4.06694C8.59025 4.0008 9.60949 4 11.05 4H12.95C14.3905 4 15.4097 4.0008 16.2061 4.06694C16.9905 4.13208 17.4686 4.25538 17.8439 4.45035C18.5745 4.82985 19.1702 5.42553 19.5497 6.1561C19.7446 6.53142 19.8679 7.00955 19.9331 7.79391C19.9992 8.59025 20 9.60949 20 11.05ZM6.1561 19.5497C5.84198 19.3865 5.55279 19.1833 5.295 18.9467L7.97419 15.4106L9.51005 17.2676C10.2749 18.1924 11.6764 18.24 12.5023 17.3693L17.1693 12.449L19.9782 15.3792C19.9683 15.6812 19.9539 15.9547 19.9331 16.2061C19.8679 16.9905 19.7446 17.4686 19.5497 17.8439C19.1702 18.5745 18.5745 19.1702 17.8439 19.5497C17.4686 19.7446 16.9905 19.8679 16.2061 19.9331C15.4097 19.9992 14.3905 20 12.95 20H11.05C9.60949 20 8.59025 19.9992 7.79391 19.9331C7.00955 19.8679 6.53142 19.7446 6.1561 19.5497Z" />
                         </svg>
                     </button>
 
                     <button class="sticker-bar-btn" id="photo-video-btn">
                         <svg viewBox="0 0 24 24">
-                            <path
-                                d="M4,4H7L9,2H15L17,4H20A2,2 0 0,1 22,6V18A2,2 0 0,1 20,20H4A2,2 0 0,1 2,18V6A2,2 0 0,1 4,4M12,7A5,5 0 0,0 7,12A5,5 0 0,0 12,17A5,5 0 0,0 17,12A5,5 0 0,0 12,7M12,9A3,3 0 0,1 15,12A3,3 0 0,1 12,15A3,3 0 0,1 9,12A3,3 0 0,1 12,9Z" />
+                            <path fill-rule="evenodd" clip-rule="evenodd"
+                                d="M6.39252 3.83025C7.04361 2.75654 8.20958 2 9.54508 2H14.4549C15.7904 2 16.9564 2.75654 17.6075 3.83025C17.8059 4.15753 18.0281 4.50118 18.257 4.81533C18.3665 4.96564 18.5804 5.08571 18.8771 5.08571H18.9998C21.209 5.08571 23 6.87668 23 9.08571V17C23 19.2091 21.2091 21 19 21H5C2.79086 21 1 19.2091 1 17V9.08572C1 6.87668 2.79052 5.08571 4.99976 5.08571H5.12238C5.41912 5.08571 5.63348 4.96564 5.74301 4.81533C5.97193 4.50118 6.19407 4.15753 6.39252 3.83025ZM9.54508 4C8.98673 4 8.43356 4.32159 8.10267 4.86727C7.88516 5.22596 7.63139 5.61989 7.35939 5.99317C6.81056 6.74635 5.94404 7.08571 5.12286 7.08571H5.00024C3.89578 7.08571 3 7.98104 3 9.08572V17C3 18.1046 3.89543 19 5 19H19C20.1046 19 21 18.1046 21 17V9.08571C21 7.98104 20.1047 7.08571 19.0002 7.08571H18.8776C18.0564 7.08571 17.1894 6.74635 16.6406 5.99317C16.3686 5.61989 16.1148 5.22596 15.8973 4.86727C15.5664 4.32159 15.0133 4 14.4549 4H9.54508ZM12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9ZM7 12C7 9.23858 9.23858 7 12 7C14.7614 7 17 9.23858 17 12C17 14.7614 14.7614 17 12 17C9.23858 17 7 14.7614 7 12Z" />
                         </svg>
                     </button>
                     <button class="sticker-bar-btn" id="wallet-btn">
-                        <svg viewBox="0 0 24 24"><path d="M20,4H4C2.9,4,2,4.9,2,6v12c0,1.1,0.9,2,2,2h16c1.1,0,2-0.9,2-2V6C22,4.9,21.1,4,20,4z M20,8l-8,5L4,8V6l8,5l8-5V8z" /></svg>
-                    </button>
-                    <button class="sticker-bar-btn" id="sticker-toggle-btn">
-                        <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 6.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z" /></svg>
-                    </button>
-
-                    <button class="sticker-bar-btn" id="placeholder-plus-btn">
-                        <svg viewBox="0 0 24 24">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        <svg viewBox="0 0 24 24" class="ic-line">
+                            <path d="M13 9H7" />
+                            <path
+                                d="M22 10.9699V13.03C22 13.58 21.56 14.0299 21 14.0499H19.0399C17.9599 14.0499 16.97 13.2599 16.88 12.1799C16.82 11.5499 17.0599 10.9599 17.4799 10.5499C17.8499 10.1699 18.36 9.94995 18.92 9.94995H21C21.56 9.96995 22 10.4199 22 10.9699Z" />
+                            <path
+                                d="M17.48 10.55C17.06 10.96 16.82 11.55 16.88 12.18C16.97 13.26 17.96 14.05 19.04 14.05H21V15.5C21 18.5 19 20.5 16 20.5H7C4 20.5 2 18.5 2 15.5V8.5C2 5.78 3.64 3.88 6.19 3.56C6.45 3.52 6.72 3.5 7 3.5H16C16.26 3.5 16.51 3.50999 16.75 3.54999C19.33 3.84999 21 5.76 21 8.5V9.95001H18.92C18.36 9.95001 17.85 10.17 17.48 10.55Z" />
                         </svg>
                     </button>
+                    <button class="sticker-bar-btn" id="sticker-toggle-btn">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M14.9348 13.1725C15.3654 13.3446 15.5817 13.8402 15.3237 14.2255C15.0294 14.665 14.6493 15.0442 14.2032 15.3386C13.522 15.7881 12.7196 16.0185 11.9037 15.9988C11.0878 15.9792 10.2975 15.7104 9.6387 15.2287C9.20726 14.9131 8.8458 14.5161 8.573 14.0629C8.33384 13.6656 8.57376 13.181 9.01216 13.0299C9.45056 12.8788 9.91919 13.1274 10.2157 13.4839C10.3367 13.6294 10.4756 13.7603 10.63 13.8732C11.0122 14.1527 11.4708 14.3087 11.9441 14.3201C12.4175 14.3315 12.883 14.1978 13.2782 13.937C13.4379 13.8316 13.583 13.7076 13.7108 13.5681C14.0241 13.2262 14.5042 13.0005 14.9348 13.1725Z" />
+                            <path
+                                d="M10 9C10 8.44772 9.55228 8 9 8C8.44772 8 8 8.44772 8 9V10C8 10.5523 8.44772 11 9 11C9.55228 11 10 10.5523 10 10V9Z" />
+                            <path
+                                d="M16 9C16 8.44772 15.5523 8 15 8C14.4477 8 14 8.44772 14 9V10C14 10.5523 14.4477 11 15 11C15.5523 11 16 10.5523 16 10V9Z" />
+                            <path fill-rule="evenodd" clip-rule="evenodd"
+                                d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4Z" />
+                        </svg>
+                    </button>
+
+                    <!-- 面板开着时整个 svg 转 45° 变成「圆圈 + 叉」，所以这张图必须是
+                         **带圆圈的十字**、而且上下左右对称 —— 换成缺口不对称的素材转完会歪。 -->
+                    <button class="sticker-bar-btn" id="placeholder-plus-btn">
+                        <svg viewBox="0 0 24 24">
+                            <path
+                                d="M13 8C13 7.44772 12.5523 7 12 7C11.4477 7 11 7.44772 11 8V11H8C7.44772 11 7 11.4477 7 12C7 12.5523 7.44772 13 8 13H11V16C11 16.5523 11.4477 17 12 17C12.5523 17 13 16.5523 13 16V13H16C16.5523 13 17 12.5523 17 12C17 11.4477 16.5523 11 16 11H13V8Z" />
+                            <path fill-rule="evenodd" clip-rule="evenodd"
+                                d="M12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2ZM4 12C4 7.58172 7.58172 4 12 4C16.4183 4 20 7.58172 20 12C20 16.4183 16.4183 20 12 20C7.58172 20 4 16.4183 4 12Z" />
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- ★ "+"扩展面板住在 .chat-input-wrapper **里面**、排在工具栏之后，
+                     所以打开时是把「输入栏 + 工具栏」整条往上顶（微信/QQ 那个效果）。
+                     以前它是 #chat-room-screen 下的绝对定位浮层（bottom:0 / z-index:65），
+                     正好盖住 z-index:50 的输入栏 —— 开着面板就没法打字。
+                     ⚠️ 搬出去就立刻退化回"盖住"：父节点撑不开，底栏也就顶不上去。
+                     配套的样式在 chat_modal.css（去掉 position/圆角换到下沿）、
+                     chat_room.css（消息区让出 --exp-panel-h），开关一律走
+                     setChatExpansionPanelOpen。 -->
+                <div id="chat-expansion-panel">
+                    <!-- 横向翻页容器（一页 4 列 × 2 行）。页节点 .expansion-page 由
+                         layoutChatExpansionPages 按「此刻有几项是可见的」现算出来，这里只留空壳。
+                         .no-swipe-back：告诉 swipe_back.js 别把这里的右滑当成返回手势。 -->
+                    <div id="chat-expansion-grid" class="no-swipe-back">
+                        <!-- Items will be populated by JS -->
+                    </div>
+                    <!-- 页码圆点：只有一页时一个都不渲染，靠 :empty 自己藏起来 -->
+                    <div id="chat-expansion-dots" class="expansion-dots"></div>
                 </div>
 
             </div>
@@ -902,13 +1291,7 @@
                     <button class="btn btn-danger" id="delete-selected-stickers-btn">删除已选(0)</button>
                 </div>
                 <!-- 新增：底部分类栏 -->
-                <div id="sticker-category-bar"></div>               
-            </div>
-            <!-- NEW: Chat Expansion Panel -->
-            <div id="chat-expansion-panel">
-                <div class="sticker-grid" id="chat-expansion-grid">
-                    <!-- Items will be populated by JS -->
-                </div>
+                <div id="sticker-category-bar"></div>
             </div>
 <!-- ================== Private Chat Settings (侧边栏) ================== -->
 <div id="chat-settings-sidebar" class="settings-sidebar redesigned-sidebar">
@@ -1746,6 +2129,37 @@
     </main>
 </div>
 
+<!-- === 喵坛帖子搜索结果页 === -->
+<!-- 结构照着上面那个聊天搜索结果页来（滚动容器 + list-container + 三个状态 span），
+     故意挨着放：两边的分批渲染/滚动加载是同一套打法，分家了容易只改一边。
+     ⚠ 返回按钮只写 data-target，不要再 addEventListener 调 switchScreen ——
+       main.js:315 的 body 委托已经接管所有 [data-target]，自己再绑一个会让
+       switchScreen 跑两遍（forum_core.js:60 那段注释记的就是这个坑）。
+       退出时的清理走 window._screenLeaveHooks，见 forum_search.js。 -->
+<div id="forum-search-results-screen" class="screen">
+    <header class="app-header">
+        <button class="back-btn" data-target="world-screen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
+            </svg>
+        </button>
+        <div class="title-container">
+            <h1 class="title">帖子搜索结果</h1>
+        </div>
+        <div class="placeholder"></div>
+    </header>
+    <main class="content" id="forum-search-scroll-container">
+        <div id="forum-search-results-list" class="list-container">
+            <!-- 结果项通过 JS 插入 -->
+        </div>
+        <div id="forum-search-status-bar" style="text-align: center; padding: 20px; color: #999; font-size: 13px;">
+            <span id="forum-search-loading" style="display: none;">正在加载更多...</span>
+            <span id="forum-search-no-more" style="display: none;">没有更多结果了</span>
+            <span id="forum-search-empty" style="display: none;">未找到匹配的帖子</span>
+        </div>
+    </main>
+</div>
+
 
 
         <!-- 世界书页面 -->
@@ -2170,6 +2584,14 @@
                         </label>
                     </div>
                     
+                    <div class="form-group form-group-switch" id="api-chat-flex-row" hidden>
+                        <label for="api-chat-flex" title="仅支持的模型可按 Flex 五折档处理；可能排队或返回 429/503，不自动降级全价。聊天与识图等跟随此文字预设，已有自动超时至少 10 分钟；Vertex 需 global，中转代理需确认透传。">Flex 弹性推理（五折）</label>
+                        <label class="switch">
+                            <input type="checkbox" id="api-chat-flex">
+                            <span class="slider round"></span>
+                        </label>
+                    </div>
+
                     <div class="form-group form-group-switch">
                         <label for="api-chat-compat" title="不含图片的消息将以纯文本格式发送，解决部分中转站报错">兼容模式</label>
                         <label class="switch">
@@ -2473,6 +2895,13 @@
 
                     <div class="voice-test-result" id="api-voice-test-result" hidden></div>
                     <audio class="voice-preview-player" id="api-voice-preview-player" controls hidden></audio>
+                    <!-- 试听是真花钱的一次合成，所以别让它响一遍就没了：这两颗管「再听一遍」
+                         和「存下来」。没音频时禁用而不隐藏，否则用户不知道还能下载。
+                         原生 controls 留着是为了进度条，播放键的字由播放器事件同步。 -->
+                    <div class="btn-group voice-preview-btns">
+                        <button type="button" class="btn btn-neutral" id="api-voice-replay-btn" disabled style="margin-bottom: 0;">播放</button>
+                        <button type="button" class="btn btn-neutral" id="api-voice-download-btn" disabled style="margin-bottom: 0;">下载</button>
+                    </div>
 
                     <p class="voice-group-title">用量</p>
 
@@ -2843,13 +3272,21 @@
                <!--  Card 4: 数据瘦身与修复  -->
         <div class="storage-card cloud-card" id="cleanup-card">
             <div class="cloud-left">
-                <!-- 蓝绿色的清理图标 -->
+                <!-- 清扫图标。项目里原先没有任何扫把素材（broom/sweep/扫把/清扫 全无命中），
+                     这张是为此新画的：柄 + 宽梯形头 + band + 3 根鬃毛，线宽 2/24，
+                     和 svgrepo 那批素材的环宽对齐。斜置的画法在 24px 下会糊成一团，
+                     别"优化"回斜的。
+                     ⚠️ class="ic-line" 不能省，见 storage.css 里 .cloud-icon-bg svg.ic-line
+                     那段 —— 少了它会被 fill:white 填成实心块。这个位置原先放的是
+                     feather trash-2（本身也是线性的），就是因为少这一条才糊成一团的。 -->
                 <div class="cloud-icon-bg">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="3 6 5 6 21 6"></polyline>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                        <line x1="10" y1="11" x2="10" y2="17"></line>
-                        <line x1="14" y1="11" x2="14" y2="17"></line>
+                    <svg class="ic-line" viewBox="0 0 24 24">
+                        <path d="M13.5 2.5 L12 11"/>
+                        <path d="M7.5 11 H16.5 L18 20 H6 Z"/>
+                        <path d="M6.6 15.5 H17.4"/>
+                        <path d="M9.6 15.5 V20"/>
+                        <path d="M12 15.5 V20"/>
+                        <path d="M14.4 15.5 V20"/>
                     </svg>
                 </div>
                 <div>
@@ -2858,7 +3295,27 @@
                 </div>
             </div>
             <div class="cloud-actions">
-                <button id="btn-cleanup-duplicates" class="btn-export-sm">清理</button>               
+                <button id="btn-cleanup-duplicates" class="btn-export-sm">清理</button>
+            </div>
+        </div>
+               <!--  Card 5: 清除所有数据  -->
+        <div class="storage-card cloud-card" id="wipe-all-card">
+            <div class="cloud-left">
+                <!-- 线性垃圾桶，复用项目里用得最多那一张（删人设/删角色/解散群/清控制台/
+                     论坛收藏管理/删帖/删世界书条目/批量删除 共 8 处都是它）：桶身收腰、
+                     桶盖圆角走贝塞尔曲线。同样必须挂 ic-line。 -->
+                <div class="cloud-icon-bg">
+                    <svg class="ic-line" viewBox="0 0 24 24">
+                        <path d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="cloud-title">清除所有数据</div>
+                    <div class="cloud-desc">删除本机全部记录，不可撤销</div>
+                </div>
+            </div>
+            <div class="cloud-actions">
+                <button id="btn-wipe-all-data" class="btn-export-sm">清除</button>
             </div>
         </div>
 </main>
@@ -3208,7 +3665,7 @@
         <h2 id="summary-detail-title"></h2>
         
         <div class="date-edit-container">
-            <span>发生时间:</span>
+            <span id="summary-date-label">发生时间:</span>
             <input type="text" id="summary-occurred-at" class="date-edit-input" placeholder="YYYY-MM-DD" readonly>
             <span id="summary-range-display" style="margin-left: auto;"></span>
         </div>
@@ -3797,6 +4254,14 @@
                                 <select id="forum-api-preset-select" class="setting-select world-admin-select">
                                     <option value="">全局默认</option>
                                 </select>
+                            </div>
+
+                            <div class="setting-row">
+                                <div class="world-label-group">
+                                    <span class="world-label">搜索帖子</span>
+                                    <span class="world-sublabel">按关键词或日期查找，可跳转到原帖</span>
+                                </div>
+                                <button id="forum-post-search-btn" class="btn btn-primary btn-small world-admin-action-btn">搜索帖子</button>
                             </div>
 
                             <div class="setting-row">
@@ -4603,7 +5068,11 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
                         <!-- 专注 -->
                         <div class="st-mood-item" id="go-focus">
                             <button class="st-mood-btn st-mood-focus">
-                                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- width/height 必须写（旁边「阅读」「测试」两颗也都写着）：
+                                     .st-mood-btn 是 52px 的 flex 容器，svg 只给 viewBox 时宽高是
+                                     隐含的 100%，iOS 的 WebKit 当 flex item 会算成 0×0 —— 这颗原先
+                                     漏了，表现就是 iPhone 上三个圆圈只有「专注」那个是空的。 -->
+                                <svg width="28px" height="28px" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
 <path d="M3 5.5L5 3.5M21 5.5L19 3.5M9 12.5L11 14.5L15 10.5M20 12.5C20 16.9183 16.4183 20.5 12 20.5C7.58172 20.5 4 16.9183 4 12.5C4 8.08172 7.58172 4.5 12 4.5C16.4183 4.5 20 8.08172 20 12.5Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 </svg></button>
                             <span class="st-mood-label">专注</span>
@@ -6294,8 +6763,8 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
             </div>
             <div class="collapsible-content">
                 <div class="form-group mb-0">
-                    <textarea id="voice-setting-tone" rows="3" placeholder="约束模型怎么写语音消息的文字。例如：语气慵懒随性，多用语气词和停顿，别说书面语" maxlength="300" class="mb-0"></textarea>
-                    <p class="field-hint">这段注入给语言模型，只管语音消息的文字怎么写，不影响普通消息。留空则一个字都不注入。</p>
+                    <textarea id="voice-setting-tone" rows="6" placeholder="约束模型怎么写语音消息的文字。例如：语气慵懒随性，多用语气词和停顿，别说书面语" maxlength="2000" class="mb-0"></textarea>
+                    <p class="field-hint">这段注入给语言模型，只管语音消息的文字怎么写，不影响普通消息。留空则一个字都不注入。最多 2000 字，够整段贴服务商的官方语气词/停顿写法。</p>
                 </div>
             </div>
         </div>
@@ -6782,9 +7251,21 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
                     <!-- 动态填充 -->
                 </select>
             </div>
+            <!-- 超时秒数：min/max 必须和 chat_feature_basic.js 的
+                 VISION_TIMEOUT_MIN_SEC / VISION_TIMEOUT_MAX_SEC 一致（那边是真相源，
+                 保存时还会再 clamp 一次，这里的属性只是给手机键盘一个范围提示）。 -->
+            <div class="form-group">
+                <label for="vision-api-timeout-input">单张识图超时（秒）</label>
+                <input type="number" id="vision-api-timeout-input" class="form-control" min="10" max="600" step="10" placeholder="120">
+            </div>
+            <!-- 说明统一收在这一块灰底框里，两个表单项后面都别再挂 .input-hint ——
+                 那个类带 margin-top:-10px（给紧跟输入框的场景设计的），
+                 放在 form-group 里会直接压到输入框上。 -->
             <div id="vision-api-hint">
                 选"同聊天API"则跟随每个聊天各自的 API 设置；一旦在此指定预设，所有聊天的图片转化都使用设置的api。<br>
-                请选择支持识图（视觉）的模型，否则转化会失败。
+                请选择支持识图（视觉）的模型，否则转化会失败。<br>
+                超时默认 120 秒，网络差或图片大的时候老是提示"请求超时"就往上调；范围 10–600，留空按默认。<br>
+                所选 Gemini / Vertex 文字预设开启 Flex 时，本次实际等待至少 600 秒，不改写这里保存的秒数。
             </div>
             <div class="btn-group">
                 <button type="submit" class="btn btn-primary">保存设置</button>
@@ -6813,7 +7294,43 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
             </div>
         </form>
     </div>
-</div> 
+</div>
+
+<!-- === 喵坛帖子搜索弹窗（入口在世界页「管理」Tab） === -->
+<!-- 结构和上面的聊天搜索弹窗一致，多一个「搜索范围」下拉。
+     ⚠ 范围是**召回宽窄**开关，不是性能开关：IndexedDB 没有字段投影、title 也没索引，
+       所以"只搜标题"和"搜全文"读的字节数完全一样（详见 lazy_load.js 的
+       searchForumPostsInDB 注释）。文案里不要写成"更快"，会把下次调优的人带偏。
+     ★ 默认值靠「全文」是第一个 option 来兜：form.reset() 在没有 selected 属性时
+       回到首项，别把默认项挪到中间去。 -->
+<div id="forum-search-config-modal" class="modal-overlay">
+    <div class="modal-window">
+        <h3>查找帖子</h3>
+        <form id="forum-search-config-form">
+            <div class="form-group">
+                <label>关键词</label>
+                <input type="text" id="forum-search-keyword-input" class="form-control" placeholder="输入标题、正文或评论内容...">
+            </div>
+            <div class="form-group">
+                <label>日期筛选</label>
+                <input type="date" id="forum-search-date-input" class="form-control">
+            </div>
+            <div class="form-group">
+                <label>搜索范围</label>
+                <select id="forum-search-scope-select" class="form-control">
+                    <option value="all">全文（标题 + 正文 + 评论）</option>
+                    <option value="body">标题 + 正文</option>
+                    <option value="title">只搜标题</option>
+                </select>
+            </div>
+            <p class="input-hint">* 日期和关键词至少填写一项</p>
+            <div class="btn-group">
+                <button type="submit" class="btn btn-primary">开始搜索</button>
+                <button type="button" id="cancel-forum-search-btn" class="btn btn-neutral">取消</button>
+            </div>
+        </form>
+    </div>
+</div>
 
 <!-- ===== 通话类型选择底部菜单 ===== -->
 <div id="call-type-actionsheet" class="action-sheet-overlay">
@@ -6831,7 +7348,11 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
        等待接通屏
        ══════════════════════════════════════════ -->
   <div id="call-waiting">
-    <div id="call-bg-blur"></div>
+    <div id="call-bg-blur">
+      <!-- far = 宽屏兜底的重模糊底层，near = 纵向铺满的主层；同一张图两层，见 call_overlay.css -->
+      <div id="call-bg-far"></div>
+      <img id="call-bg-near" alt="">
+    </div>
 
     <!-- 姓名 + 状态 -->
     <div id="call-waiting-info">
@@ -7890,9 +8411,20 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
     <script src="js/chat/proactive_prompt.js"></script>
     <script src="js/chat/group_prompt.js"></script>
     <script src="js/chat/char_import.js"></script>
-    <!-- scope 改写器要排在 bubble_css_preset / chat_settings 前面：两边都调它 -->
+    <!-- scope 改写器要排在 bubble_css/* 与 chat_settings 前面：两边都调它 -->
     <script src="js/chat/bubble_css_scope.js"></script>
-    <script src="js/chat/bubble_css_preset.js"></script>
+    <!-- 外观系统（原 bubble_css_preset.js，3074 行拆成 9 份）。
+         顺序不能乱：state 先声明共享状态，help_text 最后（加载时就 register）。
+         整组必须夹在 bubble_css_scope.js 之后、chat_settings.js 之前。 -->
+    <script src="js/chat/bubble_css/state.js"></script>
+    <script src="js/chat/bubble_css/css_io.js"></script>
+    <script src="js/chat/bubble_css/store.js"></script>
+    <script src="js/chat/bubble_css/preview.js"></script>
+    <script src="js/chat/bubble_css/generate.js"></script>
+    <script src="js/chat/bubble_css/panel.js"></script>
+    <script src="js/chat/bubble_css/parse.js"></script>
+    <script src="js/chat/bubble_css/wire.js"></script>
+    <script src="js/chat/bubble_css/help_text.js"></script>
     <script src="js/chat/chat_list.js"></script>
     <script src="js/chat/chat_settings.js"></script>
     <script src="js/chat/chat_search.js"></script>
@@ -7960,6 +8492,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
     <script src="js/forum/forum_me_page.js"></script>
     <script src="js/forum/forum_bindings.js"></script>
     <script src="js/forum/forum_admin.js"></script>
+    <script src="js/forum/forum_search.js"></script>
     <script src="js/forum/forum_favorites.js"></script>
     <script src="js/forum/forum_multiselect.js"></script>
     <script src="js/forum/forum_share.js"></script>
