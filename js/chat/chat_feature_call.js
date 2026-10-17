@@ -613,6 +613,10 @@ function toggleCallToolbox(show) {
     if (!menu) return;
 
     const next = (show === undefined) ? !menu.classList.contains('visible') : !!show;
+    // 开菜单前把那颗双语义按钮的字算对。只在开的时候算就够：菜单开着期间
+    // history 不会变（能改它的两条路——发消息和 AI 回复——都在菜单下面被遮着，
+    // 而后台生成那条有 isGenerating 守卫）。
+    if (next) _syncCallRegenLabel();
     menu.classList.toggle('visible', next);
     header?.classList.toggle('toolbox-open', next);
 }
@@ -622,11 +626,146 @@ function closeCallToolbox() {
 }
 
 // ------------------------------------------
-// 工具箱 · 重新生成
-// 直接复用聊天页的 handleRegenerate()：它会砍掉最后一段 AI 回复、
-// 再走 getAiReply()，而 getAiReply 在通话中本来就会清空气泡区，所以
-// 这里只需要管好守卫和收菜单。
+// 工具箱 · 重新生成 / 撤回我的发言
+//
+// 一颗按钮两种语义，按"对方接过话了没有"分：
+//   AI 已接话 → 让它重说，直接复用聊天页的 handleRegenerate()
+//   AI 未接话 → 撤回我刚说的（_undoCallUserTurn）
+//
+// 为什么未接话时不能还按"重新生成"走：handleRegenerate 那边会直接
+// showToast('AI尚未回复，无法重新生成') 然后什么也不干 —— 而通话界面只有一个
+// 输入框、没有可长按的消息列表，话发出去那一刻就再也改不了，只能眼看着它被
+// 下一轮喂给模型。这个分支就是通话里唯一的反悔入口。
 // ------------------------------------------
+
+/**
+ * 通话里一条「对白」消息的壳。`[小猫的消息：喂]` / `[小猫的语音：喂]` 都认 ——
+ * 通话中用户发的话存成语音格式（见 buildCallVoiceContent），AI 那边两种都可能出现。
+ * ★ 只此一份：下面 _callMessageSpeech 和通话记录侧栏的 assistant 分支都用它。
+ *   各写一份正则的代价很具体 —— 漂移的那一份迟早只认「的消息」，症状是记录里
+ *   显示成带方括号的原始字符串。
+ */
+const CALL_DIALOGUE_RE = /\[.*?(?:的消息|的语音)[:：]([\s\S]+?)\]$/;
+
+/**
+ * 把一条通话消息的 content 还原成人话：`[小猫的消息：喂]` → `喂`。
+ * 认不出就原样返回（老数据里有裸文本）。
+ */
+function _callMessageSpeech(content) {
+    const raw = String(content || '');
+    const match = raw.match(CALL_DIALOGUE_RE);
+    return match ? match[1] : raw;
+}
+
+/**
+ * AI 还没接话的那批用户发言（通话里"我说了、对方还没回"的那一轮）。
+ *
+ * ★ 从**最后一条 AI 消息之后**开始收，而且**只收 role === 'user'** ——
+ *   那一段里还夹着 role:'system' 的通话状态标记（拨号、接通、切换模式，见
+ *   startCall / onCallConnected / _switchCallMode）。连它们一起删等于抹掉这通
+ *   电话的上下文，模型下一轮不知道自己正在通话，会退回手机聊天的口吻。
+ *
+ * @returns {Array<object>} 按原顺序；空数组 = 对方已经接过话了
+ */
+function _pendingCallUserMessages(chat) {
+    const history = (chat && chat.history) || [];
+    let lastAiIndex = -1;
+    for (let i = history.length - 1; i >= 0; i--) {
+        const role = history[i] && history[i].role;
+        if (role === 'assistant' || role === 'model') { lastAiIndex = i; break; }
+    }
+    return history.slice(lastAiIndex + 1).filter(m => m && m.role === 'user');
+}
+
+/**
+ * 工具箱里那颗按钮的字。一颗按钮两种语义，不改字的话用户点下去才知道会发生
+ * 什么 —— 而弹出来的确认框写着"撤回"，和他刚点的"重新生成"对不上。
+ * ★ 用「撤回发言」而不是「撤回我的发言」：三颗 `.call-tool-item` 是 flex:1 等分，
+ *   字数跟另外两项（通话记录 / 重新生成）对齐才不会把那一格的文字挤到换行。
+ */
+function _syncCallRegenLabel() {
+    const label = document.querySelector('#call-regen-btn span');
+    if (!label) return;
+    const chat = db.characters.find(c => c.id === currentChatId);
+    label.textContent = (chat && _pendingCallUserMessages(chat).length)
+        ? '撤回发言' : '重新生成';
+}
+
+/**
+ * 撤回「我说了、对方还没回」的那批发言。
+ *
+ * ★ 二次确认是必需的，不是礼貌：下面是真删（内存 + 库），没有回收站。
+ *   按条数说出来，同 handleRegenerate 那个弹窗的口径。
+ * ★ 删完**不自动 getAiReply** —— 用户点这一下是为了重说，不是为了催回复。
+ *
+ * @returns {Promise<boolean>} true = 这一下已按"撤回"处理完（含用户点了取消），
+ *          调用方不要再往重新生成那条路上走。false = 对方已接过话，不该我管。
+ */
+async function _undoCallUserTurn(chat) {
+    const pending = _pendingCallUserMessages(chat);
+    if (!pending.length) return false;
+
+    const ids = pending.map(m => m && m.id).filter(Boolean);
+    if (ids.length !== pending.length) {
+        // deleteMessagesFromDB 按 id 删，缺 id 就只能删掉内存里那半边 ——
+        // 那比不删更糟（重开 App 它们会从库里复活）。宁可不动。
+        showToast('这条发言缺少标识，撤不回来');
+        return true;
+    }
+
+    const ok = await AppUI.confirm(
+        `对方还没接话。撤回你刚说的 ${pending.length} 条，然后可以重说一遍 —— 撤掉的找不回来。`,
+        '撤回发言', '确定撤回', '取消');
+    if (!ok) return true;
+
+    // 等确认那会儿后台可能已经开了一轮生成、或者 AI 的回复正好落了地 ——
+    // 拿弹窗弹出前算的那批去删就会删错东西。重新验一遍（同 handleRegenerate）。
+    if (typeof isGenerating !== 'undefined' && isGenerating) {
+        showToast('对方正在说话，请稍候。');
+        return true;
+    }
+    const nowPending = _pendingCallUserMessages(chat);
+    if (nowPending.length !== pending.length
+        || nowPending.some((m, i) => m.id !== pending[i].id)) {
+        showToast('聊天记录已变化，请重试。');
+        return true;
+    }
+
+    // 倒着原地 splice，不整体重新赋值 chat.history —— 别处（渲染、提示词拼装）
+    // 握着同一个数组引用，换掉的话它们看到的还是旧数组。
+    const doomed = new Set(ids);
+    for (let i = chat.history.length - 1; i >= 0; i--) {
+        const msg = chat.history[i];
+        if (msg && doomed.has(msg.id)) chat.history.splice(i, 1);
+    }
+
+    await deleteMessagesFromDB(ids);
+    await saveSingleChat(currentChatId, 'private');
+
+    // 用户区里的每一行都属于"对方还没回的那一轮"：AI 一回复完 chat_ai_service.js
+    // 就会 clearCallUserArea()，所以整块清掉正好对应刚删的这批，不用给每行挂 msgId。
+    clearCallUserArea();
+    if (typeof currentPage !== 'undefined') currentPage = 1;
+    if (typeof renderMessages === 'function') renderMessages(false, true);
+    if (typeof renderChatList === 'function') renderChatList();
+
+    // 把最后那句放回输入框：用户要的是"改一下再说"，不是单纯删掉。
+    // ★ 输入框里已经有字就不动它 —— 那是用户正在打的草稿，覆盖掉比没放回更糟。
+    const input = document.getElementById('call-message-input');
+    const lastText = _callMessageSpeech(pending[pending.length - 1].content);
+    let restored = false;
+    if (input && !input.value.trim() && lastText) {
+        input.value = lastText;
+        _toggleCallInput(true);
+        restored = true;
+    }
+
+    showToast(restored
+        ? `已撤回 ${pending.length} 条，最后一条放回输入框了`
+        : `已撤回 ${pending.length} 条`);
+    return true;
+}
+
 async function regenerateCallReply() {
     if (typeof isGenerating !== 'undefined' && isGenerating) {
         showToast('等待对方发言…');
@@ -637,6 +776,9 @@ async function regenerateCallReply() {
     if (!chat || !chat.callMode) return;
 
     closeCallToolbox();
+
+    // 对方还没接话 → 这一下是「撤回我刚说的」，到此为止
+    if (await _undoCallUserTurn(chat)) return;
 
     // handleRegenerate 会 splice 掉这一轮并整页重渲染 —— 正在响的那句必须先停，
     // 否则 blob 会挂在一个马上要被删掉的气泡上
@@ -688,13 +830,12 @@ function openCallHistory() {
             kind  = 'user';
             // 通话里用户发的话也存成语音气泡（[我的语音：…]），所以两种格式都要认 ——
             // 只认「的消息」的话，这通电话里自己说过的每一句都会在记录里显示成
-            // 带方括号的原始字符串
-            const match = m.content.match(/\[.*?(?:的消息|的语音)[:：]([\s\S]+?)\]$/);
-            text = match ? match[1] : m.content;
+            // 带方括号的原始字符串。抠取走 _callMessageSpeech（唯一一份）。
+            text = _callMessageSpeech(m.content);
         } else if (m.role === 'assistant') {
             label = chat.remarkName || chat.realName;
             kind  = 'ai';
-            const dialogueMatch  = m.content.match(/\[.*?(?:的消息|的语音)[:：]([\s\S]+?)\]$/);
+            const dialogueMatch  = m.content.match(CALL_DIALOGUE_RE);
             const narrationMatch = m.content.match(/^\[system-narration:([\s\S]+?)\]$/);
             if (dialogueMatch) {
                 text = dialogueMatch[1];
@@ -742,7 +883,12 @@ function _showCallOverlay(callMode, chat, isIncoming = false) {
     const bgBlur = document.getElementById('call-bg-blur');
     if (bgBlur) {
         if (chat.avatar) {
-            bgBlur.style.backgroundImage = `url('${chat.avatar}')`;
+            // 同一张图发给里面两层：far 是重模糊兜底（背景图）、near 是主层（<img>），
+            // 为什么非得拆成两层、为什么主层是 img，见 call_overlay.css 那段注释
+            const far = document.getElementById('call-bg-far');
+            const near = document.getElementById('call-bg-near');
+            if (far) far.style.backgroundImage = `url('${chat.avatar}')`;
+            if (near) near.src = chat.avatar;
             bgBlur.style.display = 'block';
         } else {
             bgBlur.style.display = 'none';

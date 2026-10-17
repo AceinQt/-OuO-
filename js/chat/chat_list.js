@@ -149,6 +149,7 @@ function setupChatListScreen() {
         const visionModal = document.getElementById('vision-api-modal');
         const visionForm = document.getElementById('vision-api-form');
         const visionSelect = document.getElementById('vision-api-preset-select');
+        const visionTimeoutInput = document.getElementById('vision-api-timeout-input');
 
         if (visionBtn && visionModal && visionForm && visionSelect) {
             visionBtn.addEventListener('click', () => {
@@ -166,16 +167,30 @@ function setupChatListScreen() {
                         visionSelect.appendChild(opt);
                     });
                 visionSelect.value = (db.globalVisionSettings || {}).apiPreset || '';
+                // 超时框填「实际生效值」而不是原始字段：老库没这个字段时显示默认 120，
+                // 口径和 chat_feature_basic.js 的 _getVisionTimeoutSec 完全一致
+                if (visionTimeoutInput) {
+                    visionTimeoutInput.value = (typeof clampVisionTimeoutSec === 'function')
+                        ? clampVisionTimeoutSec((db.globalVisionSettings || {}).timeoutSec)
+                        : ((db.globalVisionSettings || {}).timeoutSec || 120);
+                }
 
                 visionModal.classList.add('visible');
             });
 
             visionForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                db.globalVisionSettings = { ...(db.globalVisionSettings || {}), apiPreset: visionSelect.value };
+                const patch = { apiPreset: visionSelect.value };
+                // 留空回到默认，越界/乱填夹回合法区间（范围定义在 chat_feature_basic.js）
+                if (visionTimeoutInput) {
+                    patch.timeoutSec = (typeof clampVisionTimeoutSec === 'function')
+                        ? clampVisionTimeoutSec(visionTimeoutInput.value)
+                        : (Number(visionTimeoutInput.value) || 120);
+                }
+                db.globalVisionSettings = { ...(db.globalVisionSettings || {}), ...patch };
                 await saveGlobalKeys(['globalVisionSettings']);
                 visionModal.classList.remove('visible');
-                showToast('识图API已保存');
+                showToast(`识图API已保存（超时 ${db.globalVisionSettings.timeoutSec} 秒）`);
             });
 
             const visionCancelBtn = document.getElementById('vision-api-cancel-btn');

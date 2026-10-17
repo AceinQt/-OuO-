@@ -17,7 +17,7 @@
 //   一眼像 bug。所以这里 hh/HH/h/H **一律 24 小时制**，只有模板里出现了
 //   A（上午/下午）或 a（AM/PM）才整体切成 12 小时制 —— 想要 12 小时制的人
 //   本来就得写那个标记，不然读的人分不出早晚。这条规则在问号弹窗里明说了
-//   （文案在 bubble_css_preset.js 的 AppHelp.register('bubble', …)）。
+//   （文案在 bubble_css/help_text.js 的 AppHelp.register('bubble', …)）。
 //
 // ★ 不用顶层 const 存默认值：本文件被 tests/hidden_message_select.test.cjs 用 vm
 //   整份加载两次，顶层语句会重复声明报错。默认值就写在函数里。
@@ -166,10 +166,10 @@ function createMessageBubbleElement(message) {
     //   `[剧情旁白：…]`        —— 用户自己发的剧情旁白（"+"面板那项，只有一条，见
     //                            chat_feature_basic.js 的 sendTimeSkipMessage）
     // 用户那种多挂一个 narration-mine：外观里「旁白气泡」已经分我方/对方两套**独立**设置
-    // （bubble_css_preset.js 的 narration_sent / narration_received），我方默认不画描边，
+    // （bubble_css/state.js 的 narration_sent / narration_received），我方默认不画描边，
     // 这样一眼分得出是谁写的，想改也能各调各的。多条连成一张大卡片的拼接
     // 也只在**同类之间**发生，规则在 css/pages/chat/chat_room.css 和
-    // js/chat/bubble_css_preset.js 的生成端各有一份，两处必须一致。
+    // js/chat/bubble_css/generate.js 的生成端各有一份，两处必须一致。
     //
     // ★ 旧数据里那条隐藏的 `[剧情旁白：…]`（老的"AI 上下文双胞胎"）同样命中下面这个
     //   正则，但它带 isHidden，chat_room.js 的 _bubbleOrHiddenRow 在进工厂之前就拦掉了，

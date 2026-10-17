@@ -130,16 +130,38 @@
                 return _pick(db.apiSettings || {});
             }
 
-            // 调识图 API，返回图片的文字描述（非流式，60秒超时）
+            // 识图超时秒数。原来写死 60 秒，网络差时经常不够用（图片 base64 本身就要先传上去，
+            // 大图再加上模型思考，一百多秒很常见），所以开成设置项放在识图 API 弹窗里。
+            // ★ 老用户库里的 globalVisionSettings 只有 apiPreset 一个字段 —— loadData 是把
+            //   globalSettings 表的值整体赋给 db，不会和 database.js 里的默认值做合并，
+            //   所以必须在这里兜底，别指望 schema 默认值能补上。
+            // ★ 这三个常量是取值范围的唯一真相源：弹窗 input 的 min/max 和 chat_list.js
+            //   保存时的校验都走 clampVisionTimeoutSec，改范围只动这里。
+            const VISION_TIMEOUT_DEFAULT_SEC = 120;
+            const VISION_TIMEOUT_MIN_SEC = 10;
+            const VISION_TIMEOUT_MAX_SEC = 600;
+
+            // 非数字/空/越界都收敛成合法值：备份恢复和手改数据库都可能塞进脏数据
+            function clampVisionTimeoutSec(value) {
+                const n = Number(value);
+                if (!Number.isFinite(n) || n <= 0) return VISION_TIMEOUT_DEFAULT_SEC;
+                return Math.min(VISION_TIMEOUT_MAX_SEC, Math.max(VISION_TIMEOUT_MIN_SEC, Math.round(n)));
+            }
+
+            function _getVisionTimeoutSec() {
+                return clampVisionTimeoutSec((db.globalVisionSettings || {}).timeoutSec);
+            }
+
+            // 调识图 API，返回图片的文字描述。Flex 时实际等待至少 10 分钟，
+            // 只扩大本次请求，不改写用户保存的普通识图超时秒数。
             async function requestImageDescription(dataUrl, chat) {
-                const cfg = _getVisionApiConfig(chat);
+                const cfg = normalizeLLMConfig(_getVisionApiConfig(chat));
                 const { url, key, model, provider } = cfg;
                 if (!url || !key || !model) throw new Error('识图API未配置完整');
 
-                // 端点与鉴权头统一由 llm_client.js 决定（多 key 轮询也在它内部）
-                const { endpoint, headers } = buildLLMRequestTarget(cfg, { stream: false });
+                const timeoutSec = getLLMTimeout(cfg, _getVisionTimeoutSec() * 1000) / 1000;
                 const controller = new AbortController();
-                const timer = setTimeout(() => controller.abort(), 60000);
+                const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
                 try {
                     let body;
@@ -175,10 +197,13 @@
                         };
                     }
 
-                    const response = await fetch(endpoint, {
+                    // 识图自己保留图文组装/解析，但 Flex 与聊天共用发送入口，
+                    // 不能只借端点和鉴权头，否则 Gemini 的顶层计费字段会漏掉。
+                    const request = buildLLMRequest(cfg, body, { stream: false });
+                    const response = await fetch(request.endpoint, {
                         method: 'POST',
-                        headers: headers,
-                        body: JSON.stringify(body),
+                        headers: request.headers,
+                        body: JSON.stringify(request.body),
                         signal: controller.signal
                     });
 
@@ -195,7 +220,7 @@
                             .map(p => p.text).join('')
                         : (json.choices?.[0]?.message?.content || '');
                 } catch (err) {
-                    if (err.name === 'AbortError') throw new Error('请求超时（60秒）');
+                    if (err.name === 'AbortError') throw new Error(`请求超时（${timeoutSec}秒）`);
                     throw err;
                 } finally {
                     clearTimeout(timer);

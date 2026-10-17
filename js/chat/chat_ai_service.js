@@ -129,7 +129,7 @@ function getMixedContent(responseData) {
 // ==========================================
 function getFriendlyErrorMessage(error) {
     if (error.name === 'AbortError') return '请求超时了，请检查您的网络或稍后再试。';
-    if (error instanceof SyntaxError) return '服务器返回的数据格式不对，建议您点击“重回”按钮再试一次。';
+    if (error instanceof SyntaxError) return '服务器返回的数据格式不对，建议您点击“重新生成”按钮再试一次。';
     if (error.response) {
         const status = error.response.status;
         switch (status) {
@@ -781,8 +781,9 @@ async function getAiReply(chatId, chatType, isBackground = false, proactiveApiPr
             x.name === _overrideName && (!x.type || x.type === 'chat')
         );
         if (_preset && _preset.data) {
-            // 合并：预设覆盖全局
-            effectiveApiSettings = { ...db.apiSettings, ..._preset.data };
+            // 其余字段保留全局兜底；Flex 属于当前预设，旧预设缺字段就是关闭。
+            effectiveApiSettings = { ...db.apiSettings, ..._preset.data,
+                flexEnabled: !!_preset.data.flexEnabled };
         }
     }
     
@@ -813,7 +814,8 @@ async function getAiReply(chatId, chatType, isBackground = false, proactiveApiPr
             document.getElementById('call-identity')?.classList.add('ai-generating');
         }
         getReplyBtn.disabled = true;
-        regenerateBtn.disabled = true;
+        // 「重新生成」已挪进"+"面板，是个 div 没有 disabled 可置，改走 class 置灰
+        if (typeof setRegenerateBusy === 'function') setRegenerateBusy(true);
         const typingName = chatType === 'private' ? chat.remarkName : chat.name;
         
 let actionStatusText = '正在输入中...';
@@ -1082,10 +1084,11 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
 requestBody = { model: model, messages: apiMessages, stream: streamEnabled, temperature: _temp };
         }
 
-        // 端点与鉴权头统一由 llm_client.js 的 buildLLMRequestTarget 决定
-        // （多 key 轮询也在它内部做，所以这里不用再 getRandomValue）
-        const { endpoint, headers } = buildLLMRequestTarget(
+        // 聊天保留自己的 prompt/SSE 渲染，但发送前必须过共享请求构造，
+        // 只借端点函数会漏掉 Gemini 的 Flex body（曾经开关开着也没发出去）。
+        const { endpoint, headers, body } = buildLLMRequest(
             normalizeLLMConfig(effectiveApiSettings),
+            requestBody,
             { stream: streamEnabled }
         );
 
@@ -1093,7 +1096,7 @@ requestBody = { model: model, messages: apiMessages, stream: streamEnabled, temp
 const response = await fetch(endpoint, {
     method: 'POST',
     headers: headers,
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify(body),
     signal: callAbortController.signal                // ← 挂载信号
 });
         if (!response.ok) {
@@ -1138,7 +1141,7 @@ const response = await fetch(endpoint, {
             document.getElementById('call-switch-btn')?.removeAttribute('disabled');
 document.getElementById('call-mic-btn')?.removeAttribute('disabled');
             getReplyBtn.disabled = false;
-            regenerateBtn.disabled = false;
+            if (typeof setRegenerateBusy === 'function') setRegenerateBusy(false);
             typingIndicator.style.display = 'none';
             // ★ 移除通话光晕
             document.getElementById('call-identity')?.classList.remove('ai-generating');
@@ -1233,6 +1236,27 @@ async function handleRegenerate() {
 
     if (lastInputIndex === -1 || lastInputIndex === chat.history.length - 1) {
         showToast('AI尚未回复，无法重新生成。');
+        return;
+    }
+
+    // ★ 二次确认是必需的，不是礼貌：下面那个 splice 把 AI 最后那段回复**直接丢掉**，
+    //   没有回收站也没有撤销。按条数说出来，让人知道这一下要删掉的是一条还是七八条
+    //   （一次回复常被断行拆成好几条气泡）。
+    const dropCount = chat.history.length - 1 - lastInputIndex;
+    const ok = await AppUI.confirm(
+        `将丢弃 AI 最后那段回复（${dropCount} 条消息）并重新生成，丢掉的找不回来。`,
+        '重新生成', '确定重新生成', '取消'
+    );
+    if (!ok) return;
+
+    // 等确认那会儿后台可能已经开了一轮生成、或者投递了主动消息把 history 接上了 ——
+    // 拿弹窗弹出前算的下标去 splice 会砍掉不该砍的，所以重新验一遍。
+    if (isGenerating) {
+        showToast('正在生成中，请稍候。');
+        return;
+    }
+    if (chat.history.length - 1 !== lastInputIndex + dropCount) {
+        showToast('聊天记录已变化，请重试。');
         return;
     }
 

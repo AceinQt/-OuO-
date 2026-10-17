@@ -78,7 +78,9 @@ window.db = {
     // ★ 识图 API 设置（长按图片"转化为文字"时使用）
     //   apiPreset: 预设名；空字符串 = 同聊天API（跟随每个聊天自己的 chatApiPreset）
     //   一旦指定预设，所有聊天的图片转化都走它
-    globalVisionSettings: { apiPreset: '' },
+    //   timeoutSec: 单张识图的超时秒数（10–600，默认 120）。老库里没这个字段，
+    //   由读取端 chat_feature_basic.js 的 _getVisionTimeoutSec 兜底，别依赖这里补齐
+    globalVisionSettings: { apiPreset: '', timeoutSec: 120 },
 
     // ★ GitHub 仓库定义 + 用途绑定（见 js/api/github_repo_api.js）
     //   githubRepos:    [{ id, name, token, username, repo, branch }]

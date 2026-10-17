@@ -372,7 +372,8 @@ const chatRoomScreen = document.getElementById('chat-room-screen'),
                 deleteSelectedBtn = document.getElementById('delete-selected-btn'),
                 forwardSelectedBtn = document.getElementById('forward-selected-btn');
 
-const regenerateBtn = document.getElementById('regenerate-btn');
+// 「重新生成」（原名「重回」）已从底栏挪进"+"面板（误触代价太大：它会连带删掉 AI 最后那段回复）。
+// 入口是面板里 data-action="regenerate" 那一项，置灰走 setRegenerateBusy。
 
 const stickerToggleBtn = document.getElementById('sticker-toggle-btn'),
                 stickerModal = document.getElementById('sticker-modal'),
@@ -401,15 +402,31 @@ function setupChatRoom() {
     const chatExpansionPanel = document.getElementById('chat-expansion-panel');
 
     // 1. 加号按钮逻辑
-    placeholderPlusBtn.addEventListener('click', () => {
+    //    ★ 有**两颗**加号：工具栏上那颗 #placeholder-plus-btn，和收纳工具栏后顶替它、
+    //      住在输入框右边的 #inline-plus-btn。同一时刻只有一颗可见（CSS 决定），
+    //      但行为必须一模一样，所以共用这个 handler 而不是各写一份。
+    //    开关面板本身的四件事（重排页 / 加号转 × / 消息区让位 / 跟着滚）都在
+    //    setChatExpansionPanelOpen 里，这里只管「开之前要先收拾什么」。
+    const togglePlusPanel = () => {
         if (stickerModal.classList.contains('visible')) {
             stickerModal.classList.remove('visible');
         }
 
         // 面板是单例复用的，开之前必须按当前会话重新点灯
         syncChatExpansionActiveState();
-        chatExpansionPanel.classList.toggle('visible');
-    });
+
+        setChatExpansionPanelOpen(!chatExpansionPanel.classList.contains('visible'));
+    };
+    placeholderPlusBtn.addEventListener('click', togglePlusPanel);
+    document.getElementById('inline-plus-btn')?.addEventListener('click', togglePlusPanel);
+
+    // 点输入框 = 要打字，面板得让位给输入法（QQ/微信都是这个行为）。
+    // 面板高度(~235px)和安卓输入法高度差不多纯属巧合 —— 它是内容撑出来的（两行图标 + 圆点），
+    // 不是照着键盘量的，所以别想着「让面板原地变成键盘」把底栏钉住：那得盯
+    // visualViewport 的 resize 自己算键盘高度，是另一摊事。现在就是单纯收起来。
+    // 用 focus 而不是 click：移动端点输入框先 focus 再 click，而且别处 .focus() 唤起键盘的
+    // 路径（chat_actions.js 点「回复」那下）同样该收面板。
+    messageInput.addEventListener('focus', () => setChatExpansionPanelOpen(false));
     
     // ★ sendMessage 是 fire-and-forget（三处调用点都不 await），异常默认只会变成
     //   静默的 unhandled rejection —— 曾经因此让"消息没落库"的 ReferenceError 毫无征兆。
@@ -445,6 +462,17 @@ function setupChatRoom() {
         if (e.key === 'Enter' && !isGenerating) {
             e.preventDefault();
             _safeSendMessage();
+        }
+    });
+    // 「收纳 AI 回复」那一档（外观→底栏）：按钮住在输入框**内部**右侧，靠包装层的
+    // :focus-within 只在输入框有焦点时浮出来。于是点它的那一下有个陷阱 ——
+    // mousedown 的默认行为会把焦点从输入框挪走（iOS 上顺带收键盘），:focus-within
+    // 当场变假、按钮被 opacity:0 + pointer-events:none 藏掉，后面的 click 就打空了
+    // （症状是"点了没反应"，而且只在收纳态下复现）。preventDefault 让焦点压根不动。
+    // ★ 只在收纳态下拦：常态那颗在输入框外面，点它顺手收起键盘是原本的行为，别改。
+    getReplyBtn.addEventListener('mousedown', (e) => {
+        if (document.getElementById('chat-room-screen')?.classList.contains('bar-collapse-reply')) {
+            e.preventDefault();
         }
     });
     getReplyBtn.addEventListener('click', async () => {
@@ -507,12 +535,32 @@ function setupChatRoom() {
         // 4. 正常调用获取 AI 回复
         getAiReply(currentChatId, currentChatType);
     });
-    regenerateBtn.addEventListener('click', handleRegenerate);
 
 // ==========================================
     // 【核心修复】双向滚动监听 (加入无感预加载)
     // ==========================================
     messageArea.addEventListener('scroll', () => {
+        // ⚠️ 隐藏态送达的 scroll 事件一律丢掉 —— 这不是防御性冗余，是修一个真 bug。
+        //    `.screen` 之间靠 display:none 互斥，而 display:none 的元素**没有布局盒**，
+        //    scrollTop / scrollHeight / clientHeight 三个读数全是 0（实测）。于是下面
+        //    两个判据在隐藏态**双双无条件成立**：上翻 `0 < 50`、下翻 `0-0-0 < 50`，
+        //    等于凭空替用户滚了一次到顶 + 一次到底。
+        //    事件从哪来：scroll 事件是**异步派发**的。离开聊天室时 _screenLeaveHooks 先调
+        //    closeChatRoomPanels → setChatExpansionPanelOpen(false) → `scrollTop -= h`
+        //    （见那个函数第 ④ 条），此时页面还可见；紧接着同一个 task 里 switchScreen 把
+        //    聊天室 display:none 掉，排队中的 scroll 事件这才送达 —— 处理器重新读 scrollTop
+        //    就读成 0 了。所以只要「从 + 面板点进记忆总结/喵坛等别的页」就会踩上。
+        //    后果不在当场而在返回时：loadMoreMessages 延迟 200ms 渲染，人在那边多待一会儿
+        //    （比如在详情页滑两下）这一页就在隐藏态前插进 DOM，而 renderMessages 的位置补偿
+        //    `newScrollHeight - oldScrollHeight + oldScrollTop` 三项全是 0、完全失效；
+        //    Chrome 在重新显示时会把隐藏前那个「贴底」偏移量原样恢复，上方却凭空多了一页
+        //    （MESSAGES_PER_PAGE=50 条），表现为「返回聊天室后往上翻了很多」。
+        //    秒回则 200ms 还没到、渲染发生在可见态，补偿正常 —— 这就是它时灵时不灵的原因。
+        //    用 clientHeight 而不是查 #chat-room-screen 有没有 .active：0 高度正是
+        //    「这些读数不可信」的充要条件，顺带盖住别的隐藏方式（见记忆里那条
+        //    「属性读数和几何量值对不上时信几何」）。
+        if (!messageArea.clientHeight) return;
+
         // 1. 向上滚动：加载历史消息 (Older)
         if (messageArea.scrollTop < 50) {
             const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
@@ -564,8 +612,11 @@ function setupChatRoom() {
             stickerModal.classList.remove('visible');
             return;
         }
+        // ⚠️ 必须走 setChatExpansionPanelOpen：这里曾经是裸 classList.remove('visible')，
+        //    症状是「点空白关掉面板后，加号还卡在 ×、消息区还按面板在的尺寸留白」——
+        //    面板自己是消失了，另外三件事（加号转回 +、收回 --exp-panel-h、退滚动）全没做。
         if (chatExpansionPanel.classList.contains('visible')) {
-            chatExpansionPanel.classList.remove('visible');
+            setChatExpansionPanelOpen(false);
             return;
         }
 
@@ -712,7 +763,35 @@ let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
 // "+"面板里属于"隔着手机才成立"的线上功能，线下模式（面对面）下要禁用。
 // sticker bar 上的转账/语音/照片由 updateOfflineModeUI 用 disabled 属性禁；
 // 面板项是 div，只能靠 class 置灰 + 点击拦截，所以清单放在这里。
-const OFFLINE_DISABLED_EXPANSION_ACTIONS = ['send-location-modal', 'send-share-modal'];
+// ⚠️ 收纳进来的 relay-* 也要列进来：它们转手去 click 底栏那颗真按钮，而那颗在线下模式下
+//    是 disabled 的 —— 不列的话点下去**什么都不会发生**，连"为什么没反应"的提示都没有。
+const OFFLINE_DISABLED_EXPANSION_ACTIONS = [
+    'send-location-modal', 'send-share-modal',
+    'relay-sticker', 'relay-wallet', 'relay-voice', 'relay-image', 'relay-photo', 'relay-call'
+];
+
+// 收纳位 → 底栏/顶栏上那颗真按钮。点收纳位就是替用户按一下原按钮，
+// 弹窗、文件选择、通话那套逻辑一份都不用抄。
+// ⚠️ 原按钮此时是 display:none 的（整条 #sticker-bar 被收起来了），但 .click() 照样派发事件 ——
+//    靠的是"藏起来"而不是"拆掉"，所以这些功能的绑定、禁用、状态全都还是原来那一套。
+const EXPANSION_RELAY_BTNS = {
+    'relay-sticker': 'sticker-toggle-btn',
+    'relay-wallet':  'wallet-btn',
+    'relay-voice':   'voice-message-btn',
+    'relay-image':   'image-recognition-btn',
+    'relay-photo':   'photo-video-btn',
+    'relay-call':    'video-call-btn'
+};
+
+/**
+ * 「重新生成」现在住在"+"面板里，是个 div，没有 disabled 属性可用。
+ * 生成期间沿用面板自己那套 .disabled 置灰（和线下模式共用一个样式），
+ * 真正拦住重复触发的是 handleRegenerate 开头的 isGenerating 判断。
+ */
+function setRegenerateBusy(busy) {
+    document.querySelector('.expansion-item[data-action="regenerate"]')
+        ?.classList.toggle('disabled', !!busy);
+}
 
 /**
  * 把"+"面板里与会话绑定的开关（线下模式 / 后台消息）对齐到当前会话的真实状态，
@@ -747,6 +826,147 @@ function syncChatExpansionActiveState(chatId = currentChatId, chatType = current
     });
 }
 
+// ======================= "+"面板的横向翻页 =======================
+// 一页 4 列 × 2 行。为什么要 JS 参与而不是纯 CSS：面板里 15 项有 6 项是**收纳位**，
+// 显示与否由 #chat-room-screen 上的 bar-collapse-* / is-group-chat 决定，
+// 所以「可见项」是 9~15 项之间浮动的，页的边界只能现算。
+const EXPANSION_ITEMS_PER_PAGE = 8;
+
+/**
+ * 把平铺的 .expansion-item 重新装进 .expansion-page（每页 8 个**可见**项）。
+ *
+ * 隐藏项（收纳位关着的时候）不占格子、不计入页数，但必须留在 DOM 里 ——
+ * 它们挂着 active / disabled 状态，而且开关一开就得原地复活（见 setupChatExpansionPanel
+ * 里那段「全画出来、CSS 只放开该放的」）。做法是攒着，跟到下一个可见项所在的那一页，
+ * 这样顺序不乱、也不会单独凑出一个「整页都是隐藏项」的空页占掉一个吸附位。
+ *
+ * 判可见用 getComputedStyle 而不是 offsetParent/getBoundingClientRect：
+ * 调用时机是**面板还没显示**（togglePlusPanel 里先排版再加 .visible），
+ * 此时整个面板 display:none，所有量出来都是 0；而 display 的计算值不受祖先影响，
+ * 照样能读到 .stow-* 那几条规则的结果。
+ */
+function layoutChatExpansionPages() {
+    const grid = document.getElementById('chat-expansion-grid');
+    if (!grid) return;
+    const items = Array.from(grid.querySelectorAll('.expansion-item'));
+    if (!items.length) return;
+
+    const frag = document.createDocumentFragment();
+    const newPage = () => {
+        const p = document.createElement('div');
+        p.className = 'expansion-page';
+        frag.appendChild(p);
+        return p;
+    };
+
+    let page = null, shown = 0, pending = [];
+    items.forEach(el => {
+        if (getComputedStyle(el).display === 'none') { pending.push(el); return; }
+        if (!page || shown % EXPANSION_ITEMS_PER_PAGE === 0) page = newPage();
+        pending.forEach(hidden => page.appendChild(hidden));
+        pending = [];
+        page.appendChild(el);
+        shown++;
+    });
+    // 末尾那串隐藏项（没有后续可见项可以跟）挂在最后一页上
+    if (pending.length) {
+        if (!page) page = newPage();
+        pending.forEach(hidden => page.appendChild(hidden));
+    }
+
+    // items 已经被 appendChild 搬进 frag 了，grid 里剩下的只有上一轮的空页壳
+    grid.replaceChildren(frag);
+    syncChatExpansionDots();
+}
+
+/**
+ * 按当前页数补齐圆点、并点亮正在看的那一页。
+ * 只有一页时**一个都不渲染** —— CSS 的 .expansion-dots:empty 会把那一行高度也收掉。
+ */
+function syncChatExpansionDots() {
+    const grid = document.getElementById('chat-expansion-grid');
+    const dots = document.getElementById('chat-expansion-dots');
+    if (!grid || !dots) return;
+
+    const pageCount = grid.querySelectorAll('.expansion-page').length;
+    const wanted = pageCount > 1 ? pageCount : 0;
+    if (dots.children.length !== wanted) {
+        dots.replaceChildren(...Array.from({ length: wanted }, (_, i) => {
+            const d = document.createElement('span');
+            d.className = 'dot';
+            d.dataset.page = String(i);
+            return d;
+        }));
+    }
+    if (!wanted) return;
+
+    // 面板没显示时 clientWidth 是 0，除出来是 NaN/Infinity —— 退回第 0 页
+    const width = grid.clientWidth;
+    const current = width
+        ? Math.max(0, Math.min(wanted - 1, Math.round(grid.scrollLeft / width)))
+        : 0;
+    Array.from(dots.children).forEach((d, i) => d.classList.toggle('active', i === current));
+}
+
+/** 每次打开面板都回到第一页（和微信一致），顺手把圆点点回去 */
+function resetChatExpansionPage() {
+    const grid = document.getElementById('chat-expansion-grid');
+    if (!grid) return;
+    grid.scrollLeft = 0;
+    syncChatExpansionDots();
+}
+
+/**
+ * 开 / 关 "+"面板。**所有**入口都必须走这里，别自己去 classList.toggle('visible') ——
+ * 开一次面板要连着做四件事，散在各处写必然漂（面板有 6 个关闭点：点加号、点消息区空白、
+ * 点输入框、开表情面板、点面板里的项、离开聊天室/进多选）：
+ *
+ *   ① 重排页 —— 收纳开关是按预设存的，换个聊天「可见项有几个」就变了，页边界得现算。
+ *   ② 两颗加号转成 ×（加 .plus-active）。漏一处的症状是「面板关了，加号还是个叉」。
+ *   ③ 量出面板实高写进 --exp-panel-h —— 消息区的底部留白和"正在输入"的落点都是按
+ *      --chat-foot-total 算的，它把这个值叠进去（见 chat_room.css 开头那段）。
+ *      必须现量不能写死：一页 8 个和末页 1 行，高度差着 ~90px。
+ *      ⚠️ 这条 custom property 就是「面板开着」的**唯一**状态载体，不要再另挂一个
+ *      表示同一件事的 class：两份状态就有对不上的那天，而 CSS 这边
+ *      var(--exp-panel-h, 0px) 的兜底已经等价于「没开」。
+ *   ④ 把列表往下滚同样的距离 —— 面板现在是把底栏**顶上去**，不顶的话原来贴着输入栏的
+ *      那几条消息会被升高后的底栏盖住。③ 的 padding 是这一步的前提：贴底时 scrollTop
+ *      已经到顶格，没有多出来的 padding 根本滚不动。
+ */
+function setChatExpansionPanelOpen(open) {
+    const panel = document.getElementById('chat-expansion-panel');
+    if (!panel) return;
+    // 幂等：关着的时候再关一次，不能把消息列表又往回滚一截
+    if (panel.classList.contains('visible') === !!open) return;
+
+    const screen = document.getElementById('chat-room-screen');
+    const messageArea = document.getElementById('message-area');
+
+    if (open) {
+        // ★ 排版必须在加 .visible **之前**，否则用户会看见「先排好 1 页、再跳成 2 页」那一帧
+        layoutChatExpansionPages();
+        panel.classList.add('visible');
+        // 高度要等真的显示出来才量得到（display:none 时 offsetHeight 恒为 0）。
+        // slideUp 动画走的是 transform，不改布局，这里量到的就是最终高度。
+        const h = panel.offsetHeight;
+        screen?.style.setProperty('--exp-panel-h', `${h}px`);
+        // 回第一页同样要等显示 —— display:none 时 scrollLeft 写不进去
+        resetChatExpansionPage();
+        if (messageArea) messageArea.scrollTop += h;
+    } else {
+        // 关的时候面板还在，高度照样量得到，不用把 h 存下来
+        const h = panel.offsetHeight;
+        // ⚠️ 顺序：先退滚动，再收 padding。反过来的话浏览器会先把 scrollTop 按变短了的
+        //    内容夹一次，再减就多退了一截，看上去是「一关面板列表往回跳半屏」。
+        if (messageArea) messageArea.scrollTop -= h;
+        screen?.style.removeProperty('--exp-panel-h');
+        panel.classList.remove('visible');
+    }
+
+    document.getElementById('placeholder-plus-btn')?.classList.toggle('plus-active', !!open);
+    document.getElementById('inline-plus-btn')?.classList.toggle('plus-active', !!open);
+}
+
 /**
  * 关闭聊天室里所有"浮在页面上"的临时 UI：底部 + 面板、表情面板、设置侧边栏、
  * 通话记录侧栏、通话记录折叠浮动按钮。离开聊天室时由 _screenLeaveHooks 自动调用。
@@ -756,7 +976,7 @@ function syncChatExpansionActiveState(chatId = currentChatId, chatType = current
  */
 function closeChatRoomPanels() {
     // 这两个是裸 .visible 的普通 div，switchScreen 的遮罩清理覆盖不到，必须手动关
-    document.getElementById('chat-expansion-panel')?.classList.remove('visible');
+    setChatExpansionPanelOpen(false);
     document.getElementById('sticker-modal')?.classList.remove('visible');
     if (typeof exitStickerManageMode === 'function') exitStickerManageMode();
 
@@ -828,6 +1048,12 @@ if (window.NotifyCenter && typeof NotifyCenter.clearChatNotifications === 'funct
             callBtn.style.display = 'flex'; // 私聊显示 (使用 flex 以保持图标居中)
         }
     }
+    // 群聊标记挂在屏幕上，供 CSS 压掉"+"面板里的通话收纳位。
+    // ★ 为什么不像上面那样直接改那一项的 inline display：收纳位的显示是 CSS 驱动的
+    //   （.bar-collapse-call 放开），inline 和 class 混着用，下次换会话时谁覆盖谁要看顺序。
+    //   统一成两条 CSS 规则，群聊那条带 !important，关系是写死的、不随调用顺序漂。
+    document.getElementById('chat-room-screen')
+        ?.classList.toggle('is-group-chat', type === 'group');
                 chatRoomTitle.textContent = (type === 'private') ? chat.remarkName : chat.name;
                 const subtitle = document.getElementById('chat-room-subtitle');
                 
@@ -1103,6 +1329,23 @@ function _calcInitialStart(chat) {
 function renderMessages(isLoadMore = false, forceScrollToBottom = false) {
     const chat = (currentChatType === 'private') ? db.characters.find(c => c.id === currentChatId) : db.groups.find(g => g.id === currentChatId);
     if (!chat || !chat.history) return;
+
+    // ⚠️ 第二道闸：**前插这一页绝不能在隐藏态执行**。
+    //    上面那个 scroll 守卫挡住的是「隐藏态凭空触发」，这里挡的是另一半 ——
+    //    用户**真的**滚到顶触发了加载，然后在渲染落地前离开了聊天室：
+    //    loadMoreMessages 要等 200ms，loadOlderFromDB 还要 await 一次 DB 读，
+    //    这两个窗口里换页完全来得及。一旦落在隐藏态，下面场景 B 的位置补偿
+    //    `newScrollHeight - oldScrollHeight + oldScrollTop` 三项全读成 0（没有布局盒），
+    //    补偿变成空操作，而 DOM 顶部已经实实在在多了一页 —— 返回时 Chrome 恢复
+    //    隐藏前的偏移量，人就被顶到一页之上，和那个 bug 一模一样。
+    //    直接放弃本次渲染并解锁：数据和游标都没动（loadOlderFromDB 的 unshift + 游标平移
+    //    已经自洽，只是 DOM 还没吃到这一页），下次可见态滚到顶会自然补上，不会丢消息。
+    //    只拦 isLoadMore：全量重绘（场景 C）不靠补偿、自己会 forceToBottom，隐藏态跑也无害，
+    //    而且进聊天室那一下本来就可能赶在显示之前。
+    if (isLoadMore && !messageArea.clientHeight) {
+        isLoadingHistory = false;
+        return;
+    }
 
     // 1. 【关键】记录插入前的滚动高度和当前滚动位置
     const oldScrollHeight = messageArea.scrollHeight;
@@ -2027,10 +2270,10 @@ function formatSmartTime(timestamp) {
                     },
 
                     {
-                        id: 'send-share-modal',
-                        name: '转发分享',
-                        icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path fill-rule="evenodd" clip-rule="evenodd" d="M1 18.5088C1 13.1679 4.90169 8.77098 9.99995 7.84598V5.51119C9.99995 3.63887 12.1534 2.58563 13.6313 3.73514L21.9742 10.224C23.1323 11.1248 23.1324 12.8752 21.9742 13.7761L13.6314 20.2649C12.1534 21.4144 10 20.3612 10 18.4888V16.5189C7.74106 16.9525 5.9625 18.1157 4.92778 19.6838C4.33222 20.5863 3.30568 20.7735 2.55965 20.5635C1.80473 20.3511 1.00011 19.6306 1 18.5088ZM12.4034 5.31385C12.2392 5.18613 11.9999 5.30315 11.9999 5.51119V9.41672C11.9999 9.55479 11.8873 9.66637 11.7493 9.67008C8.09094 9.76836 4.97774 12.0115 3.66558 15.1656C3.46812 15.6402 3.31145 16.1354 3.19984 16.6471C3.07554 17.217 3.00713 17.8072 3.00053 18.412C3.00018 18.4442 3 18.4765 3 18.5088C3.00001 18.6437 3.18418 18.6948 3.25846 18.5822C3.27467 18.5577 3.29101 18.5332 3.30747 18.5088C3.30748 18.5088 3.30746 18.5088 3.30747 18.5088C3.63446 18.0244 4.01059 17.5765 4.42994 17.168C4.71487 16.8905 5.01975 16.6313 5.34276 16.3912C7.05882 15.1158 9.28642 14.3823 11.7496 14.3357C11.8877 14.3331 12 14.4453 12 14.5834V18.4888C12 18.6969 12.2393 18.8139 12.4035 18.6862L20.7463 12.1973C20.875 12.0973 20.875 11.9028 20.7463 11.8027L12.4034 5.31385Z"/>
+                        id: 'regenerate',
+                        name: '重新生成',
+                        icon: `<svg viewBox="0 0 24 24" class="ic-line" xmlns="http://www.w3.org/2000/svg">
+<path d="M21 3V8M21 8H16M21 8L18 5.29168C16.4077 3.86656 14.3051 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21C16.2832 21 19.8675 18.008 20.777 14"/>
 </svg>`
                     },
                     {
@@ -2057,6 +2300,76 @@ function formatSmartTime(timestamp) {
 <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 13.5997 2.37562 15.1116 3.04346 16.4525C3.22094 16.8088 3.28001 17.2161 3.17712 17.6006L2.58151 19.8267C2.32295 20.793 3.20701 21.677 4.17335 21.4185L6.39939 20.8229C6.78393 20.72 7.19121 20.7791 7.54753 20.9565C8.88837 21.6244 10.4003 22 12 22Z" stroke="#555" stroke-width="2" fill="none"/>
 </svg>`
                     },
+                    // ===== 以下 5 项是底栏工具栏的收纳位 =====
+                    // 它们**一直**在面板的 DOM 里，默认 display:none（chat_room.css 的 .stow-toolbar），
+                    // 外观→底栏→「收纳工具栏」打开时才放出来。为什么不按需增删节点：
+                    // 这个面板是全局单例、只在启动时 setupChatExpansionPanel 一次，而收纳开关
+                    // 是**按预设存的**（每个聊天可以不一样），换聊天要重建就得把点击委托一起重来。
+                    // 和「消息时间三个槽位」同一个套路：全画出来，CSS 只放开该放的那个。
+                    // 这 5 项自己不干活，点了就去 click 底栏上那颗真按钮（EXPANSION_RELAY_BTNS），
+                    // 省得把弹窗/文件选择那套逻辑再抄一份。
+                    // ⚠️ 图标必须和底栏那颗**同一张**（见 index.html 的 #sticker-bar）：
+                    //    它们是同一个功能的两个入口，开着收纳开关时底栏那颗根本不露脸，
+                    //    一旦两边各画一张，用户拨一下开关就会觉得功能都换了。
+                    //    .ic-line 的含义同底栏：svg 里只留几何，颜色/线宽交给
+                    //    chat_modal.css 的 .expansion-item-icon svg.ic-line。
+                    {
+                        id: 'relay-sticker',
+                        name: '发送表情',
+                        stow: 'toolbar',
+                        icon: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path d="M14.9348 13.1725C15.3654 13.3446 15.5817 13.8402 15.3237 14.2255C15.0294 14.665 14.6493 15.0442 14.2032 15.3386C13.522 15.7881 12.7196 16.0185 11.9037 15.9988C11.0878 15.9792 10.2975 15.7104 9.6387 15.2287C9.20726 14.9131 8.8458 14.5161 8.573 14.0629C8.33384 13.6656 8.57376 13.181 9.01216 13.0299C9.45056 12.8788 9.91919 13.1274 10.2157 13.4839C10.3367 13.6294 10.4756 13.7603 10.63 13.8732C11.0122 14.1527 11.4708 14.3087 11.9441 14.3201C12.4175 14.3315 12.883 14.1978 13.2782 13.937C13.4379 13.8316 13.583 13.7076 13.7108 13.5681C14.0241 13.2262 14.5042 13.0005 14.9348 13.1725Z"/>
+<path d="M10 9C10 8.44772 9.55228 8 9 8C8.44772 8 8 8.44772 8 9V10C8 10.5523 8.44772 11 9 11C9.55228 11 10 10.5523 10 10V9Z"/>
+<path d="M16 9C16 8.44772 15.5523 8 15 8C14.4477 8 14 8.44772 14 9V10C14 10.5523 14.4477 11 15 11C15.5523 11 16 10.5523 16 10V9Z"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12ZM12 4C7.58172 4 4 7.58172 4 12C4 16.4183 7.58172 20 12 20C16.4183 20 20 16.4183 20 12C20 7.58172 16.4183 4 12 4Z"/>
+</svg>`
+                    },
+                    {
+                        id: 'relay-wallet',
+                        name: '发送转账',
+                        stow: 'toolbar',
+                        icon: `<svg viewBox="0 0 24 24" class="ic-line" xmlns="http://www.w3.org/2000/svg">
+<path d="M13 9H7"/>
+<path d="M22 10.9699V13.03C22 13.58 21.56 14.0299 21 14.0499H19.0399C17.9599 14.0499 16.97 13.2599 16.88 12.1799C16.82 11.5499 17.0599 10.9599 17.4799 10.5499C17.8499 10.1699 18.36 9.94995 18.92 9.94995H21C21.56 9.96995 22 10.4199 22 10.9699Z"/>
+<path d="M17.48 10.55C17.06 10.96 16.82 11.55 16.88 12.18C16.97 13.26 17.96 14.05 19.04 14.05H21V15.5C21 18.5 19 20.5 16 20.5H7C4 20.5 2 18.5 2 15.5V8.5C2 5.78 3.64 3.88 6.19 3.56C6.45 3.52 6.72 3.5 7 3.5H16C16.26 3.5 16.51 3.50999 16.75 3.54999C19.33 3.84999 21 5.76 21 8.5V9.95001H18.92C18.36 9.95001 17.85 10.17 17.48 10.55Z"/>
+</svg>`
+                    },
+                    {
+                        id: 'relay-voice',
+                        name: '发送语音',
+                        stow: 'toolbar',
+                        icon: `<svg viewBox="0 0 24 24" class="ic-line" xmlns="http://www.w3.org/2000/svg">
+<rect x="8" y="2" width="8" height="13" rx="4"/>
+<path d="M20,10v1a8,8,0,0,1-8,8h0a8,8,0,0,1-8-8V10"/>
+<line x1="12" y1="19" x2="12" y2="22"/>
+</svg>`
+                    },
+                    {
+                        // 真图上传，发给模型去看（即底栏那颗"识图"）
+                        id: 'relay-image',
+                        name: '发送图片',
+                        stow: 'toolbar',
+                        icon: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path d="M8.5 10C9.32843 10 10 9.32843 10 8.5C10 7.67157 9.32843 7 8.5 7C7.67157 7 7 7.67157 7 8.5C7 9.32843 7.67157 10 8.5 10Z"/>
+<path fill-rule="evenodd" clip-rule="evenodd" d="M11.0055 2H12.9945C14.3805 1.99999 15.4828 1.99999 16.3716 2.0738C17.2819 2.14939 18.0575 2.30755 18.7658 2.67552C19.8617 3.24477 20.7552 4.1383 21.3245 5.23415C21.6925 5.94253 21.8506 6.71811 21.9262 7.62839C22 8.5172 22 9.61946 22 11.0054V12.9945C22 13.6854 22 14.306 21.9909 14.8646C22.0049 14.9677 22.0028 15.0726 21.9846 15.175C21.9741 15.6124 21.9563 16.0097 21.9262 16.3716C21.8506 17.2819 21.6925 18.0575 21.3245 18.7658C20.7552 19.8617 19.8617 20.7552 18.7658 21.3245C18.0575 21.6925 17.2819 21.8506 16.3716 21.9262C15.4828 22 14.3805 22 12.9946 22H11.0055C9.61955 22 8.5172 22 7.62839 21.9262C6.71811 21.8506 5.94253 21.6925 5.23415 21.3245C4.43876 20.9113 3.74996 20.3273 3.21437 19.6191C3.20423 19.6062 3.19444 19.5932 3.185 19.5799C2.99455 19.3238 2.82401 19.0517 2.67552 18.7658C2.30755 18.0575 2.14939 17.2819 2.0738 16.3716C1.99999 15.4828 1.99999 14.3805 2 12.9945V11.0055C1.99999 9.61949 1.99999 8.51721 2.0738 7.62839C2.14939 6.71811 2.30755 5.94253 2.67552 5.23415C3.24477 4.1383 4.1383 3.24477 5.23415 2.67552C5.94253 2.30755 6.71811 2.14939 7.62839 2.0738C8.51721 1.99999 9.61949 1.99999 11.0055 2ZM20 11.05V12.5118L18.613 11.065C17.8228 10.2407 16.504 10.2442 15.7182 11.0727L11.0512 15.9929L9.51537 14.1359C8.69326 13.1419 7.15907 13.1746 6.38008 14.2028L4.19042 17.0928C4.13682 16.8463 4.09606 16.5568 4.06694 16.2061C4.0008 15.4097 4 14.3905 4 12.95V11.05C4 9.60949 4.0008 8.59025 4.06694 7.79391C4.13208 7.00955 4.25538 6.53142 4.45035 6.1561C4.82985 5.42553 5.42553 4.82985 6.1561 4.45035C6.53142 4.25538 7.00955 4.13208 7.79391 4.06694C8.59025 4.0008 9.60949 4 11.05 4H12.95C14.3905 4 15.4097 4.0008 16.2061 4.06694C16.9905 4.13208 17.4686 4.25538 17.8439 4.45035C18.5745 4.82985 19.1702 5.42553 19.5497 6.1561C19.7446 6.53142 19.8679 7.00955 19.9331 7.79391C19.9992 8.59025 20 9.60949 20 11.05ZM6.1561 19.5497C5.84198 19.3865 5.55279 19.1833 5.295 18.9467L7.97419 15.4106L9.51005 17.2676C10.2749 18.1924 11.6764 18.24 12.5023 17.3693L17.1693 12.449L19.9782 15.3792C19.9683 15.6812 19.9539 15.9547 19.9331 16.2061C19.8679 16.9905 19.7446 17.4686 19.5497 17.8439C19.1702 18.5745 18.5745 19.1702 17.8439 19.5497C17.4686 19.7446 16.9905 19.8679 16.2061 19.9331C15.4097 19.9992 14.3905 20 12.95 20H11.05C9.60949 20 8.59025 19.9992 7.79391 19.9331C7.00955 19.8679 6.53142 19.7446 6.1561 19.5497Z"/>
+</svg>`
+                    },
+                    {
+                        // 不传图，打字描述一张照片/视频（即底栏那颗"分享照片/视频"）
+                        id: 'relay-photo',
+                        name: '文字图片',
+                        stow: 'toolbar',
+                        icon: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M6.39252 3.83025C7.04361 2.75654 8.20958 2 9.54508 2H14.4549C15.7904 2 16.9564 2.75654 17.6075 3.83025C17.8059 4.15753 18.0281 4.50118 18.257 4.81533C18.3665 4.96564 18.5804 5.08571 18.8771 5.08571H18.9998C21.209 5.08571 23 6.87668 23 9.08571V17C23 19.2091 21.2091 21 19 21H5C2.79086 21 1 19.2091 1 17V9.08572C1 6.87668 2.79052 5.08571 4.99976 5.08571H5.12238C5.41912 5.08571 5.63348 4.96564 5.74301 4.81533C5.97193 4.50118 6.19407 4.15753 6.39252 3.83025ZM9.54508 4C8.98673 4 8.43356 4.32159 8.10267 4.86727C7.88516 5.22596 7.63139 5.61989 7.35939 5.99317C6.81056 6.74635 5.94404 7.08571 5.12286 7.08571H5.00024C3.89578 7.08571 3 7.98104 3 9.08572V17C3 18.1046 3.89543 19 5 19H19C20.1046 19 21 18.1046 21 17V9.08571C21 7.98104 20.1047 7.08571 19.0002 7.08571H18.8776C18.0564 7.08571 17.1894 6.74635 16.6406 5.99317C16.3686 5.61989 16.1148 5.22596 15.8973 4.86727C15.5664 4.32159 15.0133 4 14.4549 4H9.54508ZM12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9ZM7 12C7 9.23858 9.23858 7 12 7C14.7614 7 17 9.23858 17 12C17 14.7614 14.7614 17 12 17C9.23858 17 7 14.7614 7 12Z"/>
+</svg>`
+                    },
+                    {
+                        id: 'send-share-modal',
+                        name: '转发分享',
+                        icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path fill-rule="evenodd" clip-rule="evenodd" d="M1 18.5088C1 13.1679 4.90169 8.77098 9.99995 7.84598V5.51119C9.99995 3.63887 12.1534 2.58563 13.6313 3.73514L21.9742 10.224C23.1323 11.1248 23.1324 12.8752 21.9742 13.7761L13.6314 20.2649C12.1534 21.4144 10 20.3612 10 18.4888V16.5189C7.74106 16.9525 5.9625 18.1157 4.92778 19.6838C4.33222 20.5863 3.30568 20.7735 2.55965 20.5635C1.80473 20.3511 1.00011 19.6306 1 18.5088ZM12.4034 5.31385C12.2392 5.18613 11.9999 5.30315 11.9999 5.51119V9.41672C11.9999 9.55479 11.8873 9.66637 11.7493 9.67008C8.09094 9.76836 4.97774 12.0115 3.66558 15.1656C3.46812 15.6402 3.31145 16.1354 3.19984 16.6471C3.07554 17.217 3.00713 17.8072 3.00053 18.412C3.00018 18.4442 3 18.4765 3 18.5088C3.00001 18.6437 3.18418 18.6948 3.25846 18.5822C3.27467 18.5577 3.29101 18.5332 3.30747 18.5088C3.30748 18.5088 3.30746 18.5088 3.30747 18.5088C3.63446 18.0244 4.01059 17.5765 4.42994 17.168C4.71487 16.8905 5.01975 16.6313 5.34276 16.3912C7.05882 15.1158 9.28642 14.3823 11.7496 14.3357C11.8877 14.3331 12 14.4453 12 14.5834V18.4888C12 18.6969 12.2393 18.8139 12.4035 18.6862L20.7463 12.1973C20.875 12.0973 20.875 11.9028 20.7463 11.8027L12.4034 5.31385Z"/>
+</svg>`
+                    },
                     {
                         id: 'send-location-modal',
                         name: '发送位置',
@@ -2075,6 +2388,23 @@ function formatSmartTime(timestamp) {
                     </svg>`
         },
                     {
+                        // 顶栏通话键的收纳位。和上面 5 项同理：节点常在、默认 display:none
+                        // （.stow-call），由外观→顶栏→「收纳通话」放出来。
+                        // 群聊没有通话，另有一条 .is-group-chat 规则把它压回去，见 chat_room.css。
+                        id: 'relay-call',
+                        name: '通话',
+                        stow: 'call',
+                        // 几何必须和 index.html 的 #video-call-btn 一模一样（同一个功能的两个入口，
+                        // 理由同上面那 5 项）。改成 .ic-line 后这里只留 d：颜色和线宽交给
+                        // chat_modal.css，才能和面板里 relay-wallet/relay-voice 那几张线型图一样粗；
+                        // 原先是写死的 stroke="#555" stroke-width="1.3"，比邻居细一圈。
+                        // 这张 d 和 chat_bubble_factory.js 通话气泡里那张是同一张（顶栏也用它，
+                        // 三处一个图形；气泡只有拒接时套 rotate(135)，不旋转就是这个方向）。
+                        icon: `<svg viewBox="0 0 24 24" class="ic-line" xmlns="http://www.w3.org/2000/svg">
+<path d="M21.97 18.33C21.97 18.69 21.89 19.06 21.72 19.42C21.55 19.78 21.33 20.12 21.04 20.44C20.55 20.98 20.01 21.37 19.4 21.62C18.8 21.87 18.15 22 17.45 22C16.43 22 15.34 21.76 14.19 21.27C13.04 20.78 11.89 20.12 10.75 19.29C9.6 18.45 8.51 17.52 7.47 16.49C6.44 15.45 5.51 14.36 4.68 13.22C3.86 12.08 3.2 10.94 2.72 9.81C2.24 8.67 2 7.58 2 6.54C2 5.86 2.12 5.21 2.36 4.61C2.6 4 2.98 3.44 3.51 2.94C4.15 2.31 4.85 2 5.59 2C5.87 2 6.15 2.06 6.4 2.18C6.66 2.3 6.89 2.48 7.07 2.74L9.39 6.01C9.57 6.26 9.7 6.49 9.79 6.71C9.88 6.92 9.93 7.13 9.93 7.32C9.93 7.56 9.86 7.8 9.72 8.03C9.59 8.26 9.4 8.5 9.16 8.74L8.4 9.53C8.29 9.64 8.24 9.77 8.24 9.93C8.24 10.01 8.25 10.08 8.27 10.16C8.3 10.24 8.33 10.3 8.35 10.36C8.53 10.69 8.84 11.12 9.28 11.64C9.73 12.16 10.21 12.69 10.73 13.22C11.27 13.75 11.79 14.24 12.32 14.69C12.84 15.13 13.27 15.43 13.61 15.61C13.66 15.63 13.72 15.66 13.79 15.69C13.87 15.72 13.95 15.73 14.04 15.73C14.21 15.73 14.34 15.67 14.45 15.56L15.21 14.81C15.46 14.56 15.7 14.37 15.93 14.25C16.16 14.11 16.39 14.04 16.64 14.04C16.83 14.04 17.03 14.08 17.25 14.17C17.47 14.26 17.7 14.39 17.95 14.56L21.26 16.91C21.52 17.09 21.7 17.3 21.81 17.55C21.91 17.8 21.97 18.05 21.97 18.33Z"/>
+</svg>`
+                    },
+                    {
                         id: 'delete-history-chunk',
                         name: '批量删除',
                         icon: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -2086,7 +2416,9 @@ function formatSmartTime(timestamp) {
                 expansionGrid.innerHTML = '';
                 expansionItems.forEach(item => {
                     const itemEl = document.createElement('div');
-                    itemEl.className = 'expansion-item';
+                    // stow 的两项（toolbar / call）默认是 display:none 的，
+                    // 由 #chat-room-screen 上的 bar-collapse-* class 放开，见 chat_room.css。
+                    itemEl.className = 'expansion-item' + (item.stow ? ` stow-${item.stow}` : '');
                     itemEl.dataset.action = item.id;
 
                     itemEl.innerHTML = `
@@ -2099,6 +2431,56 @@ function formatSmartTime(timestamp) {
                 // 激活状态（线下模式 / 后台消息）统一交给 syncChatExpansionActiveState，
                 // 这里构建时先按当前会话对齐一次；之后每次开面板、每次进聊天室都会再对齐。
                 syncChatExpansionActiveState();
+
+                // 分页：上面是一串平铺的 .expansion-item，由 layoutChatExpansionPages
+                // 现场塞进 .expansion-page（一页 8 个）。这里先排一次，之后每次开面板再排。
+                layoutChatExpansionPages();
+
+                // 滑动过程中同步圆点。rAF 节流：原生滚动事件一次滑动能来几十发，
+                // 每发都读 scrollLeft/clientWidth 会强制同步布局。
+                let dotsRaf = 0;
+                expansionGrid.addEventListener('scroll', () => {
+                    if (dotsRaf) return;
+                    dotsRaf = requestAnimationFrame(() => {
+                        dotsRaf = 0;
+                        syncChatExpansionDots();
+                    });
+                }, { passive: true });
+
+                // 滚轮/触控板翻页。必须自己接管，不能指望原生滚动：
+                // scroll-snap-type: x mandatory 会把滚轮那「一格 120px」当场弹回起点
+                // （实测对照：同样手势打在不带 snap 的容器上滚得动 480px，带 snap 的原地不动，
+                //   一次给满整页宽度 500px 才认），所以 PC 上滚轮根本翻不动页。
+                // 这里改成「一次手势 = 一页」，顺手也把只有 deltaY 的普通鼠标接上。
+                let wheelLockUntil = 0;
+                expansionGrid.addEventListener('wheel', (e) => {
+                    // 取主导方向：触控板横滑给 deltaX，普通滚轮只给 deltaY
+                    const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+                    if (!delta) return;
+                    // 拦住默认行为，否则滚动链会传给面板**背后**的消息区，变成「开着面板翻聊天记录」
+                    e.preventDefault();
+
+                    const now = Date.now();
+                    if (now < wheelLockUntil) return;   // 一次手势会连发十几个 wheel，别一下翻好几页
+                    wheelLockUntil = now + 420;
+
+                    const pages = expansionGrid.querySelectorAll('.expansion-page').length;
+                    const width = expansionGrid.clientWidth;
+                    if (pages < 2 || !width) return;
+                    const cur = Math.round(expansionGrid.scrollLeft / width);
+                    const next = Math.max(0, Math.min(pages - 1, cur + (delta > 0 ? 1 : -1)));
+                    expansionGrid.scrollTo({ left: width * next, behavior: 'smooth' });
+                }, { passive: false });
+
+                // 点圆点直接跳页（PC 上比滚轮确定，也是唯一能一步跨多页的入口）
+                document.getElementById('chat-expansion-dots')?.addEventListener('click', (e) => {
+                    const dot = e.target.closest('.dot');
+                    if (!dot) return;
+                    expansionGrid.scrollTo({
+                        left: expansionGrid.clientWidth * Number(dot.dataset.page),
+                        behavior: 'smooth'
+                    });
+                });
 
                 expansionGrid.addEventListener('click', (e) => {
                     const item = e.target.closest('.expansion-item');
@@ -2114,7 +2496,21 @@ function formatSmartTime(timestamp) {
                         return;
                     }
 
+                    // 收纳位：转手按一下底栏/顶栏上那颗真按钮就完事，不进下面的 switch。
+                    // 放在线下模式拦截之后 —— 那颗真按钮在线下模式下是 disabled 的，
+                    // .click() 不会有任何反应，得先把"为什么没反应"说出来。
+                    if (EXPANSION_RELAY_BTNS[action]) {
+                        document.getElementById(EXPANSION_RELAY_BTNS[action])?.click();
+                        setChatExpansionPanelOpen(false);
+                        return;
+                    }
+
 switch (action) {
+    case 'regenerate':
+        // 面板关在前面：handleRegenerate 会弹二次确认，面板盖在弹窗上面很难看
+        setChatExpansionPanelOpen(false);
+        if (typeof handleRegenerate === 'function') handleRegenerate();
+        return;
     case 'memory-journal':
         // 1. 重置主 Tab 为“剧情总结”
         currentMemoryTab = 'summary';
@@ -2193,6 +2589,6 @@ switch (action) {
                             
                     }
                     // Hide panel after action
-                    document.getElementById('chat-expansion-panel').classList.remove('visible');
+                    setChatExpansionPanelOpen(false);
                 });
             }

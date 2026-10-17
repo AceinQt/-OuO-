@@ -2,7 +2,7 @@
 //
 // 把用户手写的气泡/顶栏/底栏 CSS 限制到「某一个聊天室」里去。
 //
-// 为什么要单独一个文件：预览（bubble_css_preset.js 的 iframe）和实际应用
+// 为什么要单独一个文件：预览（bubble_css/preview.js 的 iframe）和实际应用
 // （chat_settings.js 的 updateCustomBubbleStyle）**必须**跑同一个函数。
 // 历史上这两条是分开的 —— 预览把 CSS 原样塞进 <style>，实际走一个手写正则改写器，
 // 于是「预览生效、保存后不生效」变成常态反馈。气泡能碰对是因为气泡选择器足够简单，

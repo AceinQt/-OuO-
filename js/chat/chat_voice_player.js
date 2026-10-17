@@ -17,6 +17,7 @@
 // 对外符号：
 //   handleVoiceBubbleClick / refreshVoiceBubbleState / toggleVoiceTranscript
 //   stopVoicePlayback / regenerateVoiceClip / downloadVoiceClip
+//   saveAudioBlobAsFile / voiceDownloadFileName  ← API 设置页的试听「下载」也用这两个
 //   unlockVoiceAudio / playVoiceClipOnBubble   ← 通话连播（chat_voice_call.js）也用这两个
 // ============================================================
 
@@ -474,16 +475,18 @@ function _voiceFileExtension(mime) {
 }
 
 /**
- * 下载文件名：语音_20260822_1431.mp3
+ * 下载文件名：语音_20260822_1431.mp3 / 试听_20260822_1431.mp3
  * ★ 用本机时间，不用 toISOString —— 那个是 UTC，在中国会显示成前一天的晚上。
  * 同一分钟内下载多条会重名，浏览器自己会加 (1)(2)，不用我们操心。
+ * @param {string} mime
+ * @param {string} prefix 文件名前缀。设置页的试听传「试听」，免得和聊天里存的语音混在一起
  */
-function _voiceDownloadName(mime) {
+function voiceDownloadFileName(mime, prefix = '语音') {
     const d = new Date();
     const p = n => String(n).padStart(2, '0');
     const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}`
         + `_${p(d.getHours())}${p(d.getMinutes())}`;
-    return `语音_${stamp}.${_voiceFileExtension(mime)}`;
+    return `${prefix}_${stamp}.${_voiceFileExtension(mime)}`;
 }
 
 // iOS Safari 对 <a download> 的支持很不稳（常见表现是直接在当前页开始播放，
@@ -566,7 +569,21 @@ async function downloadVoiceClip(messageId, chat, chatType) {
     }
 
     const blob = new Blob([clip.bytes], { type: clip.mime || 'audio/mpeg' });
-    const filename = _voiceDownloadName(clip.mime);
+    await saveAudioBlobAsFile(blob, voiceDownloadFileName(clip.mime));
+}
+
+/**
+ * 把一段音频 blob 存成文件。iOS 先试系统分享面板，其余一律 `<a download>`。
+ *
+ * ★ **唯一一份落盘逻辑**，聊天里长按语音的「下载」和 API 设置页的试听「下载」
+ *   都走这里。两边各抄一份的代价很具体：抄的那一份十成会漏掉 iOS 那道分支，
+ *   表现是「在 iPhone 上点下载，文件没存下来、音频反而在当前页播起来了」。
+ *
+ * @param {Blob}   blob
+ * @param {string} filename 已经带好后缀（用 voiceDownloadFileName 算）
+ */
+async function saveAudioBlobAsFile(blob, filename) {
+    if (!blob) return;
 
     if (_voiceIsIOS() && await _voiceShareFile(blob, filename)) return;
 

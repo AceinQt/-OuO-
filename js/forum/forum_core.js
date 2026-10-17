@@ -76,6 +76,7 @@ function forumCleanTitle(title) {
                 setupMePageFeature();
                 setupForumBindingFeature();
                 setupForumAdminFeature();
+                setupForumSearchFeature();
                 setupFavoritesFeature();
                 setupForumMultiSelectFeature();
                 renderHotPosts();

@@ -1155,7 +1155,9 @@ async function generateBackgroundProactiveMessages(chat, maxCalls, type, queueTy
             const preset = (db.apiPresets || []).find(p =>
                 p.name === _overrideName && (!p.type || p.type === 'chat')
             );
-            if (preset && preset.data) effectiveApi = { ...db.apiSettings, ...preset.data };
+            // Flex 只认选中的预设；缺字段不能继承全局开启，其他字段仍可兜底。
+            if (preset && preset.data) effectiveApi = { ...db.apiSettings, ...preset.data,
+                flexEnabled: !!preset.data.flexEnabled };
         }
         const { url, key, model } = effectiveApi;
         const temperature = effectiveApi.temperature !== undefined ? effectiveApi.temperature : 0.85;

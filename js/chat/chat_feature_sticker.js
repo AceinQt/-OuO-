@@ -270,10 +270,10 @@ async function setupStickerSystem() {
     // 4. 面板打开控制及上传功能
     // ==========================================
     stickerToggleBtn.addEventListener('click', () => {
-        const chatExpansionPanel = document.getElementById('chat-expansion-panel');
-        if (chatExpansionPanel.classList.contains('visible')) {
-            chatExpansionPanel.classList.remove('visible');
-        }
+        // ⚠️ 走 setChatExpansionPanelOpen 而不是自己摘 .visible：关 "+"面板连着要把加号从 ×
+        // 转回 +、把消息区让出的那段高度收回去（面板是顶起底栏的，不是浮层）。
+        // 自己摘 class 的后果是「面板没了，加号还是个叉、列表底下空一大块」。
+        if (typeof setChatExpansionPanelOpen === 'function') setChatExpansionPanelOpen(false);
         if (currentChatType === 'group') {
             linkStickerBtn.style.display = 'none';
         } else {

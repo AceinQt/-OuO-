@@ -592,7 +592,8 @@ function sanitizeShareFieldText(text) {
  *
  * 合并而不是二选一（`preset.data || db.apiSettings`）：预设里没填的字段
  * ——尤其是温度和流式开关——要能落到全局默认上。口径和 chat_ai_service.js
- * 解析 chatApiPreset 时的 `{ ...db.apiSettings, ...preset.data }` 一致。
+ * 解析 chatApiPreset 时的口径一致；唯独 Flex 只认当前预设，缺字段就是关闭。
+ * 不能让旧预设从全局默认继承付费路由开关。
  *
  * 整份 preset.data 原样透传，别只挑 url/key/model 三个字段：
  * vertexExpress 还要 projectId，挑字段会漏掉；温度和流式也会一起丢。
@@ -601,7 +602,9 @@ function _getShareApiConfig(chat) {
     const presetName = chat && chat.chatApiPreset;
     const preset = presetName && (db.apiPresets || [])
         .find(p => p.name === presetName && (!p.type || p.type === 'chat'));
-    return { ...(db.apiSettings || {}), ...((preset && preset.data) || {}) };
+    if (!preset?.data) return { ...(db.apiSettings || {}) };
+    return { ...(db.apiSettings || {}), ...preset.data,
+        flexEnabled: !!preset.data.flexEnabled };
 }
 
 /**
@@ -775,6 +778,8 @@ async function completeShareContent() {
             //
             // 流式不影响按标签解析：callLLM 不给 onChunk 时会把整段读完再返回
             // 一个完整字符串（peek 的 callPeekApi 也是靠这一点）。
+            // 普通请求仍限 60 秒；callLLM 的共享超时策略在 Google Flex 下
+            // 自动放宽到至少 10 分钟，避免排队期间就被本地中止。
             timeout: 60000
         });
 

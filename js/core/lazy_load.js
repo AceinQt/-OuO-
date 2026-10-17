@@ -463,6 +463,105 @@ window.getForumPostCount = async function () {
     return await window.dexieDB.forumPosts.count();
 };
 
+// ──────────────────────────────────────────
+// 论坛帖子搜索 —— 流式扫表，只返回轻量投影。消费方 js/forum/forum_search.js。
+//
+// ★ 为什么"只搜标题"并不比"搜全文"快：IndexedDB 没有字段投影，`.each()` 拿到的
+//   永远是整条记录（structured clone 反序列化），而 title 又没建索引
+//  （forumPosts 的 schema 只有 '&id, timestamp'）。所以哪怕只想比一个标题，
+//   1500 条帖子体也得整个读一遍 —— 全文比标题多出来的开销只是内存里那几次
+//   includes，几十毫秒级，相对 IDB 反序列化的一两秒可以忽略。
+//   **scope 是"召回宽窄"开关，不是性能旋钮**（搜"的"这种字全文会全表命中），
+//   别把它当优化项往外解释，会误导下一次调优的人往错方向找。
+//
+// ★ 返回值必须是轻量投影，绝不能是整条 post：一条帖子平均十几 KB 还拖着整个
+//   comments 数组，命中几百条就有好几 MB 赖在结果数组里、连着渲染好的 DOM 一起
+//   活到退出搜索页（chat_search.js 的 allMatchedResults 存的是完整 msg，那是因为
+//   单条消息很小，这边照抄会炸内存）。点进详情时再按 id 去库里取整条。
+//
+// ★ 走 timestamp 索引只在填了日期时才有意义；没填日期就 toCollection() 全表扫，
+//   不拿 ±Infinity 当 IDB 键去 between（v14 把缺失的 timestamp 回填成 0 了，
+//   索引虽然覆盖全表，但全表扫这条路更直白、也少一个边界情形要验）。
+// ──────────────────────────────────────────
+const FORUM_SNIPPET_PAD = 40; // 命中点前后各留多少字
+
+// 截出命中词周围的一小段。找不到命中词（只按日期搜）时退回开头一截。
+function _forumSnippetAround(text, kw) {
+    if (!text) return '';
+    const i = kw ? text.toLowerCase().indexOf(kw) : -1;
+    if (i === -1) return text.slice(0, FORUM_SNIPPET_PAD * 2);
+    const from = Math.max(0, i - FORUM_SNIPPET_PAD);
+    const to = Math.min(text.length, i + kw.length + FORUM_SNIPPET_PAD);
+    return (from > 0 ? '…' : '') + text.slice(from, to) + (to < text.length ? '…' : '');
+}
+
+// scope: 'title' 只标题 / 'body' 标题+正文 / 'all' 标题+正文+评论
+window.searchForumPostsInDB = async function (dateStr, keyword, scope = 'all') {
+    if (!window.dexieDB) throw new Error('dexieDB 未就绪');
+
+    // 日期范围（当天 00:00 ~ 23:59:59.999，口径抄 searchMessagesInDB）
+    let tsLo = 0, tsHi = 0;
+    if (dateStr) {
+        const [y, m, d] = dateStr.split('-').map(Number);
+        tsLo = new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+        tsHi = new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+    }
+
+    const kw = (keyword || '').toLowerCase();
+    const searchBody = (scope === 'body' || scope === 'all');
+    const searchComments = (scope === 'all');
+    const results = [];
+
+    const coll = dateStr
+        ? window.dexieDB.forumPosts.where('timestamp').between(tsLo, tsHi, true, true)
+        : window.dexieDB.forumPosts.toCollection();
+
+    await coll.each(post => {
+        const title = (typeof post.title === 'string') ? post.title : '';
+        const content = (typeof post.content === 'string') ? post.content : '';
+
+        let hitIn = null;      // 'title' | 'content' | 'comment' | null(只按日期搜)
+        let snippet = '';
+        let hitAuthor = '';    // 命中在评论里时是评论人，否则空
+
+        if (!kw) {
+            // 只按日期搜：全收，摘要取正文开头
+            snippet = content.slice(0, FORUM_SNIPPET_PAD * 2);
+        } else if (title.toLowerCase().includes(kw)) {
+            hitIn = 'title';
+            // 标题已经在卡片上单独占一行了，摘要给正文开头更有信息量
+            snippet = content.slice(0, FORUM_SNIPPET_PAD * 2);
+        } else if (searchBody && content.toLowerCase().includes(kw)) {
+            hitIn = 'content';
+            snippet = _forumSnippetAround(content, kw);
+        } else if (searchComments && Array.isArray(post.comments)) {
+            const c = post.comments.find(x =>
+                x && typeof x.content === 'string' && x.content.toLowerCase().includes(kw));
+            if (c) {
+                hitIn = 'comment';
+                snippet = _forumSnippetAround(c.content, kw);
+                hitAuthor = c.username || '';
+            }
+        }
+
+        if (kw && !hitIn) return;
+
+        results.push({
+            id: post.id,
+            title: title,
+            username: post.username || '',
+            timestamp: post.timestamp || 0,
+            hitIn: hitIn,
+            hitAuthor: hitAuthor,
+            snippet: snippet
+        });
+    });
+
+    // 帖子排序铁律：只按 timestamp 倒序。索引流出来是升序，这一下排完就是最新在前
+    results.sort(_sortPostsDesc);
+    return results;
+};
+
 // F5："我的发帖"统计 —— 流式扫表 count，不把帖子装进内存（只在打开"我的"页时跑）
 window.countMyForumPosts = async function (nickname) {
     if (!window.dexieDB) throw new Error('dexieDB 未就绪');

@@ -666,65 +666,6 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
     },
 
     /**
-     * 下拉选择弹窗
-     * @param {Array<{value:string, label:string}>} options  选项列表
-     * @param {object} opts  { title, confirmText, cancelText }
-     * @returns {Promise<string|null>}  返回选中的 value，取消返回 null
-     */
-    async select(options = [], { title = '请选择', confirmText = '确定', cancelText = '取消' } = {}) {
-        return new Promise((resolve) => {
-            const overlay        = document.getElementById('app-global-dialog');
-            const titleEl        = document.getElementById('global-dialog-title');
-            const contentEl      = document.getElementById('global-dialog-content');
-            const actionsEl      = document.getElementById('global-dialog-actions');
-            const inputContainer = document.getElementById('global-dialog-input-container');
-
-            if (!overlay) return resolve(null);
-
-            titleEl.innerText   = title;
-            contentEl.innerText = '';
-            contentEl.classList.remove('is-scrollable');
-            actionsEl.innerHTML = '';
-
-            // 把 input-container 里的 input 临时替换成 select
-            inputContainer.style.display = 'block';
-            inputContainer.innerHTML = `
-                <select id="global-dialog-select" class="appui-select">
-                    ${options.map(o =>
-                        `<option value="${String(o.value).replace(/"/g,'&quot;')}">${o.label}</option>`
-                    ).join('')}
-                </select>`;
-
-            const close = () => {
-                overlay.classList.remove('visible');
-                // 还原 input-container 为原始 input，避免影响后续弹窗
-                inputContainer.innerHTML = '<input type="text" id="global-dialog-input" autocomplete="off">';
-                inputContainer.style.display = 'none';
-            };
-
-            const createBtn = (text, cls, onClick) => {
-                const btn = document.createElement('button');
-                btn.className   = `btn ${cls}`;
-                btn.style.flex  = '1';
-                btn.style.padding = '10px';
-                btn.innerText   = text;
-                btn.onclick = (e) => { e.stopPropagation(); close(); onClick(); };
-                return btn;
-            };
-
-            const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(null));
-            const confirmBtn = createBtn(confirmText, 'btn-primary',  () => {
-                const sel = document.getElementById('global-dialog-select');
-                resolve(sel ? sel.value : null);
-            });
-            actionsEl.appendChild(confirmBtn);
-            actionsEl.appendChild(cancelBtn);
-
-            overlay.classList.add('visible');
-        });
-    },
-
-    /**
      * 通用多字段表单弹窗（复用 components.css / api.css 的 .form-group、.switch 样式，不新增 CSS）
      * @param {Array<{type:'select'|'switch'|'text'|'note', key:string, label:string, options?:Array<{value:string,label:string}>, value?:any, placeholder?:string, hint?:string}>} fields
      *        note 类型只展示不可编辑，也不会出现在返回的结果里（给"这个值在别处改"用）
@@ -1046,6 +987,9 @@ window.showHelp = function (scope, key) { AppHelp.show(scope, key); };
 
 // ================================================================
 // === historyToPlainText: 聊天记录转纯文本（过滤图片等非文本内容）===
+//   注意这个是「整条丢掉」的语义，用在 peek / 分享卡片那种
+//   「少一条无所谓、但绝不能夹 base64」的场合。
+//   要保留对话结构（图片折成占位符）请用下面的 messageToPlainText。
 // ================================================================
 function historyToPlainText(history) {
     if (!Array.isArray(history)) return '';
@@ -1054,6 +998,64 @@ function historyToPlainText(history) {
         .map(m => m.content)
         .join('\n');
 }
+
+// ================================================================
+// === messageToPlainText: 一条消息贡献给 AI / 向量的纯文本 ==========
+//
+//   【为什么必须过这一层】上传的图片消息，`content` **本身就是**
+//   几十上百 KB 的 base64 data URL（见 chat_feature_basic.js 的
+//   sendImageForRecognition）—— 给 AI 看的那句「XX发来了一张图片：」
+//   在 `parts[0].text` 里，**不在 content**。所以谁把 m.content 当
+//   展示文本直接拼进 prompt 或 embedding，谁就会被撑爆：
+//     · embedding 一侧是硬性输入上限，直接 HTTP 400，检索整条静默失效；
+//     · chat 一侧不报错，只是白烧几万 token 喂一串乱码。
+//
+//   凡是「消息数组 → 一段文本」的地方都走这里，别各写一份判断 ——
+//   历史上这个坑在 向量查询 / 向量原文回灌 / 日记生成 三处各自复发过一次。
+// ================================================================
+const MSG_IMAGE_PLACEHOLDER = '[图片]';
+
+// data URL 可能整条就是 content（图片识别消息），也可能嵌在方括号正文里
+// （老版表情包 `[XX发送的表情包：data:image/...]`），所以要全局 replace，
+// 不能只用 startsWith 判一下就算完。
+const MSG_DATA_URL_REGEX = /data:image\/[0-9a-z.+-]+;base64,[A-Za-z0-9+/=]+/gi;
+
+/** 这条消息是不是「只有图片、没有文字」 */
+function isImageOnlyMessage(m) {
+    if (!m) return false;
+    // parts 里显式标了 image，是上传图片消息的权威特征（唯一产地在 chat_feature_basic.js）
+    if (Array.isArray(m.parts) && m.parts.some(p => p && p.type === 'image')) return true;
+    const c = m.content;
+    if (!c) return false;
+    if (typeof c === 'string') return /^\s*data:image\//i.test(c);
+    // array-format content（多模态格式），全部是图片部分
+    if (Array.isArray(c)) {
+        return c.length > 0 && c.every(p => p && (p.type === 'image_url' || p.type === 'image'));
+    }
+    return false;
+}
+
+/**
+ * 取一条消息的纯文本内容（**不含**发言人名字，前缀由调用方自己拼）。
+ * @param {object} m                消息对象
+ * @param {string} imagePlaceholder 图片折成什么，默认 `[图片]`
+ */
+function messageToPlainText(m, imagePlaceholder = MSG_IMAGE_PLACEHOLDER) {
+    if (!m) return '';
+    if (isImageOnlyMessage(m)) return imagePlaceholder;
+    const c = m.content;
+    if (!c) return '';
+    if (Array.isArray(c)) {
+        const text = c.filter(p => p && p.type === 'text').map(p => p.text || '').join('');
+        return text || imagePlaceholder;
+    }
+    if (typeof c !== 'string') return '';
+    // 文字里夹着 base64：只把 data URL 换成占位符，外面那层文字留着
+    return c.replace(MSG_DATA_URL_REGEX, imagePlaceholder);
+}
+window.MSG_IMAGE_PLACEHOLDER = MSG_IMAGE_PLACEHOLDER;
+window.isImageOnlyMessage    = isImageOnlyMessage;
+window.messageToPlainText    = messageToPlainText;
 
 // ================================================================
 // === findGroupMemberById: 按 senderId 找群成员，退群的从归档里找 ===

@@ -509,6 +509,13 @@ async function saveMessageEdit() {
             
 function enterMultiSelectMode(initialMessageId) {
                 isInMultiSelectMode = true;
+                // ★ 必须排在隐藏 .chat-input-wrapper **之前**：
+                //   "+"面板现在是 wrapper 的子节点（顶起输入栏，不再是浮层），wrapper 一
+                //   display:none 面板就跟着没了，但 --exp-panel-h 和加号的 .plus-active
+                //   还都挂着 —— 症状是多选时列表底下空出 ~234px，退出多选后加号卡在 × 上。
+                //   而且关面板要量 offsetHeight 才能把滚动退回去，藏起来之后量出来是 0，
+                //   顺序反了就退不干净。
+                if (typeof setChatExpansionPanelOpen === 'function') setChatExpansionPanelOpen(false);
                 chatRoomHeaderDefault.style.display = 'none';
                 chatRoomHeaderSelect.style.display = 'flex';
                 document.querySelector('.chat-input-wrapper').style.display = 'none';
