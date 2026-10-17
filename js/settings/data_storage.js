@@ -541,10 +541,98 @@ function renderStorageChart(container, info) {
     };
 }
 
+// 详情行按钮的图标。两颗都是线型素材，颜色/线宽由 .btn-icon-sm svg 统一给，
+// 所以这里只留几何 —— 标签上写 fill/stroke 也会被 CSS 盖掉（表现属性优先级最低）。
+// 垃圾桶复用项目里用得最多那一张（删人设/删角色/解散群/删世界书条目等 8 处都是它），
+// 导出键沿用 api-icon-btn 那排「箭头出托盘」的素材，两张同属一套线宽。
+const ICON_ROW_CLEAR = '<svg viewBox="0 0 24 24"><path d="M19 7L18.1327 19.1425C18.0579 20.1891 17.187 21 16.1378 21H7.86224C6.81296 21 5.94208 20.1891 5.86732 19.1425L5 7M10 11V17M14 11V17M15 7V4C15 3.44772 14.5523 3 14 3H10C9.44772 3 9 3.44772 9 4V7M4 7H20"/></svg>';
+const ICON_ROW_EXPORT = '<svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>';
+
+/**
+ * 两道「必须手打确认短语」的弹窗，两道都打对才返回 true。
+ *
+ * 为什么是两道、且必须手打：删除键和导出键同大小、还挨着放，颜色也只是
+ * 浅蓝 vs 蓝的深浅差（用户明确要求不要红色），所以视觉上没有任何警示，
+ * 防误删全靠这里。一次 confirm 挡不住手滑 ——
+ * 手滑的人照样会点中"确定"；但手滑的人打不出一整行字来。
+ * ⚠️ 别"优化"成一次弹窗或改成 confirm，这是用户点名要的保险。
+ * ⚠️ 也别因为"现在两颗按钮分色了"就觉得这道保险可以松 —— 分的是深浅不是红蓝。
+ *
+ * @param {string} label 分类中文名，短语是「确认清空 + label + 数据」
+ * @param {string} [extraWarning] 附加警示，只拼在第一道弹窗里（要让人在动手前就看到）
+ * @returns {Promise<boolean>}
+ */
+async function confirmWipeTwice(label, extraWarning) {
+    const phrase = `确认清空${label}数据`;
+    const steps = [
+        {
+            title: '危险操作', ok: '继续',
+            lead: `即将永久删除「${label}」的全部记录，此操作不可撤销。`
+                  + (extraWarning ? `\n\n${extraWarning}` : '')
+        },
+        { title: '再次确认', ok: '确认清空', lead: `最后一次确认：「${label}」的数据将立即被清空。` }
+    ];
+
+    for (let i = 0; i < steps.length; i++) {
+        const s = steps[i];
+        const typed = await AppUI.prompt(
+            `${s.lead}\n\n请输入下面这行字以继续（第 ${i + 1} / 2 步）：\n${phrase}`,
+            phrase, s.title, s.ok, '取消'
+        );
+        if (typed === null) return false;                       // 点了取消
+        if (String(typed).trim() !== phrase) {
+            await AppUI.alert(`输入内容与「${phrase}」不一致，已取消，未删除任何数据。`, '已取消');
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * 走完「两道确认 → 清表 → 重载」的完整流程。分项删除和「清除所有数据」共用。
+ *
+ * ★ 成功后一律 location.reload()：清表不负责内存一致性（原因见 backup_data.js 里
+ *   clearPartialData 上面那段职责边界说明），内存里的引用和各模块私有状态只能靠重载重建。
+ * @param {string} label 弹窗里显示的分类名
+ * @param {() => Promise<any>} doClear 真正执行清空的函数
+ * @param {string} doneMsg 清完后、重载前给用户看的提示
+ * @param {string} [extraWarning] 透传给第一道确认弹窗的附加警示
+ */
+async function runWipeFlow(label, doClear, doneMsg, extraWarning) {
+    if (window.isBackupLoading) return;
+    if (!await confirmWipeTwice(label, extraWarning)) return;
+
+    window.isBackupLoading = true;
+    // 忙锁：清表要跑好几张大表，这期间别让人去点导出/导入，也别让人返回
+    // （清表不会因为换页停下，页面没了却还在写库，看着像"点了没反应"）。
+    const endBusy = (typeof window.beginUiBusy === 'function')
+        ? window.beginUiBusy('storage-analysis-screen') : () => {};
+    const hideLoading = (typeof showLoadingToast === 'function')
+        ? showLoadingToast(`正在清空${label}……`) : () => {};
+
+    try {
+        await doClear();
+        hideLoading();
+        await AppUI.alert(doneMsg, '清空完成');
+        location.reload();
+    } catch (err) {
+        console.error('[storage] 清空失败:', err);
+        hideLoading();
+        await AppUI.alert(`清空过程中出现异常：${err.message}`, '操作失败');
+        // 失败时数据可能已经清掉一部分，刷新一下让体积显示跟上真实情况
+        if (typeof refreshStorageScreen === 'function') refreshStorageScreen();
+    } finally {
+        // ⚠️ 这两句必须在 finally 里：上面的 AppUI.alert / showLoadingToast 抛错
+        //    会跳过 catch 之后的收尾，忙锁留着就再也点不动这一页了。
+        window.isBackupLoading = false;
+        endBusy();
+    }
+}
+
 // 重点修改：调整了HTML结构，将 Size 移到了右侧
 function renderStorageDetails(container, info) {
     if (!container) return;
-    container.innerHTML = ''; 
+    container.innerHTML = '';
     container.classList.add('storage-details-container');
 
     // ★ 顺序与饼图共用 orderedEntries()。以前这里另有一份写死的 categoryOrder 白名单，
@@ -553,32 +641,64 @@ function renderStorageDetails(container, info) {
 
     // 没有独立导出通道的分类，右侧显示说明文字而不是导出按钮。
     // 能导出的分类见 exportPartialData() 的 switch。
+    // ⚠️ 文案被刻意压到 3~5 个字：它和按钮共用详情行第三列那 72px
+    // （见 storage.css 里 .storage-detail-item 的列宽说明），长了就顶出去压到体积上。
+    // 原文案是「随角色导出」/「不参与备份」/「随角色导出/清空」，
+    // 2026-10-14 为对齐列宽改短 —— 想加字先去把那一列加宽。
     const noExportNotes = {
-        memory:     '随角色导出',
-        peek:       '随角色导出',
-        localMedia: '不参与备份'
+        memory:     '随角色管理',
+        peek:       '随角色管理',
+        localMedia: '不备份'
     };
+
+    // 没有独立清空通道的分类：记忆与向量 / 角色手机数据跟着「角色与聊天」一起清
+    // （这三项本来就一起导出，见顶部 categoryOrder 的说明）。
+    // ⚠️ 本地媒体不在这份名单里：它虽然同样没有导出通道，但是纯本地缓存，
+    //    单独清掉是有意义的 —— 所以它「有删除按钮、没有导出按钮」，别一起归进来。
+    // 真相在 backup_data.js 的 CLEAR_FOLLOWS_CHARACTERS，这里跟着它走。
+    const followsCharacters = new Set(window.CLEAR_FOLLOWS_CHARACTERS || ['memory', 'peek']);
 
     sortedData.forEach((item) => {
         const name = dataStorage.categoryNames[item.key] || item.key;
         const color = dataStorage.categoryColors[item.key] || '#ccc';
-        const note = noExportNotes[item.key];
+
+        const follows  = followsCharacters.has(item.key);
+        const canClear = !follows;
+        const canExport = !noExportNotes[item.key];
+        // 「随角色管理」这一句同时把"不单独导出"和"不单独清空"两件事讲完了。
+        // 兜底那半边是防 CLEAR_FOLLOWS_CHARACTERS 将来扩进没登记文案的分类，
+        // 否则那行右侧会空着、看着像按钮没渲染出来。
+        const note = noExportNotes[item.key] || (follows ? '随角色管理' : '');
+
+        // 删除在左、导出在右
+        const btns = [];
+        if (canClear) {
+            btns.push(`<button type="button" class="btn-icon-sm btn-row-clear" title="清空${name}">${ICON_ROW_CLEAR}</button>`);
+        }
+        if (canExport) {
+            btns.push(`<button type="button" class="btn-icon-sm btn-row-export" title="导出${name}">${ICON_ROW_EXPORT}</button>`);
+        }
 
         const row = document.createElement('div');
         row.className = 'storage-detail-item';
 
+        // ⚠️ 这三个块是 .storage-detail-item 这个 grid 的三列，
+        //    顺序和个数都不能动：体积必须是独立的第二列（定宽），这是它上下对齐的前提。
+        //    第三列 .storage-item-right 即便没有说明也没有按钮也要留着（空 div），
+        //    少一个子元素会让 grid 把体积挪进第三列，整列对齐当场塌掉。
         row.innerHTML = `
             <div class="storage-item-left">
                 <div class="storage-color-indicator" style="background-color: ${color};"></div>
                 <span class="storage-detail-name">${name}</span>
             </div>
+            <span class="storage-detail-size">${formatBytes(item.value)}</span>
             <div class="storage-item-right">
-                <span class="storage-detail-size">${formatBytes(item.value)}</span>
-                ${note ? `<span style="font-size:11px;color:#aaa;">${note}</span>` : `<button class="btn-export-sm">导出</button>`}
+                ${note ? `<span class="storage-detail-note">${note}</span>` : ``}
+                ${btns.length ? `<div class="storage-item-btns">${btns.join('')}</div>` : ``}
             </div>
         `;
 
-        const exportBtn = row.querySelector('.btn-export-sm');
+        const exportBtn = row.querySelector('.btn-row-export');
         if (exportBtn) {
             exportBtn.onclick = async function(e) {
                 e.preventDefault();
@@ -594,6 +714,36 @@ function renderStorageDetails(container, info) {
             exportBtn.ontouchend = function() { this.style.filter = 'brightness(1)'; };
         }
 
+        const clearBtn = row.querySelector('.btn-row-clear');
+        if (clearBtn) {
+            clearBtn.onclick = async function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!window.clearPartialData) {
+                    await AppUI.alert('功能加载中...');
+                    return;
+                }
+                // 角色那一项会连带清掉记忆和手机数据，必须在动手前就讲明白。
+                // 顺带提醒语音/图片缓存会失去归属 —— 聊天全删之后，那些按 chatId
+                // 索引的缓存行就再也对应不到任何会话了，但它仍占着空间、仍显示在
+                // 「本地媒体」里。这里不擅自替用户一起删（清空范围只跟着记忆和手机
+                // 数据两项走），只告诉他可以顺手单独清。
+                const extraWarning = (item.key === 'characters')
+                    ? '「记忆与向量」「角色手机数据」会随本项一并清空。\n'
+                      + '语音与图片缓存不会被删除，但会失去归属，可在「本地媒体」单独清理。'
+                    : '';
+                await runWipeFlow(
+                    name,
+                    () => window.clearPartialData(item.key),
+                    `「${name}」的数据已清空。\n页面即将刷新。`,
+                    extraWarning
+                );
+            };
+
+            clearBtn.ontouchstart = function() { this.style.filter = 'brightness(0.9)'; };
+            clearBtn.ontouchend = function() { this.style.filter = 'brightness(1)'; };
+        }
+
         container.appendChild(row);
     });
 }
@@ -602,6 +752,8 @@ function renderStorageDetails(container, info) {
 // === 数据瘦身与异常修复模块 ===
 // ========================================================
 function setupStorageAnalysisScreen() {
+    setupWipeAllCard();
+
     const cleanupBtn = document.getElementById('btn-cleanup-duplicates');
     if (!cleanupBtn) return;
 
@@ -733,5 +885,39 @@ function setupStorageAnalysisScreen() {
             cleanupBtn.innerText = originalText;
             cleanupBtn.style.opacity = "1";
         }
+    });
+}
+
+// ========================================================
+// === 「清除所有数据」卡片 ===
+// ========================================================
+// 和「重复数据清理」同一块卡片样式，但做的事完全相反：那边是扫出冗余、问过再删；
+// 这边是把所有分类一次清光，所以走的是 runWipeFlow 那两道必须手打短语的确认。
+function setupWipeAllCard() {
+    const btn = document.getElementById('btn-wipe-all-data');
+    if (!btn) return;
+    // 绑定去重。现在 setupStorageAnalysisScreen 只在 main.js 的 init 里调一次
+    // （同一处也绑了「重复数据清理」，那颗就没加守卫），所以这个标记眼下是多余的 ——
+    // 留着是因为这颗按钮的代价和别的不一样：绑两遍 = 一次点击走两轮 runWipeFlow，
+    // 第二轮会在第一轮清完、页面即将 reload 的时候再弹一次确认，
+    // 用户看到的是"取消了却还在问"。项目里外观页就踩过重复绑定的坑
+    // （见 INDEX.md 里 setupBubblePresets 那段），这里不赌将来没人加第二个调用点。
+    if (btn.dataset.wipeBound === '1') return;
+    btn.dataset.wipeBound = '1';
+
+    btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        if (!window.clearAllData) {
+            await AppUI.alert('功能加载中...');
+            return;
+        }
+        await runWipeFlow(
+            '所有',                                  // 短语即「确认清空所有数据」
+            () => window.clearAllData(),
+            '所有数据已清空。\n页面即将刷新。',
+            '这会删除本机**全部**记录：角色与聊天、记忆与向量、角色手机数据、'
+            + '世界书、喵坛、ToDouo、游戏、个性化、系统设置（含各类 API 凭据）'
+            + '以及本地语音/图片缓存。\n\n云端备份不受影响，但本机不会留下任何副本。'
+        );
     });
 }

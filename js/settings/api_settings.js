@@ -68,7 +68,10 @@ const API_TAB_DEFS = {
         modelRequiredMsg: '请选择模型后保存！',
         providerUrls: CHAT_PROVIDER_URLS,
         providerFields: [
-            { rowId: 'api-chat-project-row', providers: ['vertexExpress'] }
+            { rowId: 'api-chat-project-row', providers: ['vertexExpress'] },
+            // 本站仅给 Google 原生两条线开放：Gemini 用 body，Vertex 用 Flex 头。
+            // 中转站/其他 provider 是否另有计费参数不能靠模型名猜。
+            { rowId: 'api-chat-flex-row', providers: ['gemini', 'vertexExpress'] }
         ],
         fields: [
             { key: 'provider', kind: 'text',        blank: 'newapi', get: s => s.provider || 'newapi' },
@@ -94,6 +97,14 @@ const API_TAB_DEFS = {
             {
                 key: 'compatibilityModeEnabled', id: 'compat', kind: 'check', blank: false,
                 get: s => !!s.compatibilityModeEnabled
+            },
+            // Flex 弹性推理（五折）。缺字段＝关闭 —— 这是花钱相关的开关，
+            // 绝不能像 streamEnabled 那样"缺字段当开启"：老预设升上来会被静默改计费档。
+            // 实际注入在 llm_client.js 的 buildLLMRequest/buildLLMRequestTarget，
+            // callLLM 和自己组装 body 的聊天/识图都走共享入口。
+            {
+                key: 'flexEnabled', id: 'flex', kind: 'check', blank: false,
+                get: s => !!s.flexEnabled
             },
             {
                 key: 'temperature', id: 'temp', kind: 'range', blank: 0.8,
@@ -1688,6 +1699,66 @@ function _setVoiceTestResult(message, isError = false, hidden = false) {
 // 上一次试听生成的 blob URL。必须留着句柄，不然每试听一次就漏一个 URL，
 // 页面不刷新的话这些 blob 永远不会被回收。
 let _voicePreviewUrl = '';
+// blob 本体和 MIME 也留着：「下载」要用，而从 <audio>.src 反推拿不回字节。
+let _voicePreviewBlob = null;
+let _voicePreviewMime = '';
+
+/** 「播放 / 下载」两颗一起开关。没音频时**禁用而不隐藏** —— 隐藏的话用户
+ *  根本不知道试听完还能存下来，而这两颗存在的理由就是"别浪费已经花掉的额度"。 */
+function _setVoicePreviewActionsEnabled(enabled) {
+    ['api-voice-replay-btn', 'api-voice-download-btn'].forEach(id => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.disabled = !enabled;
+        btn.classList.toggle('btn-neutral', !enabled);
+        btn.classList.toggle('btn-secondary', !!enabled);
+    });
+}
+
+/** 播放键的字跟着播放器的真实状态走。
+ *  ★ 必须由 <audio> 的 play/pause/ended 事件驱动，不能在点击时自己翻 ——
+ *    原生 controls 还在（进度条有用），用户从那边暂停时按钮也得跟着变，
+ *    否则两个控件各说一套，点一下就"没反应"。 */
+function _syncVoiceReplayLabel() {
+    const btn = document.getElementById('api-voice-replay-btn');
+    if (!btn) return;
+    const player = document.getElementById('api-voice-preview-player');
+    const playing = !!(player && player.src && !player.paused && !player.ended);
+    btn.textContent = playing ? '暂停' : '播放';
+}
+
+/** 只停播，不动音频本体（换 Tab / 重新试听时用）。 */
+function _stopVoicePreviewPlayback() {
+    const player = document.getElementById('api-voice-preview-player');
+    if (player) player.pause();
+}
+
+/**
+ * 换上新合成的音频。
+ * ★ 旧 URL 是在这里回收的，**不是**在请求开始时 —— 以前 previewVoiceSynthesis
+ *   一上来就 _clearVoicePreviewAudio()，于是合成失败（网络抖一下就够）会把上一条
+ *   已经花过钱的音频一起扔掉，用户只能再花一次额度。现在只在真拿到新音频时才替换。
+ */
+function _setVoicePreviewAudio(bytes, mime) {
+    const type = mime || 'audio/mpeg';
+    const blob = new Blob([bytes], { type });
+    if (_voicePreviewUrl) {
+        URL.revokeObjectURL(_voicePreviewUrl);
+        _voicePreviewUrl = '';
+    }
+    _voicePreviewBlob = blob;
+    _voicePreviewMime = type;
+    _voicePreviewUrl = URL.createObjectURL(blob);
+
+    const player = document.getElementById('api-voice-preview-player');
+    if (player) {
+        player.src = _voicePreviewUrl;
+        player.hidden = false;
+        player.play().catch(() => { /* 浏览器拦了自动播放就让用户自己点 */ });
+    }
+    _setVoicePreviewActionsEnabled(true);
+    _syncVoiceReplayLabel();
+}
 
 function _clearVoicePreviewAudio() {
     const player = document.getElementById('api-voice-preview-player');
@@ -1700,6 +1771,10 @@ function _clearVoicePreviewAudio() {
         URL.revokeObjectURL(_voicePreviewUrl);
         _voicePreviewUrl = '';
     }
+    _voicePreviewBlob = null;
+    _voicePreviewMime = '';
+    _setVoicePreviewActionsEnabled(false);
+    _syncVoiceReplayLabel();
 }
 
 /**
@@ -1718,7 +1793,8 @@ async function previewVoiceSynthesis() {
     if (!preset.speakerId) return showToast('请先填写音色 ID');
     if (!text) return showToast('请先填写试听文本');
 
-    _clearVoicePreviewAudio();
+    // 只停播，不清音频：万一这次合成失败，上一条（已经付过费的）还能继续听/下载
+    _stopVoicePreviewPlayback();
     _setVoiceButtonLoading('api-voice-preview-btn', true);
     _setVoiceTestResult('正在合成，请稍等…');
 
@@ -1732,13 +1808,7 @@ async function previewVoiceSynthesis() {
             `实际发给服务商的文本：\n${result.prompt}`
         );
 
-        _voicePreviewUrl = URL.createObjectURL(new Blob([result.bytes], { type: result.mime }));
-        const player = document.getElementById('api-voice-preview-player');
-        if (player) {
-            player.src = _voicePreviewUrl;
-            player.hidden = false;
-            player.play().catch(() => { /* 浏览器拦了自动播放就让用户自己点 */ });
-        }
+        _setVoicePreviewAudio(result.bytes, result.mime);
     } catch (error) {
         // 超额被拦时 api 层已经弹过 toast 了，这里只补一行说明，不重复报错
         _setVoiceTestResult(
@@ -1789,6 +1859,34 @@ function initVoiceApiTab() {
     onVoiceUsageChange(_refreshVoiceUsageUI);
     _on('api-voice-preview-btn', previewVoiceSynthesis);
     _on('api-voice-save-btn', saveVoiceApiSettings);
+
+    // 试听完的那段音频：能再听一遍、能存下来。试听是真花钱的一次合成，
+    // 让它响一遍就没了等于白扣额度，而一遍也听不出音色到底合不合适。
+    _on('api-voice-replay-btn', () => {
+        const player = document.getElementById('api-voice-preview-player');
+        if (!player || !_voicePreviewUrl) return;
+        if (player.paused || player.ended) {
+            player.play().catch(() => showToast('浏览器拦下了播放，再点一次'));
+        } else {
+            player.pause();
+        }
+    });
+    _on('api-voice-download-btn', async () => {
+        if (!_voicePreviewBlob) return;
+        // 走聊天里长按语音「下载」的同一条路（含 iOS 退回系统分享面板那一段）。
+        // 这边另写一份的话十成会漏掉 iOS 那道分支，表现是"点了下载，文件没存下来、
+        // 音频反而在当前页播起来了"。
+        if (typeof saveAudioBlobAsFile !== 'function') return showToast('当前浏览器不支持下载');
+        await saveAudioBlobAsFile(_voicePreviewBlob,
+            voiceDownloadFileName(_voicePreviewMime, '试听'));
+    });
+    // 按钮上的字由播放器事件驱动，原生 controls 那边操作也能同步（见 _syncVoiceReplayLabel）
+    const previewPlayer = document.getElementById('api-voice-preview-player');
+    if (previewPlayer) {
+        ['play', 'pause', 'ended'].forEach(ev =>
+            previewPlayer.addEventListener(ev, _syncVoiceReplayLabel));
+    }
+
     _on('api-voice-add-preset', () => _addVoicePreset(false));
     _on('api-voice-copy-preset', () => _addVoicePreset(true));
     _on('api-voice-del-preset', _deleteVoicePreset);

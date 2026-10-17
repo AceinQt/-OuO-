@@ -212,7 +212,8 @@ async function generateAndRenderPeekDrafts() {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(char.id);
+    const cfg = getPeekApiConfig(char.id);
+    const { url, key, model } = cfg;
     if (!url || !key || !model) {
         showToast('请先配置 API！');
         return switchScreen('api-settings-screen');
@@ -260,7 +261,7 @@ ${char.myName}
 #SECRET_CHAT_NIGHT_85%#[23:15|${senderName}的消息:睡了吗？][23:16|${senderName}的消息:今天又路过那家店，突然有点想你。]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts          = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const draftsRawText  = parts[0] || '';

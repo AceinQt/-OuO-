@@ -171,7 +171,7 @@ async function _reconstructRawText(item, chat) {
     }
 
     return msgs.filter(_filterMsg)
-        .map(m => `${_getName(m)}: ${m.content}`)
+        .map(m => `${_getName(m)}: ${messageToPlainText(m)}`)
         .join('\n');
 }
 
@@ -233,12 +233,16 @@ if (diffDays === 0) {
     }))).join('\n\n---\n\n');
 }
 
-// 判断消息内容是否属于语义空内容（叹词/单字/纯表情）
+// 判断消息内容是否属于语义空内容（叹词/单字/纯表情/只有图片）
 function _isSemanticEmpty(content) {
     if (!content) return true;
     const c = content.trim();
     if (c.length <= 1) return true;
     if (/^[\p{Emoji_Presentation}\p{Extended_Pictographic}\s]+$/u.test(c)) return true;
+    // 只有图片占位符 → 当成语义空，好让下面的 fallback 去取前几轮的真文字。
+    // 不这么判的话，"带图片发一条消息"会拿 `我：[图片]` 去查向量，
+    // 跟任何记忆都不沾边，等于白调一次 embedding。
+    if (/^(?:\[图片\]|\s)+$/.test(c)) return true;
     if (/^(嗯+|啊+|哦+|哈+|哎+|唉+|喔+|噢+|呃+|嗯嗯|好的?|嗯啊|哦哦|啊啊|哈哈+|呵+|哼+|嘿+|好吧|诶|欸|呀+|喂+|哟+|okay|ok|哈哈哈+)$/i.test(c)) return true;
     return false;
 }
@@ -249,7 +253,10 @@ function _buildQueryText(history, fallbackRounds) {
     // ── 预过滤：去掉系统消息、time-divider、旁白包装 ──────────
     const filtered = [];
     for (const m of history) {
-        let c = m.content || '';
+        // ★ 必须走 messageToPlainText，不能直接读 m.content ——
+        //   图片消息的 content 就是整条 base64 data URL，原样拼进查询文本
+        //   会超 embedding 输入上限，整个检索被 catch 掉静默返回空。
+        let c = messageToPlainText(m) || '';
         const nar = c.match(/^\[system-narration:([\s\S]+?)\]$/)
                  || c.match(/^\[剧情旁白：([\s\S]+?)\]$/);
         if (nar) c = nar[1].trim();

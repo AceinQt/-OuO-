@@ -246,7 +246,19 @@ async function resetAccessBoost() {
 
 
 // ── Embedding API 调用 ────────────────────────────────────
+// embedding 接口有硬性输入上限（OpenAI 约 8192 token，Gemini 同量级），超了是 HTTP 400。
+// 正常情况下调用方已经把图片折成占位符了（core/utils.js 的 messageToPlainText），
+// 这里是最后一道保险：宁可截断少喂几个字，也别让整次检索 400 掉 ——
+// buildRetrievedMemoryContext 的 catch 是**静默**返回空串，真 400 了用户看不到报错，
+// 只会觉得"记忆莫名其妙不生效"，极难查。
+const MAX_EMBED_CHARS = 4000;
+
 async function callEmbeddingApi(text, chat) {
+    if (typeof text === 'string' && text.length > MAX_EMBED_CHARS) {
+        console.warn(`[Embed] 输入 ${text.length} 字超过上限，截断到 ${MAX_EMBED_CHARS} 字`);
+        text = text.slice(0, MAX_EMBED_CHARS);
+    }
+
     const presetField = 'summaryEmbApiPreset';
     const presetName  = chat && chat[presetField];
     

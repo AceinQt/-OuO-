@@ -254,6 +254,169 @@ window.exportPartialData = async function(categoryKey) {
     }
 };
 
+// ========================================================
+// === 3.5 分项清空 / 全部清空 ===
+// ========================================================
+//
+// ★ 故意紧贴着上面的 exportPartialData 放：两边覆盖的字段必须是同一套口径。
+//   拆开放迟早会漂 —— 导出加了字段、清空忘了跟，就是「清完了空间还占着」；
+//   反过来则是「删掉了备份里根本没有的东西」。改一边务必顺手看另一边。
+//
+// ★ 职责边界：这里只负责把 Dexie 表清干净，**不保证内存一致**，清完由调用方
+//   reload 页面。为什么不精修内存：内存里挂着一堆对 db 的**引用**和模块私有状态 ——
+//   peekContentCache 是 db.peekData[charId] 的引用（重置 db.peekData 它还指着旧对象）、
+//   _forumOldestContiguousTs 这类懒加载游标、各列表模块私有的分页变量、
+//   还没 revoke 的图片 blob URL…… 手工复位要追四十来个 render 函数，必漏一两个，
+//   而且每加一个功能就多一处要记得改。数据全在 Dexie 里，重载一次全部重建。
+//   下面那几句 db.xxx = [] 只是让函数在「reload 万一没发生」时也不至于显示脏数据，
+//   别把它当成"内存已经清干净了"。
+//
+// ★ globalSettings 表一律用 bulkDelete(keys)，**绝不能 .clear()**：
+//   表里还躺着两个不在白名单里的 key —— 'migrationV7Done' 和 'app_metadata'。
+//   清掉前者会让下次启动重跑 V7 分块迁移（一次全量 bulkPut），纯属自找麻烦。
+
+// 分类各自占用的 globalSettings key。
+// ⚠️ 这个划分必须和 data_storage.js 里 getStorageInfo 的 countedElsewhere 保持一致：
+//    那边决定「这个 key 的体积算进哪一类」，这边决定「清哪一类时删掉它」。
+//    两边不一致的后果是「体积显示在 A 类下面，却要去点 B 类才清得掉」。
+//    tests/data_storage.test.cjs 里有一条断言把两边钉死在一起。
+const PERSONALIZATION_SETTING_KEYS = [
+    'wallpaper', 'customIcons', 'bubbleCssPresets', 'globalCss', 'globalCssPresets',
+    'homeSignature', 'insWidgetSettings', 'homeWidgetSettings'
+];
+const STUDY_SETTING_KEYS = ['studySettings'];
+
+// 系统设置 = 白名单减去上面两组。刻意不写死清单 —— 往 globalSettingKeys 加 key 时
+// 这里自动跟上，不用再记得改第二处（统计那边也是同一个思路）。
+function _settingsCategorySettingKeys() {
+    if (typeof globalSettingKeys === 'undefined' || !Array.isArray(globalSettingKeys)) return [];
+    const elsewhere = new Set([...PERSONALIZATION_SETTING_KEYS, ...STUDY_SETTING_KEYS]);
+    return globalSettingKeys.filter(k => !elsewhere.has(k));
+}
+
+// 没有独立清空通道的分类：跟着「角色与聊天」一起被清掉。
+// 与 exportPartialData 的口径一致 —— 这三项本来就是一起导出的（见 data_storage.js
+// 顶部 categoryOrder 的说明）。详情列表靠这份名单决定哪几行不画删除按钮。
+window.CLEAR_FOLLOWS_CHARACTERS = ['memory', 'peek'];
+
+/**
+ * 清空单个分类的全部记录。只动 Dexie 表，不负责刷 UI（见上面的职责边界说明）。
+ * @param {string} categoryKey dataStorage.categoryOrder 里的分类键
+ */
+window.clearPartialData = async function (categoryKey) {
+    if (!window.db || typeof dexieDB === 'undefined') throw new Error('数据库未就绪');
+    const T = dexieDB;
+    // 老库升级上来可能还没建某张表，带个兜底免得整个 Promise.all 一起挂掉
+    const clearIfAny = (table) => (table ? table.clear() : Promise.resolve());
+
+    switch (categoryKey) {
+        // 角色与聊天：记忆与向量、角色手机数据跟着一起清（CLEAR_FOLLOWS_CHARACTERS）
+        // ⚠️ messages 必须清表，不能按内存里的 history 去删 —— 懒加载下
+        //    chat.history 只是最近 ~1500 条的窗口，照它删会留下一地窗口外的孤儿消息。
+        case 'characters':
+            await Promise.all([
+                T.characters.clear(), T.groups.clear(), T.messages.clear(),
+                T.memories.clear(), T.memoryChunks.clear(), clearIfAny(T.peekData)
+            ]);
+            db.characters = [];
+            db.groups = [];
+            db.peekData = {};
+            break;
+
+        case 'worldBooks':
+            await T.worldBooks.clear();
+            db.worldBooks = [];
+            break;
+
+        case 'rpg':
+            await T.rpgProfiles.clear();
+            db.rpgProfiles = [];
+            break;
+
+        // forumMetadata 整张表就是论坛那 4 个 key（forumUserIdentity / forumBindings /
+        // watchingPostIds / favoritePostIds），所以可以直接 clear，不用点名。
+        // ⚠️ forumPosts 同样必须清表：懒加载下内存里只有「最新 100 + 收藏 + 在看」。
+        case 'forum':
+            await Promise.all([T.forumPosts.clear(), clearIfAny(T.forumMetadata)]);
+            db.forumPosts = [];
+            break;
+
+        case 'personalization':
+            await Promise.all([
+                T.userPersonas.clear(),
+                T.myStickers.clear(),
+                T.globalSettings.bulkDelete(PERSONALIZATION_SETTING_KEYS)
+            ]);
+            db.userPersonas = [];
+            db.myStickers = [];
+            break;
+
+        case 'settings': {
+            const keys = _settingsCategorySettingKeys();
+            if (keys.length) await T.globalSettings.bulkDelete(keys);
+            // GitHub 凭据还有一份遗留在 localStorage 里（GitHubService.getConfig 的兜底读法）。
+            // 不一起删的话，"系统设置已清空"之后仓库居然还连得上，凭据等于没清掉。
+            try { localStorage.removeItem('qchat_github_config'); } catch (e) {}
+            break;
+        }
+
+        // ToDouo：10 张表 + studySettings。studyPageCache 虽然不参与导出
+        // （它是按正文重算出来的分页缓存），但空间是实打实占着的，必须清。
+        case 'study':
+            await Promise.all([
+                T.studyBooks.clear(), T.studyQuestions.clear(), T.studyRecords.clear(),
+                T.studyBanks.clear(), T.studyExams.clear(), T.studyExamRecords.clear(),
+                T.studyBookContents.clear(), T.studyCoreadMessages.clear(),
+                T.studyBookSummaries.clear(), clearIfAny(T.studyPageCache),
+                T.globalSettings.bulkDelete(STUDY_SETTING_KEYS)
+            ]);
+            db.studyBooks = [];
+            db.studyQuestions = [];
+            db.studyRecords = [];
+            db.studyBanks = [];
+            db.studyExams = [];
+            db.studyExamRecords = [];
+            break;
+
+        // 本地媒体：语音字节 + 语音元数据 + 生图字节。不参与备份，清掉纯属释放空间。
+        // ⚠️ 已归档到 GitHub 的语音，元数据里存着 cloudRepoId/cloudPath，
+        //    清掉等于丢了「云端还有副本」的指针（仓库里的文件本身还在，只是找不回来了）。
+        case 'localMedia':
+            await Promise.all([
+                clearIfAny(T.voiceClips), clearIfAny(T.voiceClipData), clearIfAny(T.imageCache)
+            ]);
+            break;
+
+        default:
+            throw new Error(`未知分类: ${categoryKey}`);
+    }
+};
+
+/**
+ * 清空所有分类。
+ *
+ * ★ 刻意不另写一份"全部表"的清单：那份 23 张表的列表在本文件里已经被复制了 3 份
+ *   （importJsonlStream 的 processMeta / lazyImportBackupData / importBackupData），
+ *   而且三份都漏了 voiceClips/voiceClipData —— 再加第 4 份只会让漂移更难收。
+ *   改成「遍历 categoryOrder 逐类清」之后，往那个数组加新分类就自动被覆盖到，
+ *   不会再出现「加了分类、全部清空漏了它」。
+ * @returns {Promise<string[]>} 实际清过的分类键
+ */
+window.clearAllData = async function () {
+    // dataStorage 是 data_storage.js 里的脚本级 const，挂不到 window 上，
+    // 只能按裸名引用（两个文件都在全局词法作用域里，调用时早就初始化好了）。
+    const order = (typeof dataStorage !== 'undefined' && Array.isArray(dataStorage.categoryOrder))
+        ? dataStorage.categoryOrder : null;
+    if (!order) throw new Error('分类清单不可用（dataStorage 未加载）');
+
+    const follows = new Set(window.CLEAR_FOLLOWS_CHARACTERS || []);
+    const keys = order.filter(k => !follows.has(k));   // memory/peek 由 characters 带走
+    for (const key of keys) {
+        await window.clearPartialData(key);
+    }
+    return keys;
+};
+
 // --- 4. 导入逻辑 (文件选择) ---
 async function handleImport(event) {
     const file = event.target.files[0];

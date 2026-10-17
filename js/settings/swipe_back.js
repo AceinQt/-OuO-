@@ -115,6 +115,10 @@ function triggerBackAction() {
     // ── touch 事件（与上一版相同）────────────────────────────
     document.addEventListener('touchstart', (e) => {
         if (!window.db || window.db.enableSwipeBack !== true) return;
+        // ★ 自己要吃掉横向手势的区域（标了 .no-swipe-back，目前是"+"面板的左右翻页）。
+        //   这套手势是在 document 上听的，且 touchmove 只看 deltaX 不问有没有别的滚动容器
+        //   正在消费它 —— 不豁免的话，在面板里右滑想翻回上一页会直接退出聊天室。
+        if (e.target.closest?.('.no-swipe-back')) { isSwiping = false; return; }
         startX = e.touches[0].clientX;
         startY = e.touches[0].clientY;
         isSwiping = true; hasTriggered = false; directionLocked = false;

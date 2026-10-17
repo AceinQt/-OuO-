@@ -3,6 +3,7 @@
 // 依赖：database.js (saveBookSummaryItem / deleteBookSummaryItem)
 //       study_db.js  (getAllStudyBooks / getStudySettings)
 //       study_bookshelf.js（window._study.state.reader.toc / .pages）
+//       study_ai.js（_getStudyApiConfig，统一学习预设选择）
 
 // ══════════════════════════════════════════════════════════════
 // 运行时状态
@@ -292,15 +293,9 @@ async function _bsDoGenerate(startIdx, endIdx) {
     }
 
     // ── API 配置 ──────────────────────────────────────────
-    const studySettings = db.studySettings || {};
-    let apiConfig = db.apiSettings || {};
-    if (studySettings.textApiPresetId) {
-        const preset = (db.apiPresets || []).find(p =>
-            p.id === studySettings.textApiPresetId && (!p.type || p.type === 'chat')
-        );
-        if (preset?.data) apiConfig = preset.data;
-    }
-    const { url, key, model, temperature } = apiConfig;
+    // 与学习侧边栏一致，按预设名选择；整份配置保留 provider / Flex / Project ID。
+    const apiConfig = normalizeLLMConfig(_getStudyApiConfig());
+    const { url, key, model } = apiConfig;
     if (!url || !key)  throw new Error('请先在「学习设置」中配置文本 API 预设');
     if (!model)        throw new Error('API 预设缺少模型名称');
 
@@ -308,12 +303,12 @@ async function _bsDoGenerate(startIdx, endIdx) {
 
     if (isSingle) {
         const item = await _bsGenerateSingleChapter(
-            book, toc, pages, startIdx, { url, key, model, temperature }
+            book, toc, pages, startIdx, apiConfig
         );
         return [item];
     } else {
         return await _bsGenerateMultiChapter(
-            book, toc, pages, startIdx, endIdx, { url, key, model, temperature }
+            book, toc, pages, startIdx, endIdx, apiConfig
         );
     }
 }

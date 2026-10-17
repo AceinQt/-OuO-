@@ -843,7 +843,11 @@ function setupMemoryJournalScreen() {
     }
 
     // ============================================================
-    //  总结详情页编辑（长期总结仍可用；短期总结改为卡片内联编辑，此按钮已从 HTML 移除）
+    //  总结详情页编辑（★ 实际上已是死代码，保留仅因 #edit-summary-btn 仍在 HTML 里）
+    //  openMemoryDetail()（summary_list.js）每次打开详情都 cloneNode 换掉这个按钮，
+    //  克隆不带监听 —— 所以这里绑的 handler 从第一次打开详情起就再也触发不到了，
+    //  长短期总结的真正编辑逻辑都在 summary_list.js 的两个分支里。
+    //  （别照着这里改东西，改了不生效；要删得连 index.html:3622 那个按钮一起考虑。）
     // ============================================================
     if (editSummaryBtn) editSummaryBtn.addEventListener('click', async () => {
         const isEditing = summaryTitleEl.getAttribute('contenteditable') === 'true';
@@ -857,7 +861,12 @@ function setupMemoryJournalScreen() {
             if (item) {
                 item.title     = summaryTitleEl.textContent.trim();
                 item.content   = summaryContentEl.innerText;
-                item.occurredAt = summaryDateInput.value.trim();
+                // 长期总结没有 occurredAt，它的日期是 startDate/endDate 两个字段，
+                // 而这个框里装的是 "起 ~ 止" 一整串 —— 写进 occurredAt 就是脏数据。
+                if (currentSummarySubTab !== 'long') {
+                    const nd = normalizeDateStr(summaryDateInput.value);
+                    if (nd) item.occurredAt = nd;
+                }
 
                 // ★ V6：精准更新 memories 表
                 const memType = currentSummarySubTab === 'long' ? 'long' : 'short';

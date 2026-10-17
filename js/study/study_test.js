@@ -834,8 +834,6 @@ function _renderExamResult(rec, bodyEl) {
   });
 }
 
-let _testPendingWbIds = [];
-
 function studyInitTest() {
   document.getElementById('study-test-add-btn')
     ?.addEventListener('click', _openCreateExamModal);
@@ -865,52 +863,6 @@ function studyInitTest() {
     const s = window._study.state.test;
     if (s.viewingRecordId) _renderExamResultScreen(s.viewingRecordId);
   };
-}
-
-function _populateTestSidebar() {
-  const cfg = { graderCharId:  exam.graderCharId  || '',
-  examPersonaId: exam.examPersonaId || '',
-  worldbookIds:  exam.worldbookIds  || [] };
-  _testPendingWbIds = [...(cfg.worldbookIds || [])];
-
-  const charSel = document.getElementById('st-test-char-select');
-  if (charSel) {
-    charSel.innerHTML =
-      `<option value="">（不指定）</option>` +
-      (db.characters || []).map(c => {
-        const name = c.remarkName || c.realName || c.name || '';
-        return `<option value="${c.id}" ${c.id === cfg.graderCharId ? 'selected' : ''}>${name}</option>`;
-      }).join('');
-  }
-
-  const personaSel = document.getElementById('st-test-persona-select');
-  if (personaSel) {
-    personaSel.innerHTML =
-      `<option value="">（不指定）</option>` +
-      (db.userPersonas || []).map(p => {
-        const pid = p.id || p.nickname;
-        return `<option value="${pid}" ${pid === cfg.examPersonaId ? 'selected' : ''}>${p.nickname || ''}</option>`;
-      }).join('');
-  }
-
-  _updateTestWbLabel();
-}
-
-function _updateTestWbLabel() {
-  const label = document.getElementById('study-test-worldbook-label');
-  if (!label) return;
-  const names = _testPendingWbIds
-    .map(id => (db.worldBooks || []).find(w => w.id === id)?.name)
-    .filter(Boolean);
-  label.textContent = names.length ? names.join('、') : '未关联';
-}
-
-// ── 世界书多选 modal ──────────────────────────────────────────
-function _openTestWbModal() {
-  _openWbSelectModal(_testPendingWbIds, 'test-wb', selectedIds => {
-    _testPendingWbIds = selectedIds;
-    _updateTestWbLabel();
-  });
 }
 
 // ──────────────────────────────────────────────────────────────

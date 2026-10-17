@@ -47,15 +47,6 @@ function setupCustomizeApp() {
                 showToast('小部件已恢复默认');
             }
         }
-        // 复制 CSS 代码
-        if (e.target.classList.contains('copy-css-btn')) {
-            const codeBlock = e.target.closest('.css-template-card').querySelector('code');
-            if (codeBlock) {
-                navigator.clipboard.writeText(codeBlock.textContent.trim())
-                    .then(() => showToast('代码已复制！'))
-                    .catch(err => showToast('复制失败: ' + err));
-            }
-        }
     });
 
     // 处理图片上传
@@ -157,202 +148,6 @@ function renderCustomizeForm() {
                             <button type="button" id="global-css-manage-btn" class="btn" style="padding:7px 10px;border-radius:8px;">管理</button>
                         </div>
                     </div>
-                    <!-- CSS模板模块开始 -->
-                    <div class="css-template-module" style="margin-top: 20px; border-top: 1px solid #DAF0FC; padding-top: 15px;">
-                        <h5 style="font-size: 1em; color: var(--secondary-color); margin-bottom: 15px;">部分拓展css美化功能代码</h5>
-                        <div class="css-template-list" style="display: flex; flex-direction: column; gap: 15px;">
-                            
-                            <!-- 模板1：底部功能栏简洁模式 -->
-                            <div class="css-template-card" style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(130, 170, 200, 0.05);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <h6 style="margin: 0; font-size: 1em; color: #333;">底部功能栏简洁模式代码</h6>
-                                    <button type="button" class="btn btn-secondary btn-small copy-css-btn">复制</button>
-                                </div>
-                                <pre style="background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; max-height: 150px; overflow-y: auto;"><code>/* 步骤一：重新定位和调整输入框区域 (无变动) */
-.message-input-area {
-  position: relative !important;
-  padding-left: 50px !important;
-}
-/* 步骤二：将功能栏(#sticker-bar)改造成一个看不见的、悬浮的容器 (无变动) */
-#sticker-bar {
-  position: absolute !important;
-  bottom: 8px !important;
-  left: 8px !important;
-  z-index: 10 !important;
-  width: 40px !important;
-  height: 44px !important;
-  background: transparent !important;
-  border: none !important;
-  border-radius: 10px;
-  box-shadow: none !important;
-  transition: all 0.25s ease-out !important;
-}
-
-/* 步骤三：创建我们的“虚拟”扳机键（“+”号） (无变动) */
-#sticker-bar::before,
-#sticker-bar::after {
-  content: '' !important;
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  width: 20px !important;
-  height: 2px !important;
-  background-color: transparent !important;
-  border-radius: 1px !important;
-  transition: transform 0.25s ease-out !important;
-}
-
-/* 步骤四：将两条线组合成一个“+”号 (无变动) */
-#sticker-bar::before {
-  transform: translate(-50%, -50%) rotate(0deg) !important;
-}
-#sticker-bar::after {
-  transform: translate(-50%, -50%) rotate(90deg) !important;
-}
-
-/* 步骤五：当悬停时，让“+”号旋转成“×” (无变动) */
-#sticker-bar:hover::before {
-  transform: translate(-50%, -50%) rotate(135deg) !important;
-}
-#sticker-bar:hover::after {
-  transform: translate(-50%, -50%) rotate(45deg) !important;
-}
-
-/* 步骤六：默认隐藏所有真实的功能按钮 (无变动) */
-#sticker-bar .sticker-bar-btn {
-  display: none !important;
-}
-
-/* 步骤七：当悬停时，展开面板并显示所有按钮 (核心修改) */
-#sticker-bar:hover {
-  display: grid !important;
-  grid-template-columns: repeat(2, 1fr) !important;
-  gap: 8px !important;
-  width: 120px !important;
-  height: auto !important;
-  padding: 10px !important;
-  /* --- 优化点 1: 拉开距离 --- */
-  /* 将向上偏移量从 60px 增加到 85px，为手指留出安全区 */
-  bottom: 85px !important; 
-  border-radius: 18px !important;
-  background-color: rgba(255, 255, 255, 0.9) !important;
-  backdrop-filter: blur(10px) !important;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-}
-
-/* 修改后 */
-@keyframes fadeInButtons {
-  to {
-    opacity: 1;
-    transform: translateY(0);
-    /* --- 核心优化：动画结束时才允许按钮被点击 --- */
-    pointer-events: auto;
-  }
-}
-
-/* 步骤八：设置展开后面板里按钮的样式 (核心修改) */
-#sticker-bar:hover .sticker-bar-btn {
-  display: flex !important;
-  width: auto !important;
-  padding: 5px !important;
-  border-radius: 10px;
-  background-color: rgba(240, 240, 240, 0.8);
-  
-  /* --- 核心优化：初始状态下按钮不可点击 --- */
-  pointer-events: none; 
-
-  opacity: 0; 
-  transform: translateY(5px); 
-  animation: fadeInButtons 0.2s ease-out 0.1s forwards !important;
-}
-
-/* 步骤九：当面板展开时，隐藏掉我们用伪元素画的“+”/“x”号 (无变动) */
-#sticker-bar:hover::before,
-#sticker-bar:hover::after {
-  display: none !important;
-}
-
-/* 步骤一：为扳机键设置背景图，这将成为你的新图标 */
-#sticker-bar {
-  background-image: url('./png/sample_avatar.png') !important;
-  background-size: 28px 22px !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
-}
-
-/* 步骤二：强制隐藏掉原来用伪元素画的“+”号，解决重叠问题 */
-#sticker-bar::before,
-#sticker-bar::after {
-  display: none !important;
-}
-
-/* 步骤三：当面板展开时，隐藏背景图，避免它出现在展开的面板上 */
-#sticker-bar:hover {
-  background-image: none !important;
-}</code></pre>
-                            </div>
-
-                            <!-- 模板2：隐藏聊天顶栏线 -->
-                            <div class="css-template-card" style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(130, 170, 200, 0.05);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <h6 style="margin: 0; font-size: 1em; color: #333;">隐藏聊天顶栏线</h6>
-                                    <button type="button" class="btn btn-secondary btn-small copy-css-btn">复制</button>
-                                </div>
-                                <pre style="background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; max-height: 150px; overflow-y: auto;"><code>/* --- 3. 进入聊天界面-顶部栏的底部那条线的隐藏 --- */
-#chat-room-screen .app-header {
-    border-bottom: none !important;
-}</code></pre>
-                            </div>
-                            <!-- 模板3：透明底表情包无气泡 -->
-                            <div class="css-template-card" style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(130, 170, 200, 0.05);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <h6 style="margin: 0; font-size: 1em; color: #333;">表情包无气泡背景</h6>
-                                    <button type="button" class="btn btn-secondary btn-small copy-css-btn">复制</button>
-                                </div>
-                                <pre style="background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; max-height: 150px; overflow-y: auto;"><code>/* 1. 表情包消息容器（外层）背景全透明 */
-.message-wrapper:has(.image-bubble) {
-  background-color: transparent; /* 完全透明背景 */
-}
-
-/* 2. 表情包气泡（内层）背景全透明（避免默认白色/浅色背景） */
-.image-bubble {
-  background-color: transparent !important; /* 强制覆盖默认样式 */
-  box-shadow: none; /* 可选：移除气泡阴影，让透明更彻底 */
-  padding: 0; /* 可选：清除内边距，避免多余透明区域 */
-  max-width: 95px !important;
-  max-height: 95px !important;
-}</code></pre>
-                            </div>
-                            <!-- 模板4：透明底表情包无气泡 -->
-                            <div class="css-template-card" style="background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 15px; box-shadow: 0 2px 8px rgba(130, 170, 200, 0.05);">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <h6 style="margin: 0; font-size: 1em; color: #333;">隐藏头像</h6>
-                                    <button type="button" class="btn btn-secondary btn-small copy-css-btn">复制</button>
-                                </div>
-                                <pre style="background: #f5f5f5; padding: 10px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; font-size: 12px; max-height: 150px; overflow-y: auto;"><code>/* --- 隐藏聊天界面的所有头像 --- */
-/* 提示：外观 → 基础 里已经有「隐藏头像」开关和「头像弧度」滑块了，
-   一般不用手写这段。想连时间一起关掉就把「消息时间」选成「不显示」。 */
-.message-avatar {
-    display: none !important;
-}
-
-/* --- 修正语音和翻译气泡的边距 --- */
-.voice-transcript, .translation-text {
-    margin-left: 8px !important;
-    margin-right: 8px !important;
-}
-
-/* 确保发送方的语音/翻译气泡仍然正确对齐 */
-.message-wrapper.sent .voice-transcript,
-.message-wrapper.sent .translation-text {
-    align-self: flex-end;
-    margin-left: auto !important;
-}</code></pre>
-                            </div>
-
-                        </div>
-                    </div>
-                    <!-- CSS模板模块结束 -->
                 </div>
             </div>
             `;
@@ -441,11 +236,21 @@ function renderCustomizeForm() {
 
             
 
+            // ★ 这个 <style> 标签**不在 index.html 里**，必须自己建。
+            //   原先这里是「找不到就静默返回」，而全项目没有任何地方创建过
+            //   #global-css-style —— 于是 db.globalCss 能存、能存预设、能进备份，
+            //   就是永远不上页面，「立即应用」点了毫无反应。
+            //   建出来 append 到 head 末尾，排在 index.html 那条 main.css 的 <link>
+            //   之后，所以同权重时用户的规则赢（和 chat_settings.js 注入气泡 CSS 同一套路）。
             function applyGlobalCss(css) {
-                const styleElement = document.getElementById('global-css-style');
-                if (styleElement) {
-                    styleElement.innerHTML = css || '';
+                let styleElement = document.getElementById('global-css-style');
+                if (!styleElement) {
+                    styleElement = document.createElement('style');
+                    styleElement.id = 'global-css-style';
+                    document.head.appendChild(styleElement);
                 }
+                // 用 textContent 而不是 innerHTML：CSS 里的 > 和 & 不该被当 HTML 解析
+                styleElement.textContent = css || '';
             }
 
             function populateGlobalCssPresetSelect() {

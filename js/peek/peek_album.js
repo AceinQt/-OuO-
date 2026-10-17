@@ -194,7 +194,8 @@ async function generateAndRenderPeekAlbum(options = {}) {
     const char = db.characters.find(c => c.id === window.activePeekCharId);
     if (!char) return showToast('无法找到当前角色');
 
-    const { url, key, model, provider, streamEnabled, temperature } = getPeekApiConfig(window.activePeekCharId);
+    const cfg = getPeekApiConfig(window.activePeekCharId);
+    const { url, key, model } = cfg;
     if (!url || !key || !model) { showToast('请先配置 API！'); return switchScreen('api-settings-screen'); }
 
     generatingPeekApps.add(appType);
@@ -241,7 +242,7 @@ video
 #SECRET_CHAT_AFTERNOON_85%#[15:15|${senderName}发来的照片/视频:详细描述][15:16|${senderName}的消息:翻相册看到这张，觉得挺好看的，发给你看看。]
 `;
 
-        const contentStr = await callPeekApi({ url, key, model, provider, messages: [{ role: 'user', content: systemPrompt }], temperature, streamEnabled });
+        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const albumRawText = parts[0] || '';

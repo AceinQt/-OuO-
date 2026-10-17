@@ -195,6 +195,7 @@ function openMemoryDetail(item) {
         const titleEl      = document.getElementById('summary-detail-title');
         const contentEl    = document.getElementById('summary-detail-content');
         const dateInput    = document.getElementById('summary-occurred-at');
+        const dateLabel    = document.getElementById('summary-date-label');
         const rangeDisplay = document.getElementById('summary-range-display');
 
         titleEl.textContent = item.title;
@@ -213,6 +214,12 @@ if (currentSummarySubTab === 'long') {
     dateInput.value          = `${item.startDate} ~ ${item.endDate}`;
     rangeDisplay.textContent = '长期精炼';
     dateInput.readOnly       = true;
+    dateInput.style.borderBottom = 'none';
+    // 长期总结的日期是「起 ~ 止」一个区间，不是某一天的「发生时间」
+    if (dateLabel) dateLabel.textContent = '日期范围:';
+    dateInput.placeholder    = 'YYYY-MM-DD ~ YYYY-MM-DD';
+    // `.date-edit-input` 的 width:20% 只够放一个 YYYY-MM-DD，装不下 "起 ~ 止" 这一串
+    dateInput.style.width    = '60%';
     editSummaryBtn.style.display = '';
 
     // [v1.7] 长期总结不支持添加块，隐藏"+"按钮
@@ -233,11 +240,28 @@ if (currentSummarySubTab === 'long') {
             contentEl.setAttribute('contenteditable', 'true');
             titleEl.style.border   = '1px solid var(--accent-color, #aaa)';
             contentEl.style.border = '1px solid var(--accent-color, #aaa)';
+            // 日期范围也放开改：生成时范围填错（比如少框了一天）原先只能删了重生成
+            dateInput.readOnly = false;
+            dateInput.style.borderBottom = '1px solid var(--accent-color, #aaa)';
             freshBtn.title = '确认保存';
             freshBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg>`;
         } else {
-            // 保存
+            // 保存：日期范围写作 "YYYY-MM-DD ~ YYYY-MM-DD"
+            const parts = dateInput.value.split('~');
+            const newStart = normalizeDateStr(parts[0]);
+            const newEnd   = normalizeDateStr(parts.length > 1 ? parts[1] : parts[0]);
+            if (!newStart || !newEnd) {
+                showToast('日期范围格式应为 2025-10-01 ~ 2025-10-10');
+                return;   // 留在编辑态，标题正文的改动也别跟着丢
+            }
+            if (newStart > newEnd) {
+                showToast('开始日期不能晚于结束日期');
+                return;
+            }
             isEditing = false;
+            item.startDate = newStart;
+            item.endDate   = newEnd;
+            dateInput.value = `${newStart} ~ ${newEnd}`;
             item.title   = titleEl.textContent.trim();
             item.content = contentEl.innerText.trim();
             const chat = getCurrentChatObject();
@@ -248,12 +272,20 @@ if (chat) {
             contentEl.setAttribute('contenteditable', 'false');
             titleEl.style.border   = 'none';
             contentEl.style.border = 'none';
+            dateInput.readOnly = true;
+            dateInput.style.borderBottom = 'none';
             freshBtn.title = '编辑';
             freshBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.13,5.12L18.88,8.87M3,17.25V21H6.75L17.81,9.94L14.06,6.19L3,17.25Z" /></svg>`;
+            // 日期范围变了，列表卡片上的区间文字和排序都得跟着刷
+            renderMemoryScreen();
+            showToast('已保存');
         }
     });
 } else {
     dateInput.value = dateStr;
+    if (dateLabel) dateLabel.textContent = '发生时间:';
+    dateInput.placeholder = 'YYYY-MM-DD';
+    dateInput.style.width = '';   // 还原 CSS 默认宽度（长期总结那边加宽过）
             const rs = item.range?.start;
             const re = item.range?.end;
             const rangeLabel = (rs == null || rs === '未知') ? '未知' : `${rs}-${re}`;
@@ -277,10 +309,20 @@ if (chat) {
             freshBtn.title = '确认保存';
             freshBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M21,7L9,19L3.5,13.5L4.91,12.09L9,16.17L19.59,5.59L21,7Z"/></svg>`;
         } else {
-            isEditing = false;
             item.title = titleEl.textContent.trim();
-            const newDateVal = dateInput.value.trim();
-            if (newDateVal) item.occurredAt = newDateVal;
+            // 发生日期落库前先规范成零填充的 YYYY-MM-DD：这个框是纯文本输入，
+            // 手打的 `2025-10-9` 会让长期总结的范围比较（字典序）整天漏掉它。
+            const rawDateVal = dateInput.value.trim();
+            const newDateVal = normalizeDateStr(rawDateVal);
+            if (rawDateVal && !newDateVal) {
+                showToast('日期格式应为 YYYY-MM-DD，请改好再保存');
+                return;   // 留在编辑态，别把用户没写完的日期悄悄丢掉
+            }
+            isEditing = false;
+            if (newDateVal) {
+                item.occurredAt = newDateVal;
+                dateInput.value = newDateVal;   // 回显零填充后的结果
+            }
             const chat = getCurrentChatObject();
             if (chat) await saveMemoryItem(item, currentChatId, 'short');
             titleEl.setAttribute('contenteditable', 'false');
