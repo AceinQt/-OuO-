@@ -2,6 +2,36 @@
     background-color: #EEEDF2;
     background-size: cover;
     background-position: center;
+
+    /* ===== 底栏图标的两个旋钮（想调外观改这里，别去动 index.html 里的 svg）=====
+     * --bar-icon-color  : 工具栏 6 颗按钮 + 输入栏那颗 "+" 的颜色（面型靠 fill、线型靠 stroke）
+     * --bar-icon-stroke : **只对线型图标有效**的线宽，单位是 viewBox 单位（24 格）。
+     *                     素材里面型图标那圈"环"宽度统一是 2/24，所以这里也定 2 ——
+     *                     两种图标摆一排，粗细对上了才像同一套。想整体更细改 1.5、更粗改 2.5。
+     *                     面型图标（表情/图片/相机/加号）的粗细是画死在路径里的，调不了，
+     *                     真要变只能换素材。
+     */
+    --bar-icon-color: #555;
+    --bar-icon-stroke: 2;
+
+    /* ===== 底栏占掉多少高度：消息区让位、"正在输入"的落点，全按这里算 =====
+     * --chat-foot-h     : 底栏自身的基础高度。100px = 输入栏 + 工具栏；
+     *                     收纳工具栏后少了那 ~42px，由下面 .bar-collapse-toolbar 改成 58px。
+     * --chat-foot-total : 再叠上另外两层 —— iOS 底部安全区（底栏自己 padding 过一次，
+     *                     躲底栏的人得跟着躲）、以及 "+"面板开着时顶高的那一截
+     *                     （--exp-panel-h 由 setChatExpansionPanelOpen 现量现写，
+     *                     关着时这条 var 取 0px 兜底，等于不存在）。
+     *
+     * ⚠️ 要躲底栏的地方**一律引这个变量，不许再写一遍数字**。
+     *   以前「消息区的 padding」和「正在输入的 margin」各写死一份：拨上收纳开关
+     *   只有前者跟着收，后者停在 105px 不动，提示语和输入框之间就空出一截
+     *   （用户原话：离输入框空了一块）；后者还整条漏了安全区，iPhone 上提示语
+     *   有 ~34px 被底栏压在底下。消息区那份更夸张，一度是三条权重打平的规则
+     *   （100px / 58px / 两者再加面板）靠源码顺序分胜负。
+     *   custom property 是惰性求值的：--chat-foot-h 一变，引过它的地方全部跟着重算。
+     */
+    --chat-foot-h: 100px;
+    --chat-foot-total: calc(var(--chat-foot-h) + var(--safe-bottom) + var(--exp-panel-h, 0px));
 }
 
 /* 1. 只有当屏幕被激活时(.active)，才强制设为 block 并开启相对定位 */
@@ -156,7 +186,7 @@
      2. 折叠通话气泡和 peek 消息页（js/peek/peek_messages.js）都是裸的 img.message-avatar，
         没这层壳。display:contents 让「有壳/没壳」表现一致，不用去同步那几处。
    下面 flex-direction / align-items / gap 在 display:contents 下全是惰性的，
-   等「头像下方」那个选项把 display 翻成 flex（生成端在 bubble_css_preset.js）才生效。 */
+   等「头像下方」那个选项把 display 翻成 flex（生成端在 bubble_css/generate.js）才生效。 */
 .message-avatar-col {
     display: contents;
     flex-direction: column;
@@ -174,10 +204,21 @@
 }
 
 /* --- 3. 内容列 (包含：昵称/时间 + 气泡) --- */
+/* max-width 里那个 `+ var(--bub-stroke-x)` 是**描边补偿**，不是装饰：
+   reset.css 给 * 置了 border-box，于是用户一给气泡加描边，描边就直接从**正文可用宽**里扣
+   —— 实测 375px 宽的屏上 1px 描边就让每行少一个字（14 → 13），右边凭空空出一截
+   （用户原话「每行就少了一个字，导致右边很空」）。生成端 bubble_css/generate.js 的描边分支
+   按用户勾的描边方向算出左右两边占了几像素，写进这个变量。
+   ★ 这里和下面 .message-bubble 的 260px **两处都得加**：窄屏是这条 70% 在夹人，
+     宽屏是那条 260px 在夹人，只补一处，另一半屏宽照旧掉字。两处加同一个量，
+     所以不管哪条生效，正文宽都和「没描边」时逐像素相同。
+   ★ 变量设在这一层（气泡的祖先）而不是气泡上：气泡要靠继承读到它，
+     而列宽本身也得跟着放开，不然气泡放宽了也被列夹回去。
+   不加描边时变量兜底 0px，calc 结果和原来一模一样。 */
 .message-content-col {
     display: flex;
     flex-direction: column;
-    max-width: 70%; /* 限制气泡最大宽度，防止太宽 */
+    max-width: calc(70% + var(--bub-stroke-x, 0px)); /* 限制气泡最大宽度，防止太宽 */
     align-items: flex-start;
     gap:4px;
 }
@@ -232,7 +273,7 @@
 
 
 /* 每条消息的时间，一共三个槽位，气泡工厂对每条消息都把三个都画出来，
-   由外观 → 基础 →「消息时间」那个下拉决定放开哪一个（生成端见 bubble_css_preset.js 的
+   由外观 → 基础 →「消息时间」那个下拉决定放开哪一个（生成端见 bubble_css/generate.js 的
    timePos 分支）。默认三个全关 = 「不显示」。
      · .message-time        气泡上方（meta 行里，群聊那行还带身份标签和昵称）
      · .message-time-avatar 头像下方（在 .message-avatar-col 里）
@@ -285,7 +326,9 @@
 }
 
 .message-bubble {
-    max-width: 260px;
+    /* 260px 是「宽屏那一侧」的上限，+ var(--bub-stroke-x) 是描边补偿，
+       理由和 .message-content-col 那条完全一样，两处必须一起加，见那边的注释。 */
+    max-width: calc(260px + var(--bub-stroke-x, 0px));
     padding: 8px 12px;
     border-radius: var(--border-radius);
     word-wrap: break-word;
@@ -713,7 +756,7 @@
 /* 我方旁白（用户自己在"+"面板发的剧情旁白）的**默认**样子：除了不画描边，其余和
    对方（AI）旁白一致。
    ★ 这条只是默认值，不是强制。外观里「旁白气泡」已经分我方/对方两套独立设置
-     （bubble_css_preset.js 的 narration_sent / narration_received），用户给我方调了描边
+     （bubble_css/state.js 的 narration_sent / narration_received），用户给我方调了描边
      的话，生成端会出一条带 ID 作用域 + !important 的规则盖掉这里。
      生成端曾经硬写过一条「我方一律 border:none」来区分两者 —— 拆成两套之后那条被删了，
      留着它会让用户刚调好的我方描边当场消失。
@@ -730,7 +773,7 @@
    ★ 只和**同类**拼接：我方旁白只跟我方连，AI 旁白只跟 AI 连。
      混着连的话一张大卡片会上半截没描边、下半截挂着描边，看着像画坏了。
      区分靠 narration-mine：带它的是我方，:not(.narration-mine) 的是 AI。
-     生成端 bubble_css_preset.js 里那几条是照这个分组抄的，改这里要一起改。
+     生成端 bubble_css/generate.js 里那几条是照这个分组抄的，改这里要一起改。
    ========================================= */
 
 /*
@@ -1420,8 +1463,22 @@
     background-color: #d1d1d1;
 }
 
-/* 2. 正在输入提示：修复位置和上推效果 */
-/* 2. 正在输入提示：修复位置和间距 */
+/* 2. 正在输入提示：落点跟着底栏高度走 */
+/* ★ 它是 .message-area 的**兄弟**（同在 .content 这个 flex 列里），不是列表里的一条。
+ *   所以位置靠上下两条负/正 margin 摆出来，两条都必须按「底栏实高」算 ——
+ *   --chat-foot-total 见本文件开头 #chat-room-screen 那段（底栏基础高 + 安全区 + 开着的面板）。
+ *
+ *   两条 margin 的几何（F = --chat-foot-total，提示语自身连 padding 共 40px 高）：
+ *     margin-bottom = F + 5px   → 提示语底边落在底栏上方 5px，正好不被压住
+ *     margin-top    = 5px - F   → 和上一条气泡之间也留 5px
+ *   相加恒等于 50px，所以不管底栏多高、面板开没开，它吃掉的 flex 空间都是这 50px ——
+ *   列表被"挤"上去的量是固定的，开关面板时不会看见气泡额外跳一下。
+ *
+ *   ⚠️ 两条是一套，别只改一条：margin-bottom 单独改大就只是整体上移，和气泡的间距照旧；
+ *   以前两条都写死（-95px / 105px，刚好配 F=100 那一档），收纳工具栏后底栏矮成 58px，
+ *   margin-bottom 不动 → 提示语悬在半空离输入框空一截；而 margin-top 不动则是
+ *   「F - 95 = -37px」，提示语直接跟最后一条气泡重叠 37px，又被 .message-area
+ *   的 z-index:20 盖在底下 —— 看着就是"正在输入"整条消失了。 */
 .typing-indicator {
     /* --- 基础外观 --- */
     color: #aaa;
@@ -1435,21 +1492,11 @@
     position: relative;
     /* 保持相对定位，占据文档流 */
 
-    /* --- 关键修复 1：拉近距离 --- */
-    /* 
-               #message-area 底部有 105px 的 padding。
-               设置 -85px 的上边距，把提示语往上拉 85px。
-               这样视觉间距就只剩下 105 - 85 = 20px，刚好合适。
-            */
-    margin-top: -95px;
+    /* 往上拉进 .message-area 的底部留白里，和最后一条气泡隔 5px */
+    margin-top: calc(5px - var(--chat-foot-total));
 
-    /* --- 关键修复 2：撑开底部 --- */
-    /* 
-               底部保留 105px 空间，确保提示语显示在输入框(约100px高)的上方，
-               而不是被输入框挡住。
-               这也让它占据了物理空间，从而产生“挤压/上推”气泡的动画效果。
-            */
-    margin-bottom: 105px;
+    /* 往下撑开「底栏实高 + 5px」，把自己托在底栏上方（也顺带产生挤压/上推的动感） */
+    margin-bottom: calc(var(--chat-foot-total) + 5px);
 
     /* --- 层级提升 --- */
     z-index: 10;
@@ -1498,10 +1545,39 @@
     cursor: pointer;
 }
 
-.sticker-bar-btn svg {
+/* 底栏图标分两族，共用 --bar-icon-color（声明在本文件开头的 #chat-room-screen 上）：
+ * · 面型（.ic-line 以外的）：粗细画死在路径里，这里只上色；
+ * · 线型（.ic-line）：svg 里只留几何，颜色 + 线宽全由 CSS 给，所以一个变量就能整体调粗细。
+ * 两颗加号（工具栏的 #placeholder-plus-btn 和输入栏的 #inline-plus-btn）长相必须一致，
+ * 所以 #inline-plus-btn 的选择器一路跟着写，别只改一边。 */
+.sticker-bar-btn svg,
+#inline-plus-btn svg {
     width: 27px;
     height: 27px;
-    fill: #888;
+    fill: var(--bar-icon-color);
+}
+
+.sticker-bar-btn svg.ic-line,
+#inline-plus-btn svg.ic-line {
+    fill: none;
+    stroke: var(--bar-icon-color);
+    stroke-width: var(--bar-icon-stroke);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* "+"面板开着的时候两颗加号转成 "×"。
+   素材是「圆圈 + 十字」，转 45° 正好变成「圆圈 + 叉」，不用备第二张图。
+   class 由 setChatExpansionPanelOpen 统一挂 —— 面板有 6 个开关入口，
+   谁漏一处就会出现「面板关了，加号还是个叉」（实机就是从"点空白处"那条路撞上的）。 */
+#placeholder-plus-btn svg,
+#inline-plus-btn svg {
+    transition: transform 0.25s ease;
+}
+
+#placeholder-plus-btn.plus-active svg,
+#inline-plus-btn.plus-active svg {
+    transform: rotate(45deg);
 }
 
 /* --- 3. 按钮禁用状态样式 --- */
@@ -1520,6 +1596,12 @@
     /* 变灰 */
 }
 
+/* ★ 底栏这一整块（输入栏 + 工具栏 + "+"面板）的底色、毛玻璃、下沿圆角**只在这里画一次**。
+   面板是它的子节点、背景留成 transparent（见 chat_modal.css），所以这层透上去就是面板的底色 ——
+   两边各画一份的后果是 0.85 叠 0.85、实际不透明度 0.9775，接缝处横着一道色差。
+   下沿圆角同理留在父节点：曾经把它挪去面板上，理由是「面板有自己的不透明底色，
+   父节点的圆角裁不住子节点的方角」，面板改透明后这个理由就不成立了，挪过去反而变成
+   「面板关着时整条底栏没有圆角」。 */
 .chat-input-wrapper {
     flex-shrink: 0;
     position: absolute;
@@ -1541,11 +1623,25 @@
 .message-input-area {
     display: flex;
     align-items: center;
-    padding: 6px 10px;    
+    padding: 6px 10px;
     background: transparent;
     flex-shrink: 0;
     gap: 10px;
     overflow: hidden;
+}
+
+/* 输入框 + 「AI 回复」键的包装层。`display: contents` 不生成盒子 —— 里面那两个元素
+   照旧是 .message-input-area 的直接 flex 项（宽度/间距/对齐全和没这层时一样）。
+   它存在的唯一理由是「收纳 AI 回复」那一档要把按钮 absolute 到输入框**内部**，
+   那时候它才翻成真实的 position:relative 盒子（见本文件下方「收纳态」那段）。 */
+.message-input-box {
+    display: contents;
+}
+
+/* 上面那层让 DOM 顺序变成「输入框 → AI 回复 → + → 发送」，这条把 AI 回复搬回最右边。
+   ⚠️ 别删：删了它平时就排在输入框右边、发送键**左边**了。 */
+.message-input-area #get-reply-btn {
+    order: 1;
 }
 
 .message-input-area input {
@@ -1575,11 +1671,21 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background-color 0.2s;
+    transition: background-color 0.2s, filter 0.2s;
 }
 
+/* 「正在生成」那几秒 #get-reply-btn 会被置 disabled（chat_ai_service.js），
+   这是「别再点了」的唯一视觉反馈。
+   ★ 这里**不能**再换底色（原先是 `background-color: #cccccc`）：底栏这三个对象的
+     底色/字色/弧度/描边现在都能自定义（外观 → 底栏 → 修改对象），硬写一个灰
+     会把用户刚调好的按钮在生成期间变成一块灰方砖，和整套配色完全不搭。
+     改成**整颗变淡** —— 底色是用户自己的色，只是淡下去，状态照样读得出来。
+   ★ 用 filter 而不是 opacity：opacity 被「收纳 AI 回复」那一档的显隐占着
+     （见下方收纳段，0 ↔ 1），两条规则抢同一个属性就得靠权重分胜负，而那边是
+     1 id + 1 class、这边只有 3 个 class，必输 —— 结果就是收纳态下根本看不出变淡。
+     filter 和 opacity 是相乘的：藏着时 0 × 0.45 照样看不见，聚焦时 1 × 0.45 正好是淡。 */
 .message-input-area .icon-btn:disabled {
-    background-color: #cccccc;
+    filter: opacity(0.45);
     cursor: not-allowed;
 }
 
@@ -1602,6 +1708,147 @@
     /* 右边距大一点，把文字顶上去 */
     line-height: 1;
     /* 紧缩行高，避免行高干扰 */
+}
+
+/* ======================= 顶栏/底栏的「收纳」态 =======================
+ *
+ * 三个开关（外观→顶栏→收纳通话 / 外观→底栏→收纳工具栏 / 收纳 AI 回复）**不生成 CSS**，
+ * 而是和 timeFormat 一样存在预设的 META 注释里，由 chat_settings.js 的
+ * updateCustomBubbleStyle 读出来，在 #chat-room-screen 上挂下面这几个 class。
+ *
+ * 为什么不像顶栏底栏的别的设置那样直接生成 scoped CSS：
+ * 收纳要动的是「通话按钮在不在顶栏」「工具栏整条在不在」这类**结构**，
+ * 而结构上的例外（群聊没有通话）得由别的规则压回去。生成出来的 scoped 选择器是
+ * `#chat-room-screen.chat-active-xx.chat-active-xx …`（1 id + 3 class），
+ * 权重比任何一条手写规则都高，群聊那条压不住它 —— 症状是群聊里"+"面板冒出一个
+ * 点了没反应的通话。改成 class 之后两边都是普通规则，关系写死在这个文件里。
+ *
+ * 另一半同样重要：被收纳的东西**一直在 DOM 里**，只是 display:none。
+ * "+"面板是全局单例（启动时 setupChatExpansionPanel 构建一次、点击走事件委托），
+ * 而收纳开关是按预设存的、每个聊天可以不一样 —— 按会话增删节点就得把委托一起重来。
+ * 和「消息时间三个槽位」一个套路：全画出来，CSS 只放开该放的那个。
+ */
+
+/* ---- 顶栏：收纳通话 ---- */
+#chat-room-screen.bar-collapse-call #video-call-btn {
+    /* openChatRoom 给它写的是 inline 的 display:flex，只有 !important 压得住 */
+    display: none !important;
+}
+
+/* ---- 底栏：收纳工具栏 ---- */
+/* 工具栏整条收起来，由输入框右边那颗 #inline-plus-btn 顶上 */
+#chat-room-screen.bar-collapse-toolbar #sticker-bar {
+    display: none;
+}
+
+/* 平时藏着的那颗 "+"。样式照抄它顶替的 .sticker-bar-btn（透明底 + 灰图标），
+   不要蹭 .message-input-area .icon-btn 的蓝底，理由见 index.html 那段注释。 */
+#inline-plus-btn {
+    display: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+#chat-room-screen.bar-collapse-toolbar #inline-plus-btn {
+    display: flex;
+}
+
+/* 图标尺寸/配色/转 × 都和工具栏那颗共用一套规则，见上面 .sticker-bar-btn svg 那几条 */
+
+/* 底栏矮了一截（少了工具栏那 ~42px）。改这**一个变量**就行：消息区的底部留白、
+   "正在输入"的落点都是引 --chat-foot-total 算出来的，会一起跟着收。
+   以前这里是直接改 .message-area 的 padding-bottom，于是「开着面板」那档又得另写两条
+   权重打平的规则来组合（100/58 × 面板高），靠源码顺序分胜负；而"正在输入"压根没人管它。 */
+#chat-room-screen.bar-collapse-toolbar {
+    --chat-foot-h: 58px;
+}
+
+/* ---- 底栏：收纳 AI 回复 ---- */
+/* 这一档和上面两个「收纳」不一样：按钮**不是收进"+"面板**，而是从输入框外面搬到
+   输入框**内部**右侧，并且只在输入框有焦点时才露出来（用户原话：这个按钮肯定要有）。
+   搬动靠 .message-input-box 从 display:contents 翻成一个真实的定位祖先 ——
+   节点始终是同一颗 #get-reply-btn（它有 disabled 态、又进了外观页「修改对象」下拉，
+   所以不能像 #inline-plus-btn 那样另画一颗，理由见 index.html 那段注释）。 */
+#chat-room-screen.bar-collapse-reply .message-input-box {
+    display: flex;
+    align-items: center;
+    position: relative;
+    /* 原先是输入框自己当 .message-input-area 的 flex 项（flex-grow:1），
+       现在换成这层去占那份宽度，里面的输入框再把它撑满。
+       min-width:0 照抄输入框那条：不写的话长文本会把这层顶宽、挤走发送键。 */
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* 给按钮腾出位置。★ 常态就留着，不是「按钮露出来时才留」——
+   跟着焦点改 padding 会让已经打好的字横着跳一下。 */
+#chat-room-screen.bar-collapse-reply #message-input {
+    padding-right: 40px;
+}
+
+#chat-room-screen.bar-collapse-reply #get-reply-btn {
+    position: absolute;
+    right: 5px;
+    top: 50%;
+    transform: translateY(-50%);
+    /* 比在外面时（40×40）小一圈：输入框连 padding 共约 39px 高，30 正好上下各留 4px */
+    width: 30px;
+    height: 30px;
+    opacity: 0;
+    /* ★ 藏起来时必须连点击一起关掉：留着的话输入框右端被一颗看不见的按钮盖住，
+       用户想点进输入框打字，点到的是「AI 回复」—— 当场白花一次 API。
+       关掉之后那一下会穿透到输入框上（聚焦 → 按钮跟着浮出来，正好落在手指底下）。 */
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
+#chat-room-screen.bar-collapse-reply #get-reply-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+/* 露出来的唯一情形：输入框有焦点。
+   ★ 这里曾经还并着一条 `#get-reply-btn:disabled`，让它在「正在生成」期间也浮出来
+     （当时的理由是「变灰是唯一的进度反馈」）。用户要求去掉：收纳态下这颗按钮在那几秒
+     只是在「挡着别再发」，而「正在回复」这件事底下那条 typing-indicator 已经在说了，
+     不必为它专门从输入框里浮出一颗按钮。现在「生成中 + 没焦点」= 和平时一样藏着；
+     用户点进输入框时它照旧浮出来，只是淡的（.icon-btn:disabled 那条 filter）。
+   ★ :focus-within 挂在**包装层**上而不是输入框自己身上：焦点万一真落到按钮上
+     （桌面端点击就会），挂输入框的写法会在 mousedown 那一刻把按钮藏掉、click 打空。
+     另一道保险在 chat_room.js —— 那边 mousedown 直接 preventDefault，
+     焦点压根不离开输入框（iOS 上顺带保住键盘不收）。 */
+#chat-room-screen.bar-collapse-reply .message-input-box:focus-within #get-reply-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ---- "+"面板里的收纳位 ---- */
+/* 平时不显示；对应的开关打开才放出来。.expansion-item 本身是 display:flex。 */
+.expansion-item.stow-toolbar,
+.expansion-item.stow-call {
+    display: none;
+}
+
+#chat-room-screen.bar-collapse-toolbar .expansion-item.stow-toolbar {
+    display: flex;
+}
+
+#chat-room-screen.bar-collapse-call .expansion-item.stow-call {
+    display: flex;
+}
+
+/* 群聊没有通话（顶栏那颗也是藏着的），收纳位必须跟着藏。
+   权重和上面那条一样，靠 !important 分胜负 —— 两条都是本文件里的手写规则，
+   关系是确定的，不随加载顺序漂。 */
+#chat-room-screen.is-group-chat .expansion-item.stow-call {
+    display: none !important;
 }
 
 #multi-select-bar {
@@ -2023,13 +2270,16 @@
         390    259     250（-9）
      所以这里 width:100% + max-width:260px：宽屏封顶跟气泡一样是 260px，
      窄屏则被 70% 的父列压住一起缩，两头都对齐。
+     ⚠️ 连那个 `+ var(--bub-stroke-x)` 的描边补偿也要跟着抄 —— 用户给普通气泡加描边时
+        气泡的封顶会放宽那么几像素（理由见 .message-content-col 那段注释），
+        这里不跟的话宽屏上卡片就比上下的气泡窄一截、右边缘对不齐。
    ★ margin 必须是 0：头像和气泡的间距由 .message-bubble-row 的 gap:8px 统一发，
      这里以前写 margin:0 8px，叠上去变成 16px，比左右的普通气泡多一截，
      左边缘也对不齐。别加回来。 */
 .forum-share-card {
     width: 100%;
-    max-width: 260px;
-    /* 跟 .message-bubble 的 max-width 保持一致 */
+    max-width: calc(260px + var(--bub-stroke-x, 0px));
+    /* 跟 .message-bubble 的 max-width 保持一致（逐字节一致，含描边补偿） */
     background-color: #ffffff;
     border-radius: var(--border-radius);
     padding: 12px 15px;

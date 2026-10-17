@@ -2096,3 +2096,62 @@ body.forum-multi-select-on .forum-multi-action-bar {
     border-radius: 8px;
     background-color: #fff;
 }
+/* --- 帖子搜索结果页 ---
+   骨架（.search-result-item / .result-header / .result-sender / .result-content）
+   复用 chat_search.css，这里只补论坛多出来的第三行：命中位置徽章 + 作者。
+   ⚠ 别在这里重定义 .search-result-item 本体，两边分叉了就会出现
+     「聊天搜索和帖子搜索长得不一样」这种慢慢跑偏的问题。 */
+#forum-search-scroll-container,
+#forum-search-results-list {
+    padding: 0;
+}
+
+/* 标题可能很长，chat 那边的 .result-sender 没设省略 —— 这里单独收一下，
+   不然长标题会把右侧的时间挤出屏幕 */
+.forum-search-result-item .result-header {
+    align-items: baseline;
+    gap: 10px;
+}
+
+.forum-search-result-item .result-sender {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.forum-search-result-item .result-time {
+    flex-shrink: 0;
+    font-size: 12px;
+}
+
+.forum-result-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 12px;
+    color: #999;
+}
+
+.forum-result-hit {
+    flex-shrink: 0;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    line-height: 1.5;
+    background: #EAF6FD;
+    color: #4E7FAB;
+}
+
+.forum-result-hit-comment {
+    background: #FDF1E6;
+    color: #C0803C;
+}
+
+.forum-result-author {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

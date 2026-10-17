@@ -105,28 +105,49 @@
     gap: 0; /* 移除间隙，依靠 border 分隔 */
 }
 
+/* ── 一行三列：名称 | 体积 | 操作区 ───────────────────────────
+   ⚠️ 后两列必须定宽，这是"体积上下对齐"的全部机关所在。
+   原先是 flex + space-between、右侧 [体积 说明 按钮] 整组贴右对齐 ——
+   于是「记忆与向量」「角色手机数据」（只有说明文字、没有按钮）和
+   「本地媒体」（只有一颗按钮）这三行的体积被各自推到不同的 x 上，
+   十行数字横七竖八。改成定宽列后，体积的右边缘在所有行里是同一条线。
+
+   列宽不是随手填的数，是量出来的（无头 Chrome 里拿同字体的探针 span 量文字宽度，
+   量法见 memory 里那条笔记）：
+   - 体积列 86px：最长可能的 "1023.99 MB" 实测 83.1px，留 3px 余量。
+     ⚠️ 别信"行有没有溢出"那种探针 —— 这列 text-align:right，文字超宽是往**左**
+     顶进列间距里，row 的 scrollWidth 一点不涨，量出来永远是 0、看着也不像裁掉了。
+     第一版填 80px 就是这么漏过去的。要量就直接量文字本身的宽度。
+   - 操作区 72px：要同时容下「两颗按钮」(30+6+30=66) 和
+     「不备份 + 一颗按钮」(33+6+30=69)，取 72 留 3px 余量。
+   改这两个数之前先去量，别照感觉调。
+   （grid 的列宽只在同一个 grid 容器内对齐，每行各自是一个 grid，
+   所以这里只能定宽；想靠内容自动算宽又跨行对齐得用 subgrid，
+   但它的不支持回退是"三列竖着堆起来"，太难看，不值得赌。） */
 .storage-detail-item {
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 86px 72px;
     align-items: center;
-    justify-content: space-between; /* 左右两端对齐 */
-    padding: 12px 8px; /* 增加一点上下内边距 */
+    column-gap: 10px;
+    padding: 12px 0 12px 8px; /* 增加一点上下内边距 */
     border-bottom: 1px solid #f0f0f0;
 }
 
 .storage-detail-item:last-child {
     border-bottom: none;
-    padding: 12px 8px 8px; /* 增加一点上下内边距 */
+    padding: 12px 0 8px 8px; /* 增加一点上下内边距 */
 }
 
 .storage-detail-item:first-child {
-    padding: 8px 8px 12px; /* 增加一点上下内边距 */
+    padding: 8px 0 12px 8px; /* 增加一点上下内边距 */
 }
 
-/* 左侧：圆点 + 名称 */
+/* 左侧：圆点 + 名称。minmax(0,1fr) 那一列，名字长了就省略号，不去挤后两列 */
 .storage-item-left {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
 }
 
 .storage-color-indicator {
@@ -140,13 +161,17 @@
     font-size: 15px;
     color: #333;
     font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-/* 右侧：大小 + 按钮 */
+/* 第三列：说明文字 / 按钮。一律贴右，右边缘和下面几张卡片的按钮对齐 */
 .storage-item-right {
     display: flex;
     align-items: center;
-    gap: 20px; /* 大小和按钮之间的距离 */
+    justify-content: flex-end;
+    gap: 6px;
 }
 
 .storage-detail-size {
@@ -154,6 +179,16 @@
     color: #888;
     text-align: right;
     font-variant-numeric: tabular-nums; /* 数字等宽对齐 */
+    white-space: nowrap;
+}
+
+/* 「随角色管理」「不备份」这类说明。文案刻意压到 3~5 个字 ——
+   它要和按钮挤在同一个 72px 的列里，长了就会顶出去压到体积上。
+   改文案前先数字数（11px 下每个汉字 11px）。 */
+.storage-detail-note {
+    font-size: 11px;
+    color: #aaa;
+    white-space: nowrap;
 }
 
 .btn-export-sm {
@@ -175,8 +210,87 @@
     transform: scale(0.98);
 }
 
+/* 禁用态统一用灰底，图标按钮那条在文件下方（见 .btn-icon-sm:disabled）——
+   ⚠️ 两条必须分开写、且图标那条要排在 .btn-row-clear 之后，
+   同优先级靠书写顺序决出胜负，合在这里会被下面的清空键配色反盖掉。
+   ⚠️ --gray-color 是 #f2f2f7，和卡片的白底只差一点 —— 前景色必须一起改掉，
+   不然白字白图标落在近白底上等于凭空消失（看着像按钮整个没了）。
+   这里用 --dgray-color(#AAB4BE) 当前景；.btn-icon-sm svg 走 stroke:currentColor，
+   所以图标跟着 color 一起变，不用另写一条。
+   也不要再叠 opacity：灰底灰字本身已经够"关着"了，再透一层就真看不见了。 */
 .btn-export-sm:disabled {
+    background: var(--gray-color);
+    color: var(--dgray-color);
+    cursor: not-allowed;
+}
+
+/* ── 详情列表里的图标按钮（删除 / 导出）─────────────────────────
+   ⚠️ 别把 .btn-export-sm 本身改成图标尺寸：那个类还被 GitHub 卡片的
+   上传/下载/配置 和「重复数据清理」的清理按钮用着，它们都是文字按钮，
+   动基类会把那四颗一起压扁。所以另立一个变体类，只给详情行用。
+
+   配色：导出 = --primary-color(#0099FF)，清空 = --accent-color(#90caf9)。
+   2026-10-14 按用户要求分色。此前两颗刻意同色（用户说过"不要红色，会比较丑"，
+   于是干脆连区分都不做、只靠图标），结果一排蓝按钮分不清哪颗是哪颗。
+   现在是"同色系深浅"而不是"蓝 vs 红"—— 仍然没有任何警示红，
+   所以 ⚠️ 防误删依旧全靠 confirmWipeTwice 那两道「必须手打确认短语」的弹窗，
+   不是靠颜色。想把这里改回同色、或改成红色之前，先看那两条历史要求。 */
+.storage-item-btns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.btn-icon-sm {
+    border: none;
+    background: var(--primary-color, #007bff);
+    color: #fff;
+    width: 30px;
+    height: 26px;
+    border-radius: 8px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* 线型素材：几何写在 svg 里，颜色和线宽全从 CSS 给。
+   ⚠️ fill:none 必须显式写出来 —— 表现属性（标签上的 fill="none"）
+   在任何一条 CSS fill 规则面前都没有优先级，漏了就会被填成实心块。 */
+.btn-icon-sm svg {
+    width: 15px;
+    height: 15px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    pointer-events: none;
+    flex-shrink: 0;
+}
+
+.btn-icon-sm:active {
+    filter: brightness(0.9);
+    transform: scale(0.98);
+}
+
+/* 清空键用浅一档的蓝，和导出键区分（见上面 .storage-item-btns 的说明） */
+.btn-icon-sm.btn-row-clear {
     background: var(--accent-color);
+}
+
+/* ⚠️ 必须排在 .btn-row-clear 之后：两条都是 (0,2,0) 同优先级，
+   靠书写顺序定胜负。挪到上面去，清空键禁用时就还是浅蓝、不变灰。 */
+.btn-icon-sm:disabled {
+    background: var(--gray-color);
+    color: var(--dgray-color);
+    cursor: not-allowed;
 }
 
 /* --- 卡片 3: GitHub --- */
@@ -202,10 +316,36 @@
     justify-content: center;
 }
 
+/* ★ 只有 GitHub 那颗是深色底。
+   它的深灰 #24292e 是"未连接"的状态色 —— backup_data.js 的 updateUIState
+   会在连上之后用 inline style 把它刷成 #3A9EF6，所以那颗必须留着默认深色，
+   否则"连没连上"就看不出来了（也正因为是 inline style，这里的 CSS 盖不住它）。
+   「重复数据清理」和「清除所有数据」不存在开/关两态，没有理由先黑一下再变蓝，
+   一开始就是品牌蓝。2026-10-14 按用户要求改。 */
+#cleanup-card .cloud-icon-bg,
+#wipe-all-card .cloud-icon-bg {
+    background: var(--primary-color);
+}
+
 .cloud-icon-bg svg {
     fill: white;
     width: 24px;
     height: 24px;
+}
+
+/* ★ 线型图标（.ic-line）必须在这里显式 fill:none。
+   上面那条 .cloud-icon-bg svg{fill:white} 会把标签上的 fill="none" 整个盖掉
+   —— 表现属性在 CSS 面前没有优先级（同 chat_modal.css 里 .ic-line 那段的说明），
+   于是描边路径被填成白色实心块，24px 下看着就是"一团"。
+   「重复数据清理」那个垃圾桶图标本身是线性的 feather trash-2，
+   糊掉纯粹是因为少了这一条，换图标不加这条照样是一团。
+   新素材一律挂 class="ic-line"；GitHub 那颗是面型实心路径，不要挂。 */
+.cloud-icon-bg svg.ic-line {
+    fill: none;
+    stroke: white;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .cloud-title {
@@ -230,16 +370,10 @@
     gap:5px;
 }
 
-#storage-analysis-screen .btn-disabled {
-    padding: 6px 12px;
-    font-size: 12px;
-    opacity: 0.5;
-    cursor: not-allowed;
-    background-color: #e0e0e0;
-    color: #666;
-    border: none;
-    border-radius: 4px;
-}
+/* 这里原先还有一条 #storage-analysis-screen .btn-disabled（#e0e0e0 底 + #666 字 +
+   opacity .5），2026-10-14 删掉：全项目（js/ + index.html + css/）grep 下来
+   没有任何地方挂这个类名，是死规则；而且它是第三套禁用灰，和上面统一好的
+   「--gray-color 底 + --dgray-color 字」打对台。真要禁用就用 disabled 属性。 */
 
 /* GitHub 专用样式 */
 .btn-sm {

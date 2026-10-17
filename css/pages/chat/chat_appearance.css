@@ -1,0 +1,586 @@
+/* --- chat_appearance.css --- 外观页（#chat-appearance-screen）专属样式
+ *
+ * 这一整套以前躺在 chat_list.css 的末尾，是因为外观页曾经是**聊天列表页里的一个
+ * Tab**（所以容器 id 至今还叫 `#tab-view-bubbles`、class 还挂着 `.tab-content-view`）。
+ * 现在它是独立 screen 了，CSS 也搬出来单独一个文件 —— `main.css` 里紧跟在
+ * `chat_list.css` 后面 import，源码顺序不变，所以搬家本身不改变任何现有外观。
+ *
+ * ★ 两处历史遗留的坑，改之前先看一眼：
+ *   1. 顶栏的 padding **必须写成 longhand**，别图省事合成 `padding: 8px 20px`。
+ *      安全区避让在 `css/base/layout.css`（那个文件是避让的集中管理处），写的是
+ *      `.app-header { padding-top: max(16px, var(--safe-top)) }`；而这里的选择器
+ *      `#chat-appearance-screen .app-header` 是 1 个 id + 1 个 class，权重更高，
+ *      一个 `padding` 简写就把它整条冲掉 —— iOS 上顶栏当场钻进灵动岛底下。
+ *      （layout.css 虽然 import 在最后，但权重不是源码顺序能救的。聊天列表页
+ *      没出这问题，纯粹是因为 layout.css 里另外给它写了一条 ID 版的兜着。）
+ *   2. 面板的 `padding-bottom` 也在 layout.css 那边，别在这里再写一份。
+ *
+ * 页面是四层结构，下面的分节就按这个顺序排：
+ *   ① app-header（返回 + “外观”标题）
+ *   ② 标题栏 + 工具栏（预设名 + 保存/导出/导入/管理）
+ *   ③ 实时样式（预览区，左右翻气泡/顶栏/底栏三页）
+ *   ④ 设置块（基础 / 高级 两个 Tab）
+ */
+
+/* ==========================================================
+   ① app-header
+   ========================================================== */
+
+#chat-appearance-screen .app-header {
+    background-color: var(--gray-color);
+    border: none;
+    /* ★ 别合成 `padding: 8px 20px` —— 会连 layout.css 的 safe-top 一起冲掉
+       （文件头第 1 条）。上边距交给 layout.css 的 ID 条目算。 */
+    padding-right: 20px;
+    padding-bottom: 8px;
+    padding-left: 20px;
+}
+
+#chat-appearance-screen .app-header .action-btn svg {
+    width: 24px;
+    height: 24px;
+    fill: none;
+    stroke-width: 2px;
+    stroke: var(--btn-color);
+}
+
+/* 页面骨架：.content 自己不滚，滚动条交给最底下那块设置面板 */
+#chat-appearance-screen .content {
+    padding: 0;
+    background-color: var(--gray-color);
+    overflow: hidden;
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 容器撑满 .content。id 是历史名（见文件头），现在全项目只有外观页一处用它，
+   所以不再需要「先 display:none 再按页面覆盖成 flex」那一对规则。 */
+#chat-appearance-screen #tab-view-bubbles {
+    display: flex;
+    flex: 1 1 0%;
+    flex-direction: column;
+    min-height: 0;
+    padding: 0;
+    box-sizing: border-box;
+    background-color: var(--gray-color);
+    overflow: hidden; /* 防止整页滚动，滚动发生在内部面板里 */
+}
+
+/* 白底卡片的通用底子。②③ 两块固定高度不滚，④ 自己吃掉剩下的全部空间。 */
+#tab-view-bubbles .appearance-card {
+    background: var(--white-color);
+    overflow: hidden;
+    display: flex;
+    border-radius: 0;
+    padding: 15px 15px 5px;
+}
+
+#tab-view-bubbles .top-fixed-card {
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+/* ==========================================================
+   ② 标题栏 + 工具栏（文件夹标签页风格）
+   ---------------------------------------------------------
+   左边一枚「选中的文件夹标签」装预设名，右边一排工具按钮躺在灰底上。
+   标签右下角那段反向弧线是用 box-shadow 描出来的，没有额外 DOM。
+   ========================================================== */
+
+#tab-view-bubbles .appearance-header {
+    display: flex;
+    align-items: flex-end; /* 关键：让活跃标签贴着底部对齐 */
+    background-color: var(--gray-color, #EEEDF2);
+    /* 抵消父元素 .top-fixed-card 的 15px 内边距，好让灰底填满整条 */
+    margin: -15px -15px 0 -15px;
+    padding: 0;
+    border-radius: 0;
+    min-width: 0;
+    position: relative;
+}
+
+/* 选中的标签（预设名）：白底，浮在灰底前面 */
+#tab-view-bubbles .appearance-tab-active {
+    background-color: var(--white-color, #FFFFFF);
+    padding: 16px 20px 0;
+    border-radius: 18px 32px 0 0;
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.02);
+}
+
+/* 标签右侧那段向下凹的弧线：用一块白色 box-shadow 把直角的空隙填掉，
+   视觉上就成了反向圆角（纯 CSS，不占 DOM）。 */
+#tab-view-bubbles .appearance-tab-active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: -20px;
+    width: 22px;
+    height: 20px;
+    border-bottom-left-radius: 64px;
+    box-shadow: -4px 4px 0 4px var(--white-color, #FFFFFF);
+    pointer-events: none;
+}
+
+/* 预设名输入框：去掉一切框体，完全融进白色标签里 */
+#tab-view-bubbles .appearance-tab-active .preset-name-input {
+    border: none;
+    background: transparent;
+    font-size: 16px;
+    font-weight: bold;
+    padding: 0;
+    width: 120px; /* 限宽，给右边的 + 留位置 */
+    color: var(--text-color, #333);
+    outline: none;
+    box-shadow: none;
+    text-align: center;
+}
+
+#tab-view-bubbles .appearance-tab-active .preset-name-input:focus {
+    color: var(--primary-color); /* 聚焦时文字变色当提示 */
+    border: none;
+    background: transparent;
+}
+
+#tab-view-bubbles .add-btn {
+    color: var(--primary-color);
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    font-weight: bold;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 153, 255, 0.05);
+}
+
+/* ⚠️ 这页所有 .icon-btn 里的 svg 都必须显式写宽高（"+"、保存、导出、导入、管理）。
+   它们在 html 里只带 viewBox，不写 width/height —— 按规范宽高就是隐含的 100%，
+   而 .icon-btn 是 flex 容器、主轴尺寸对 svg 来说是不定的：iOS 的 WebKit 这时算出 0×0，
+   整排图标在 iPhone 上凭空消失；Chrome 会拿容器实际尺寸去解析那个 100%，所以安卓和
+   桌面完全看不出问题（这事就是这么被漏过去的，报上来时只有某台 iOS 复现）。
+   尺寸照抄 api.css 的 .api-icon-btn svg（18px）—— 那 5 颗同族图标一直没坏就因为写了。
+   flex-shrink 一起锁上，免得挤在一行时被压扁。 */
+#tab-view-bubbles .appearance-tab-active .add-btn svg,
+#tab-view-bubbles .appearance-actions .icon-btn svg {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+/* "+" 那颗的壳只有 24px（工具组那 4 颗是 32px），18 塞进去几乎顶边，单独收小一号 */
+#tab-view-bubbles .appearance-tab-active .add-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* 未选中的那半边（工具按钮组），和灰底融合 */
+#tab-view-bubbles .appearance-tab-inactive {
+    flex-grow: 1;
+    display: flex;
+    justify-content: flex-start;
+    padding: 5px 0 5px 12px; /* 左边多留一点，给上面那段弧线避让 */
+    background-color: transparent;
+}
+
+#tab-view-bubbles .appearance-tab-inactive .appearance-actions {
+    display: flex;
+    gap: 7px;
+}
+
+#tab-view-bubbles .appearance-actions .icon-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #555;
+    cursor: pointer;
+    transition: all 0.2s;
+    stroke-width: 1.5;
+    z-index: 3;
+}
+
+#tab-view-bubbles .appearance-tab-inactive .appearance-actions .icon-btn {
+    background-color: rgba(255, 255, 255, 0.5);
+}
+
+#tab-view-bubbles .appearance-tab-inactive .appearance-actions .icon-btn:active {
+    background-color: rgba(0, 0, 0, 0.05); /* 点击时的微弱反馈 */
+}
+
+/* ==========================================================
+   ③ 实时样式（预览区）
+   ========================================================== */
+
+#bubble-css-preview-card {
+    padding-bottom: 0;
+}
+
+#tab-view-bubbles .bubble-css-preview {
+    background: #EEEDF2;
+    border: none;
+    border-radius: 12px;
+    padding: 0;
+    position: relative;
+    height: 200px; /* 固定高度：上半部分不参与伸缩，剩下的全留给设置块 */
+    display: flex;
+    flex-direction: column;
+    z-index: 2;
+}
+
+#tab-view-bubbles .preview-inner {
+    flex: 1;
+    border-radius: 8px;
+    overflow: hidden;
+    position: relative;
+}
+
+#tab-view-bubbles .preview-title {
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    margin-top: 8px;
+    z-index: 5;
+}
+
+/* 左右翻页键（气泡 / 顶栏 / 底栏三页） */
+#tab-view-bubbles .preview-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255,255,255,0.9);
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    cursor: pointer;
+    z-index: 10;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    color: #555;
+    font-size: 12px;
+}
+#tab-view-bubbles .preview-nav-btn.left  { left: 5px; }
+#tab-view-bubbles .preview-nav-btn.right { right: 5px; }
+
+/* ==========================================================
+   ④ 设置块（基础 / 高级 两个 Tab）
+   ========================================================== */
+
+#bottom-content-card {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* 外层卡片自己不滚，否则会出双滚动条 */
+    background: var(--white-color);
+    min-height: 0;    /* 锁死自身高度，逼内部面板产生滚动条 */
+    border-radius: 0; /* 底部方正，不漏出灰底 */
+    padding: 0;
+}
+
+/* Tab 一行：左边两颗圆角 Tab，右边一颗重置键 */
+.bottom-btn-card {
+    padding: 0 5px 5px;
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    overflow: visible;
+}
+
+.bottom-btn-card .bottom-btn {
+    padding: 0;
+    display: flex;
+    justify-content: flex-start;
+    gap: 15px;
+    flex-shrink: 0;
+}
+
+#tab-view-bubbles .side-tab-btn {
+    border-radius: 20px;
+    border: none;
+    padding: 6px 20px;
+    background: var(--white-color);
+    color: #888;
+    font-size: 14px;
+    font-weight: bold;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    flex-shrink: 0; /* 别被旁边的元素挤变形 */
+    white-space: nowrap;
+}
+
+#tab-view-bubbles .side-tab-btn.active {
+    background: var(--primary-color);
+    color: var(--white-color);
+    transform: scale(1.05);
+}
+
+#reset-basic-css-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background-color: var(--white-color);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+#reset-basic-css-btn svg {
+    width: 24px;
+    height: 24px;
+    fill: var(--primary-color);
+}
+
+/* --- 面板本体 -------------------------------------------------
+   「基础」Tab 下面挂着三块面板（气泡 / 顶栏 / 底栏），具体亮哪一块由预览翻到了
+   哪一页决定，见 bubble_css/css_io.js 的 BASIC_PANE_IDS / syncAppearancePane。
+   ⚠️ padding-bottom 不在这里 —— 安全区避让统一在 css/base/layout.css。 */
+#tab-view-bubbles .content-pane {
+    display: none;
+    flex-grow: 1;
+    overflow-y: auto;
+    box-sizing: border-box;
+    /* 防白屏：千万不要在这里用未定义的 fadeIn 动画 */
+    gap: 15px;
+    padding: 10px 10px 15px;
+}
+
+/* 激活态走 flex 列，避免内部元素高度塌陷 */
+#tab-view-bubbles .content-pane.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 面板里的分组小标题（右边挂问号，点开弹 AppHelp 说明）。
+   .settings-group-title / .settings-group-info-icon 两个 class 本体在
+   css/pages/settings/settings_screen.css，是全项目共用的，这里只调间距。
+   使用顶部虚线描边把组和组区分开。 */
+#tab-view-bubbles .settings-group-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+/* 第一个标题就贴在面板顶上，不用再撑 —— 上面是 Tab 行，不是另一组设置 */
+#tab-view-bubbles .settings-group-title:not(:first-child) {
+    border-top: 1px dashed var(--bg-color);
+    padding-top: 8px;
+}
+
+/* 「高级」Tab 的 CSS 输入框：高度自动撑满 */
+#global-bubble-custom-css {
+    flex-grow: 1; /* 代替 height:100%，彻底防止高度塌陷 */
+    width: 100%;
+    min-height: 150px;
+    padding: 12px;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 13px;
+    resize: none;
+    color: #333;
+    outline: none;
+    margin: 0;
+    border: 1px solid var(--bg-color);
+}
+
+#global-bubble-custom-css:focus {
+    border-color: var(--primary-color);
+    background: #fff;
+}
+
+/* --- 「高级」Tab 下半截：自动生成区块的只读折叠框 -----------------
+   这一栏以前只有一个 textarea，自动生成的 CSS 直接追加在用户手写内容后面 ——
+   用户改自己那几行时很容易连带改到它，删掉又等于没了参考。现在拆成
+   「我的 CSS」(上，可编辑) +「自动生成的样式」(下，只读、默认折叠)，
+   拆分/拼回在 bubble_css/css_io.js 的 splitBubbleCss / joinBubbleCss。
+   ⚠️ 折叠壳用的是 components.css 里全项目共用的 .collapsible-section，
+   它靠 max-height 0 ↔ 100000px 做动画。所以这里必须给它 flex-shrink: 0 ——
+   它和上面那个 flex-grow:1 的 textarea 是同一个 flex 列的兄弟，不钉住的话
+   展开时会被 textarea 挤扁，看着像「点了没反应」。 */
+#bubble-generated-css-section {
+    flex-shrink: 0;
+    margin-bottom: 0;
+}
+
+/* 行数提示（「12 行」/「暂无…」）跟在标题后面，弱化一点 */
+#bubble-generated-css-hint {
+    margin-left: 6px;
+    font-weight: normal;
+    opacity: 0.65;
+}
+
+.readonly-css-box {
+    margin: 0;
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.03);
+    border: 1px dashed var(--bg-color);
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #666;
+    /* 生成的选择器很长，不换行就只能横着拖 */
+    white-space: pre-wrap;
+    word-break: break-all;
+    /* 内容多的时候自己滚，别去撑整个面板 ——
+       #bottom-content-card 是 overflow:hidden，撑爆了就彻底看不见 */
+    max-height: 260px;
+    overflow-y: auto;
+}
+
+.readonly-css-box:empty::before {
+    content: '基础设置全是默认值，所以没有生成任何 CSS。';
+    color: #aaa;
+    font-style: italic;
+}
+
+/* --- 单个设置项 ---------------------------------------------- */
+
+#tab-view-bubbles label { font-size: 15px; color: #333; }
+#tab-view-bubbles span  { font-size: 15px; color: #333; }
+#tab-view-bubbles select {
+    width: 100%;
+    border: 1px solid var(--bg-color);
+    background-color: transparent;
+    border-radius: 8px;
+    padding: 8px 15px;
+}
+
+#tab-view-bubbles .bubble-settings-item { display: flex; margin-bottom: 0; white-space: nowrap; }
+#tab-view-bubbles .bubble-settings-item.row { flex-direction: row; justify-content: space-between; align-items: center; gap: 8px; }
+#tab-view-bubbles .bubble-settings-item.col { flex-direction: column; gap: 5px; }
+#tab-view-bubbles .bubble-settings-item input[type="text"] {
+    width: 100%;
+    border: 1px solid var(--bg-color);
+    background-color: transparent;
+    border-radius: 8px;
+    padding: 8px 15px;
+}
+#tab-view-bubbles .bubble-settings-item input[type="color"] {
+    border: 3px solid var(--white-color);
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    cursor: pointer;
+    padding: 0;
+    background: none;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    flex-shrink: 0;
+}
+#tab-view-bubbles .bubble-settings-item input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+#tab-view-bubbles .bubble-settings-item input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+/* 有些行的 label 里塞了个问号图标（点它弹 AppHelp 说明）。label 默认 inline，
+   图标会挂在基线上、比文字低半截，所以要翻成 inline-flex 居中。
+   ★ 必须逐行点名，别写成 `.bubble-settings-item label` —— 那会把
+   <label class="switch"> 那个开关也变成 inline-flex，滑块当场散架。 */
+#tab-view-bubbles #time-format-row > label,
+#tab-view-bubbles #hdrblk-width-row > label {
+    display: inline-flex;
+    align-items: center;
+}
+
+/* 滑块：accent-color 一行就能让左侧填色、右侧留灰 */
+#tab-view-bubbles .bubble-settings-item input[type="range"] {
+    width: 100%;
+    border: none;
+    cursor: pointer;
+    accent-color: var(--primary-color, #0099FF);
+    /* 整条轨道不接事件，只让下面那颗滑块接 —— 防止点轨道时数值瞬间跳一大截 */
+    pointer-events: none;
+}
+#tab-view-bubbles .bubble-settings-item input[type="range"]::-webkit-slider-thumb { pointer-events: auto; }
+#tab-view-bubbles .bubble-settings-item input[type="range"]::-moz-range-thumb    { pointer-events: auto; }
+
+/* --- 复选框美化（描边方向那一排） --- */
+#tab-view-bubbles .custom-check-label {
+    position: relative;
+    padding-left: 26px; /* 给圆圈留位置 */
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
+    user-select: none; /* 连击时别选中文字 */
+}
+
+/* 原生复选框藏起来但留着，JS 还要读它的 value */
+#tab-view-bubbles .custom-check-label input[type="checkbox"] {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+/* 未选中：灰色空心圆 */
+#tab-view-bubbles .custom-check-mark {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    width: 20px;
+    height: 20px;
+    border: 2px solid #ccc;
+    border-radius: 50%;
+    background-color: transparent;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+}
+
+/* 选中：底色和边框都变蓝，中间补一个白对勾 */
+#tab-view-bubbles .custom-check-label input:checked ~ .custom-check-mark {
+    background-color: var(--primary-color, #0099FF);
+    border-color: var(--primary-color, #0099FF);
+}
+
+#tab-view-bubbles .custom-check-label input:checked ~ .custom-check-mark::after {
+    content: '✓';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+/* --- 「当前正在修改」虚线框 ----------------------------------
+   气泡 / 顶栏 / 底栏三块面板里都有同一个东西：一个下拉切对象 + 一组共用控件。
+   ⚠️ 三个 id 必须都在 —— 漏掉 #header-target-settings-box 就是「顶栏那组控件
+   没被虚线框收进去，长得和别的两项不一样」（用户报过一次）。 */
+#bubble-type-settings-box,
+#header-target-settings-box,
+#footer-target-settings-box {
+    display: flex;
+    flex-direction: column;
+    border: 1px dashed var(--bg-color);
+    border-radius: 16px;
+    padding: 15px;
+    gap: 15px;
+}
+
+/* 分隔线。⚠️ 最后那条选择器不能省：顶栏/底栏面板里的 <hr> 是面板的**直接子元素**，
+   不在上面那三个 box 里。漏掉的话它吃 UA 默认样式 —— flex 列里 margin-inline:auto
+   会把它缩成居中的一个小点（是"显示成一个点"不是"不显示"，很容易被当成"没加上"）。 */
+#bubble-type-settings-box hr,
+#header-target-settings-box hr,
+#footer-target-settings-box hr,
+#tab-view-bubbles .content-pane > hr {
+    width: 100%;
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 0;
+}

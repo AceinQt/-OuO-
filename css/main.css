@@ -12,6 +12,9 @@
 
 /* chat */
 @import './pages/chat/chat_list.css';
+/* ★ 必须紧跟 chat_list.css —— 外观页的样式原来就躺在那个文件末尾，
+   其中几条和它里面的规则权重打平、靠源码顺序分胜负。挪动这一行会改变胜负。 */
+@import './pages/chat/chat_appearance.css';
 @import './pages/chat/chat_room.css';
 @import './pages/chat/settings_sidebar.css';
 @import './pages/chat/chat_search.css';

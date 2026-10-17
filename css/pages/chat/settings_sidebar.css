@@ -66,14 +66,23 @@
     margin-bottom: 20px;
 }
 #bubble-presets-modal .list-item         { display: flex; padding: 10px 0; }
-#bubble-presets-modal .list-item-title   { flex: 1; min-width: 0; }
-#bubble-presets-modal .list-item-btn     { display: flex; gap: 6px; }
-#bubble-presets-modal .list-item-btn .btn {
-    padding: 8px 10px;
+/* 名字可能很长（而且是用户自己起的），`min-width:0` + 省略号别省 ——
+   不然长名字会把右边那排按钮挤出弹窗外。 */
+#bubble-presets-modal .list-item-title   {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-    border-radius: 6px;
-    font-size: 14px;
 }
+/* 每行四颗操作按钮（编辑/复制/重命名/删除），用的是 api.css 里的 `.api-icon-btn`
+   —— 36×36 方形图标按钮，四颗挤在一行也放得下（api.css 在 main.css 里是全局 import，
+   不用在这儿再抄一份样式）。
+   原先这里还有一条 `.list-item-btn .btn{padding:8px 10px;…}`，是给「编辑/重命名/删除」
+   三颗**文字**按钮收窄内边距用的；2026-10-08 加「复制」时整排换成了图标按钮
+   （四颗文字按钮在 390px 宽的手机上会折行、把行撑成两层），那条规则再没有命中对象，
+   所以删掉了 —— 别看见图标按钮没样式又把它加回来，样式在 api.css。 */
+#bubble-presets-modal .list-item-btn     { display: flex; gap: 6px; flex-shrink: 0; }
 
 /* panel 系列（气泡预设编辑器内） */
 .settings-sidebar .panel {

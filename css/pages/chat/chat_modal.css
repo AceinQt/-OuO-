@@ -59,18 +59,34 @@
     border-radius: 50%;
 }
 
+/* ★ 这个面板**不是浮层**：它住在 .chat-input-wrapper 里、排在 #sticker-bar 之后，
+   所以打开时是把「输入栏 + 工具栏」整条往上顶（微信/QQ 那个效果），而不是盖住输入栏。
+   以前它是 position:absolute; bottom:0; z-index:65，正好压在 z-index:50 的输入栏上面 ——
+   用户要打字就得先把面板关掉。
+
+   随之而来的三件事：
+   · 不能再写 position/bottom/left/right —— 一旦脱离文档流就撑不开父节点，又变回盖住。
+   · 圆角从「上面两个角 20px」换成「下面两个角跟手机壳」：它现在是底栏最下面那一截，
+     .chat-input-wrapper 的 border-bottom-*-radius 画在父节点上管不住子节点的方角。
+   · box-shadow 那条朝上的投影也去掉了 —— 面板和工具栏现在是连着的一整块，
+     中间横一道阴影像是断开了。 */
 #chat-expansion-panel {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 35%;
-    max-height: 250px;
-    background: rgba(243, 242, 247, 0.98);
-    border-top-left-radius: 20px;
-    border-top-right-radius: 20px;
-    box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
-    z-index: 65;
+    /* ★ 高度交给内容，不要写死百分比。
+       改成「一行 4 个、一页 2 行」之后，两行图标 + 页码圆点大约要 235px，
+       而旧的 35% 在矮屏上只有 230 不到，第二行会被切掉半截。
+       格子尺寸全是固定 px，auto 算出来的结果本身就稳定。
+       ⚠️ 兜底用的是 dvh 不是 % —— 父节点 .chat-input-wrapper 现在是 height:auto，
+       百分比在不定高的父节点上解析不出来，等于没写（面板一高就能把输入栏顶出屏幕顶部）。
+       50dvh 对齐 .phone-screen 的 max-height:100dvh；真被夹到了就纵向滚，不切行。 */
+    height: auto;
+    max-height: 50dvh;
+    overflow-y: auto;
+    /* ★ 底色和毛玻璃都**不要**自己写：父节点 .chat-input-wrapper 已经是
+       rgba(243,242,247,0.85) + blur(8px)，面板是它的子节点，再写一份就是两层叠加 ——
+       0.85 叠 0.85 实际不透明度到 0.9775，blur 也过两遍，肉眼就是「面板比输入栏白一块、
+       接缝处横着一道色差」（用户原话：面板打开不是透明的，和输入栏颜色不一样）。
+       留成 transparent 让 wrapper 那层透上来，整条底栏才是一个颜色。 */
+    background: transparent;
     display: none;
     flex-direction: column;
 }
@@ -83,8 +99,6 @@
     height: 50%;
     max-height: 350px;
     background: rgba(243, 242, 247, 0.98);
-    border-top-left-radius: 20px;
-    border-top-right-radius: 20px;
     box-shadow: 0 -5px 15px rgba(0, 0, 0, 0.1);
     z-index: 65;
     display: none;
@@ -439,10 +453,97 @@
     text-align: center;
 }
 
+/* ---- "+"面板的横向翻页（QQ/微信那种：一行 4 个、一页 8 个，左右滑翻页）----
+   以前这里挂的是 .sticker-grid（grid-template-columns: repeat(auto-fill, minmax(70px,1fr))），
+   所以每行几个完全由面板宽度决定 —— 手机上 4 个、PC 上能排到 7、8 个，还会纵向溢出。
+   现在容器只负责横向滚动，分列交给 .expansion-page。
+
+   翻页用的是原生 scroll-snap 而不是手写 touchmove + transform：
+   惯性、回弹、trackpad 横滑、scrollTo 平滑动画全是浏览器白送的，
+   手写那套在 iOS 上还得自己处理边界回弹。代价是必须给 swipe_back.js 加 .no-swipe-back
+   豁免（见 index.html 上那个 class），否则右滑翻页会被当成「返回上一页」。 */
 #chat-expansion-grid {
-    padding: 20px 15px 15px;
-    align-items: center;
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    /* 滑到第一页还继续右滑时，别把滚动链传给外层（iOS Safari 会当成系统返回手势） */
+    overscroll-behavior-x: contain;
+}
+
+/* reset.css 只给 html 关了 webkit 滚动条，这里得自己关，不然 PC 上面板底下横着一条 */
+#chat-expansion-grid::-webkit-scrollbar {
+    display: none;
+}
+
+.expansion-page {
+    /* 一页正好占满容器宽度 → 一次只看见一页 */
+    flex: 0 0 100%;
+    scroll-snap-align: start;
+    display: grid;
+    /* ★ 固定 4 列 + 两端对齐，和底栏 #sticker-bar 同一套分布方式
+       （那边是 padding: 0 10px 5px + justify-content: space-between）。
+       列宽不用 1fr：1fr 会把每一列都撑成容器的 1/4、图标钉在各自格子的正中间，
+       屏幕一宽就变成「几个图标缩在中间、两边大片留白」。这里让列只占图标自己那点宽度，
+       多出来的空间由 space-between 均摊到列**之间**，所以首尾两个图标永远贴着固定的
+       15px 内边距，中间的均匀铺开 —— 窄屏宽屏看着是同一种疏密关系。
+       列宽按整页最宽的那一列算，所以上下两行是对齐的，不会错位。
+
+       ⚠️ 下限 60px 不能去掉，只写 max-content 会**末行错位**：
+       max-content 对一个格子都没有的空轨算出来是 0，末行只有 2 项时 4 条轨成了 [60,60,0,0]，
+       而 space-between 照样把剩余空间分成 3 等份塞进轨**之间** —— 第 2 项就落到了整页正中。
+       （实测「仅收纳通话」那档：第二页只剩「通话 + 批量删除」，批量删除跑到中间。
+        末行 3 项、1 项同理，只是偏得少、不容易一眼看出来。）
+       给个下限之后空轨照样占满一整列，末行的列位和满行一字不差。
+
+       这个下限必须 **≥ 每一项 max-content 里最宽的那个**（图标盒子 55px 和那行文字标签，
+       取更宽的），这样真轨和空轨才会一律等于下限、宽度一致。小于它的话真轨被内容顶宽、
+       空轨还停在下限，末行又偏回去了 —— 所以只许往上调，别跟着图标盒子往下改。 */
+    grid-template-columns: repeat(4, minmax(60px, max-content));
+    grid-template-rows: repeat(2, auto);
+    justify-content: space-between;
+    align-content: start;
+    /* 这里的 column-gap 只是「挤到极限时的最小间距」—— space-between 分得出空间时用它的 */
+    gap: 14px 4px;
+    padding: 12px 25px 18px;
+}
+
+.expansion-dots {
+    flex-shrink: 0;
+    display: flex;
     justify-content: center;
+    align-items: center;
+    padding-bottom: 10px;
+}
+
+/* 只有一页时 JS 一个圆点都不渲染，这里顺手把那点高度也收掉 */
+.expansion-dots:empty {
+    display: none;
+}
+
+.expansion-dots .dot {
+    /* 圆点在 PC 上是要拿鼠标点的 —— 用透明边框把 6px 的点撑成 16px 热区，
+       再用负 margin 把多出来的尺寸从排版里扣回去，所以看上去还是「6px 的点、间隔 8px」。
+       box-sizing 必须显式改回 content-box：全局 reset 是 border-box，
+       那样 width:6px 会把边框算进去，可见的点只剩 0。 */
+    box-sizing: content-box;
+    width: 6px;
+    height: 6px;
+    border: 5px solid transparent;
+    margin: -5px -1px;
+    border-radius: 50%;
+    background-color: rgba(0, 0, 0, 0.18);
+    background-clip: padding-box;
+    transition: background-color 0.2s, transform 0.2s;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.expansion-dots .dot.active {
+    background-color: rgba(0, 0, 0, 0.42);
+    transform: scale(1.2);
 }
 
 #world-book-selection-modal,
@@ -524,15 +625,15 @@
 }
 
 .expansion-item-icon {
-    width: 60px;
-    height: 60px;
+    width: 55px;
+    height: 55px;
     border-radius: 15px;
     background-color: #fff;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    box-shadow: 0 0 3px rgba(120, 120, 120, 0.02);
     display: flex;
     align-items: center;
     justify-content: center;
-    margin-bottom: 8px;
+    margin-bottom: 5px;
     transition: background-color 0.2s;
 }
 
@@ -541,14 +642,32 @@
 }
 
 .expansion-item-icon svg {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     fill: #555;
+}
+
+/* 线型图标（.ic-line）：svg 里只留几何，颜色和线宽全从 CSS 给。
+   为什么要分出这个 class —— 面板里两种图标混着：
+   · 面型（evenodd 挖空的"环"）：粗细画死在路径里，CSS 调不了，靠 fill 上色；
+   · 线型（stroke 描边）：粗细就是 stroke-width，CSS 一行就能改。
+   svgrepo 那批素材的环宽统一是 2/24，所以线宽也定 2，两种混排才看不出是两套东西。
+   ⚠️ 想整体调粗细改 --exp-icon-stroke 这一个值（只对线型的有效）。
+   注意别去改 svg 标签上的 stroke-width 属性：CSS 优先级高于表现属性，改了不生效。 */
+.expansion-item-icon svg.ic-line {
+    fill: none;
+    stroke: #555;
+    stroke-width: var(--exp-icon-stroke, 2);
+    stroke-linecap: round;
+    stroke-linejoin: round;
 }
 
 .expansion-item-name {
     font-size: 13px;
     color: #666;
+    /* 固定 4 列后窄屏上一格只有 ~85px，4 个汉字 52px 装得下；
+       加 nowrap 是防止以后有人写 5 个字时悄悄折行、把第二行顶歪 */
+    white-space: nowrap;
 }
 
 /* --- 扩展面板按钮激活状态（描边效果） --- */
@@ -579,14 +698,18 @@
 }
 
 /* 面性图标（如转发分享的箭头）：必须和上面 .expansion-item-icon svg 的 fill 一一对应地盖掉，
-   svg 上没写 fill 的子元素（如定位图标的圆圈）靠继承拿到同一个灰 */
-.expansion-item.disabled .expansion-item-icon svg {
+   svg 上没写 fill 的子元素（如定位图标的圆圈）靠继承拿到同一个灰。
+   ⚠️ :not(.ic-line) 不能省：这条和 .expansion-item-icon svg.ic-line 的权重一样高（都是 2 类 + 1 元素），
+   只靠源码先后分胜负 —— 排在后面的它会赢，把本该镂空的线型图标整个填实。 */
+.expansion-item.disabled .expansion-item-icon svg:not(.ic-line) {
     fill: var(--expansion-disabled-icon);
 }
 
-/* 线性图标（定位）：颜色写死在元素的 stroke="#555" 表现属性上，
-   表现属性优先级低于任何 CSS 规则，所以这条能盖掉，不用改 JS 里的 SVG 字符串 */
-.expansion-item.disabled .expansion-item-icon svg [stroke] {
+/* 线性图标，两种写法各盖一次：
+   · 老素材把颜色写死在子元素的 stroke="#555" 表现属性上（表现属性优先级低于任何 CSS 规则）；
+   · 新素材（.ic-line）颜色本来就来自 CSS，子元素上一个 stroke 属性都没有，上面那条选不中。 */
+.expansion-item.disabled .expansion-item-icon svg [stroke],
+.expansion-item.disabled .expansion-item-icon svg.ic-line {
     stroke: var(--expansion-disabled-icon);
 }
 

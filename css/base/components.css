@@ -110,6 +110,20 @@
     fill: var(--btn-color);
 }
 
+/* `.action-btn` 并不总是套在 `.action-btn-group` 里 —— 世界页的保存键（#world-save-btn）
+   就是裸挂在 .app-header 下的，上面那条选择器够不着它。
+   ⚠️ 这条**只补尺寸、不碰 fill**：各页自己的 fill 规则（如 forum.css 给世界页的
+   --primary-color）都带 id、权重更高，照样说话；在这里跟着写一份 fill 反而会去改
+   那些本来没写 fill、靠默认黑的按钮。
+   为什么非写不可：内联 svg 只给 viewBox、不给 width/height 时，宽高按规范是隐含的
+   100%，而它当 flex item 时容器尺寸是不定的 —— iOS 的 WebKit 直接算成 0×0（按钮整颗
+   消失），Chrome 会拿容器实际尺寸去解析，所以安卓/桌面一切正常、只有 iOS 用户看不见。
+   同类参考：api.css 的 .api-icon-btn svg 写了尺寸，那 5 颗按钮就从没出过这问题。 */
+.app-header > .action-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
 .app-header .back-btn svg {
     width: 36px;
     height: 36px;    

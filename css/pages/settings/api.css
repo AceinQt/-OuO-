@@ -38,6 +38,16 @@
     margin-bottom: 0;
 }
 
+/* ⚠️ 开关行必须自己处理 hidden ——
+   `_syncApiProviderFields()`（api_settings.js）靠 `row.hidden = true` 来隐藏
+   「仅某些服务商可见」的字段行，而 hidden 的 `display:none` 来自 UA 样式表，
+   优先级低于上面那条**类选择器** `display:flex`，于是开关行加了 hidden 也照样显示。
+   普通 `.form-group` 没这问题（它只声明 margin-bottom），所以 Project ID 那行
+   一直是对的 —— 别看着它能用就以为开关行也能用。 */
+.form-group-switch[hidden] {
+    display: none;
+}
+
 /* ── 预设管理按钮组 (5个按钮两端对齐) ────────────────────────── */
 .api-preset-btns-row {
     display: flex;
@@ -345,6 +355,19 @@
 .voice-preview-player {
     width: 100%;
     margin-top: 12px;
+}
+
+/* 试听的「播放 / 下载」按钮行。同 .image-preview-btns：全局 .btn-group 是
+   "固定 50px 高 + 子按钮 width:100%"，两颗在手机上会溢出，高度得交还给内容。 */
+.voice-preview-btns {
+    height: auto;
+    margin-top: 10px;
+    gap: 10px;
+}
+
+.voice-preview-btns .btn {
+    flex: 1 1 0;         /* 两颗等分整行，随屏宽伸缩 */
+    min-width: 0;        /* flex 子项默认 min-width:auto 会撑破，必须归零 */
 }
 
 /* 分组小标题（语音 tab 字段多，靠它把「用量」单独分出一段） */

@@ -20,16 +20,59 @@
     background: #111;
 }
 
-/* 背景模糊图，仅上半部分 */
+/* 背景模糊图：占上 3/4，底部 40% 渐隐进 #111
+   里面是同一张图的两层（见 index.html）：
+   near = 纵向铺满的主层（<img>），far = 宽屏兜底的重模糊底层（背景图）。
+   ⚠️必须是两个**真 DOM 元素**，不能用伪元素 + `var(--call-bg)` 省掉它们：
+   ① `filter` 会连带作用于子元素，「父画一层、子画另一层」做不到"子比父更模糊"；
+   ② 相对路径塞进自定义属性后，`var()` 是按**用到它的那张样式表**的基址解析的 ——
+      本文件在 css/pages/chat/ 下，`url('png/avatar_default.jpg')` 会被解析成
+      `css/pages/chat/png/avatar_default.jpg` 直接 404，而默认头像正是相对路径。 */
 #call-bg-blur {
     position: absolute;
     top: 0; left: 0; width: 100%;
-    height: 60%;                          /* 原 50%，越大覆盖越多，可自行调 */
-    filter: blur(3px);                   /* 新增：图片模糊 */
-    transform: scale(1.01);              /* 新增：消除 blur 边缘漏白 */
-    -webkit-mask-image: linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
-    mask-image:         linear-gradient(to bottom, black 0%, black 50%, transparent 100%);
+    height: 75%;                          /* 3/4 高；底部 40% 被 mask 吃掉 */
+    overflow: hidden;                     /* 挡住两层各自向外探出的模糊边 */
+    /* 渐隐不用线性而是缓出多段：线性 alpha 在"开始淡出"那条线上会有可见的 Mach 带，
+       看起来就像图片有个下边缘 —— 要的"平滑"主要靠这几段撑着，别图省事压回两段 */
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 60%, rgba(0,0,0,.86) 72%, rgba(0,0,0,.55) 83%, rgba(0,0,0,.22) 93%, transparent 100%);
+    mask-image:         linear-gradient(to bottom, #000 0%, #000 60%, rgba(0,0,0,.86) 72%, rgba(0,0,0,.55) 83%, rgba(0,0,0,.22) 93%, transparent 100%);
     opacity: 0.55;                        /* 原 0.6，可再往下调让它更暗 */
+}
+
+/* 底层：cover 铺满整块 + 重模糊。纯粹是宽屏兜底 ——
+   主层只保证纵向铺满，屏幕一宽两端就露出底色，这层把空档用同一张图糊过去
+   （视频播放器那套"模糊黑边"，也是微信/Telegram/WhatsApp 通话背景的做法）。
+   窄屏上它被主层整个盖住，完全看不见，不用加媒体查询去关。 */
+#call-bg-far {
+    position: absolute;
+    inset: -40px;                         /* 探出 40px，免得 32px 模糊在边缘采到透明 */
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;         /* ⚠️不写就是默认 repeat，宽屏上头像平铺成马赛克 */
+    filter: blur(32px) brightness(.75);   /* 压暗一档，免得两边的模糊块比中间的主体还抢眼 */
+}
+
+/* 主层：纵向铺满、两端超出的切掉（= "优先铺满纵列的四分之三"）。
+   ⚠️是 `<img>` 不是背景图，也不是 `background-size:cover`，两件事各有原因：
+   · 不用 cover —— 很宽的屏幕上 cover 改按宽度放大，小头像能被拉到 8 倍、
+     纵向再砍掉一半多，糊成一团还认不出是谁；
+   · 不用背景图 —— 宽屏上主层和底层之间会留一条**竖直硬边**（实测 900px 宽时
+     左右各一条，亮度差很明显），要淡掉它就得让遮罩落在**图片的左右边缘**上，
+     而背景图的盒子永远是整块容器宽，`mask` 只能按容器边缘淡、对不上图片边缘。
+     `<img>` 的盒子 = 图片本身，宽屏上遮罩正好淡在图片边上；窄屏上图片比容器宽，
+     那段渐变自然落到可视区外被裁掉，不会凭空给画面加暗角。两种屏都不用媒体查询。 */
+#call-bg-near {
+    position: absolute;
+    top: -8px;                            /* 上下各探出 8px，让 3px 模糊的边缘落在盒子外 */
+    left: 50%;
+    transform: translateX(-50%);
+    height: calc(100% + 16px);
+    width: auto;
+    max-width: none;                      /* 盖掉全局 img{max-width:100%}，否则宽图会被压扁 */
+    filter: blur(3px);
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 56px, #000 calc(100% - 56px), transparent 100%);
+    mask-image:         linear-gradient(to right, transparent 0, #000 56px, #000 calc(100% - 56px), transparent 100%);
 }
 
 /* 姓名+状态，垂直居中稍偏上 */
@@ -178,8 +221,11 @@
     position: absolute;
     inset: 0;
     top: 0; left: 0; width: 100%;
-    height: 60%; 
+    height: 60%;
     background-position: center;
+    background-repeat: no-repeat;   /* ⚠️不写就是默认 repeat，宽屏上平铺成马赛克 */
+    background-size: cover;         /* 这块 blur(15px)+brightness(.35)，宽屏放大看不出来，
+                                       不用像等待屏那样分两层 */
     filter: blur(15px) brightness(0.35);
     transform: scale(1.01);
     z-index: -1;   /* ← 改成 -1，沉到 stacking context 底层 */

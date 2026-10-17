@@ -35,6 +35,17 @@
     padding-top: max(8px , var(--safe-top));
 }
 
+/* 外观页。口径和上面的聊天列表页一致（它是从那个页面里拆出来的）。
+   ★ 这一条不能省：chat_appearance.css 里 `#chat-appearance-screen .app-header`
+   是 1 id + 1 class，权重比上面那条光秃秃的 `.app-header` 高 —— 那边只要出现一个
+   `padding` 简写，顶部避让就整条没了，iOS 上「外观」标题直接钻进灵动岛底下
+   （用户报过一次）。所以两头都上了保险：那边写 longhand 不碰 padding-top，
+   这边再按 ID 明写一遍。 */
+#chat-appearance-screen .app-header {
+    min-height: 50px;
+    padding-top: max(8px , var(--safe-top));
+}
+
 #character-edit-screen .char-edit-hero {
     height: calc(180px + var(--safe-top));
 }
@@ -102,14 +113,20 @@
     padding-bottom: var(--safe-bottom);
 }
 
-/* 聊天消息滚动区 */
+/* 聊天消息滚动区：要同时躲开「底栏 + 安全区 + 开着的"+"面板」三层。
+   三层都压进 --chat-foot-total 了（定义在 chat_room.css 开头的 #chat-room-screen），
+   所以这里一个数字都不写死 —— 以前是三条权重打平的规则各写一份
+   （100px / 收纳档 58px / 两者再叠面板高），靠源码顺序分胜负。
+   同一个变量也是 "正在输入" 提示的落点依据，两边再也不会各算一套。 */
 #chat-room-screen .message-area {
-    padding-bottom: calc(100px + var(--safe-bottom)) ;
+    padding-bottom: var(--chat-foot-total);
 }
 
-/* 聊天室内的底部弹出面板 (表情包面板、扩展面板等) */
-#sticker-modal,
-#chat-expansion-panel {
+/* 聊天室内的底部弹出面板 (表情包面板)
+   ⚠️ #chat-expansion-panel 不在这里：它已经不是浮层，而是 .chat-input-wrapper 的
+   最后一个子节点（见 chat_modal.css 开头那段），安全区由上面那条 wrapper 的 padding
+   统一让出；再写一份就是双份留白，面板底下会凭空多出 ~34px。 */
+#sticker-modal {
     padding-bottom: var(--safe-bottom);
 }
 
@@ -131,8 +148,14 @@
     padding-bottom: calc(80px + var(--safe-bottom)); 
 }
 
+/* 外观页「基础/高级」面板的滚动区。
+   ★ 这里曾经是 `calc(85px + var(--safe-bottom, 15px))` —— 那 85px 是外观页还是
+   **聊天列表页里一个 Tab** 时，给页面底部那条导航栏（.bottom-nav-tabs）让的位置。
+   现在它是独立 screen、底下什么都没有，85px 就成了纯死留白：滚到底之后最后一项
+   和面板底边之间隔着 85px（iOS 上 119px）的空白，用户报的「安卓和 iOS 底部都有
+   很大的空白」就是它。面板是整屏最底下那块，所以只需要让出安全区本身。 */
 #tab-view-bubbles .content-pane {
-    padding-bottom: calc(85px + var(--safe-bottom, 15px));
+    padding-bottom: max(15px , var(--safe-bottom));
 }
 
 
