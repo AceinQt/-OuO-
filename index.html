@@ -8,7 +8,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     
     <title>OuO</title>
-    <meta name="theme-color" content="#FFFFFF" />
+    <meta name="theme-color" content="#BEC9CB" />
     
     <!-- 2. iOS Safari 伪装原生 App 三连击 -->
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -1400,6 +1400,11 @@
                     <div class="item-details"><span class="item-name">关联世界书</span></div>
                     <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
+                <!-- 私聊正则关联独立保存，线上与线下可分别勾选。 -->
+                <div class="settings-item" id="link-regex-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16h.01M11 5v9M7 8l8 4M15 8l-8 4M18 5v14"/></svg></div>
+                    <div class="item-details"><span class="item-name">关联正则</span></div><span class="regex-setting-arrow">›</span>
+                </div>
                 <!-- API 预设 -->
 <div class="settings-item">
     <div class="setting-icon-box">
@@ -1413,6 +1418,12 @@
     <select id="setting-chat-api-preset" class="inline-select"></select>
     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
 </div>
+                <!-- 缓存优化按聊天室保存，默认关闭；关闭时继续使用原提示词。 -->
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path></svg></div>
+                    <div class="item-details"><span class="item-name">缓存优化</span></div>
+                    <label class="switch"><input type="checkbox" id="setting-chat-cache-optimization" aria-label="缓存优化"><span class="slider round"></span></label>
+                </div>
                 <!-- 图像生成 -->
                 <div class="settings-item" id="setting-chat-image-item">
                     <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M5.64 5.64l12.72 12.72"></path><path d="M18.36 5.64L5.64 18.36"></path></svg></div>
@@ -1579,6 +1590,10 @@
                     <div class="item-details"><span class="item-name">关联世界书</span></div>
                     <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
                 </div>
+                <div class="settings-item" id="link-group-regex-btn">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 16h.01M11 5v9M7 8l8 4M15 8l-8 4M18 5v14"/></svg></div>
+                    <div class="item-details"><span class="item-name">关联正则</span></div><span class="regex-setting-arrow">›</span>
+                </div>
 <!-- API 预设 -->
 <div class="settings-item">
     <div class="setting-icon-box">
@@ -1592,6 +1607,12 @@
     <select id="setting-group-api-preset" class="inline-select"></select>
     <svg class="chevron-icon" style="margin-left:5px;" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
 </div>
+                <!-- 群聊独立设置缓存优化，不随 API 预设或其他聊天室继承。 -->
+                <div class="settings-item toggle-setting">
+                    <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="8" ry="3"></ellipse><path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5"></path><path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"></path></svg></div>
+                    <div class="item-details"><span class="item-name">缓存优化</span></div>
+                    <label class="switch"><input type="checkbox" id="setting-group-cache-optimization" aria-label="缓存优化"><span class="slider round"></span></label>
+                </div>
                 <!-- 图像生成 -->
                 <div class="settings-item" id="setting-group-image-item">
                     <div class="setting-icon-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"></path><path d="M3 12h18"></path><path d="M5.64 5.64l12.72 12.72"></path><path d="M18.36 5.64L5.64 18.36"></path></svg></div>
@@ -2162,39 +2183,91 @@
 
 
 
-        <!-- 世界书页面 -->
+        <!-- 左侧卡片只放功能与返回操作；右侧标题栏固定，类别目录单独滚动。 -->
         <div id="world-book-screen" class="screen">
-            <header class="app-header">
-                <button class="back-btn" data-target="home-screen">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
-    </svg>
-</button>
-                <div class="title-container">
-                    <h1 class="title">世界书</h1>
+            <div class="wb-layout-container">
+                <aside class="wb-feature-sidebar" aria-label="功能导航">
+                    <div class="wb-feature-tabs" role="tablist" aria-label="功能分类" aria-orientation="vertical">
+                        <button type="button" class="wb-feature-tab active" id="wb-world-book-tab" role="tab" aria-label="世界书" title="世界书" aria-selected="true" aria-controls="wb-world-book-panel">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 3H20v19H6.5A2.5 2.5 0 0 1 4 19.5v-14A2.5 2.5 0 0 1 6.5 3Z"/><path d="M8 7h8M8 11h6"/></svg>
+                        </button>
+                        <button type="button" class="wb-feature-tab" id="wb-regex-tab" role="tab" aria-label="正则" title="正则" aria-selected="false" aria-controls="wb-regex-panel">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M5 16h.01M11 5v9M7 8l8 4M15 8l-8 4M18 5v14"/></svg>
+                        </button>
+                    </div>
+                    <!-- X 不带导航属性，只取消当前功能的选择；普通返回交给三种返回入口处理。 -->
+                    <div class="wb-sidebar-actions">
+                        <button type="button" class="back-btn wb-sidebar-back" data-target="home-screen" aria-label="返回主页">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" /></svg>
+                        </button>
+                        <button class="wb-select-cancel" type="button" aria-label="取消选择">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+                        </button>
+                    </div>
+                </aside>
+                <div class="wb-main-column">
+                    <header class="app-header" id="wb-directory-header">
+                        <div class="title-container"><h1 class="title">世界书</h1></div>
+                        <div class="action-btn-group"><button type="button" class="action-btn" id="add-world-book-category-btn" aria-label="新增类别"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button></div>
+                    </header>
+                    <header class="app-header wb-select-header" id="wb-directory-select-header" style="display: none;">
+                        <span class="wb-select-count" aria-live="polite">选择 0 个类别</span>
+                        <button class="wb-select-delete" type="button" aria-label="删除选中类别" title="删除" disabled>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z" /></svg>
+                        </button>
+                    </header>
+                    <main class="content" id="wb-world-book-panel" role="tabpanel" aria-labelledby="wb-world-book-tab">
+                        <ul class="drafts-card-list" id="world-book-list-container"></ul>
+                        <div class="placeholder-text" id="no-world-books-placeholder" style="display: none;">
+                            <p>还没有世界书类别</p>
+                            <p>点击右上角的“+”创建一个类别吧</p>
+                        </div>
+                    </main>
+                    <header class="app-header" id="regex-directory-header" hidden>
+                        <div class="title-container"><h1 class="title">正则</h1></div>
+                        <div class="action-btn-group"><button type="button" class="action-btn" id="add-regex-category-btn" aria-label="新增正则类别"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button></div>
+                    </header>
+                    <header class="app-header wb-select-header" id="regex-directory-select-header" style="display: none;" hidden>
+                        <span class="wb-select-count" aria-live="polite">选择 0 个类别</span>
+                        <button class="wb-select-delete" type="button" aria-label="删除选中正则类别" title="删除" disabled>
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z" /></svg>
+                        </button>
+                    </header>
+                    <main class="content" id="wb-regex-panel" role="tabpanel" aria-labelledby="wb-regex-tab" hidden>
+                        <ul class="drafts-card-list" id="regex-category-list"></ul>
+                        <div class="placeholder-text" id="no-regex-categories"><p>还没有正则类别</p><p>点击右上角的“+”创建一个类别</p></div>
+                    </main>
                 </div>
+            </div>
+        </div>
+        <!-- 类别内条目：顶部多选栏就地替换默认标题栏，不占用底部空间 -->
+        <div id="world-book-category-screen" class="screen">
+            <header class="app-header" id="wb-category-header">
+                <button class="back-btn" data-target="world-book-screen" aria-label="返回类别目录">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" /></svg>
+                </button>
+                <div class="title-container"><h1 class="title" id="world-book-category-title">世界书类别</h1></div>
                 <div class="action-btn-group">
-                    <button class="action-btn" id="add-world-book-btn">+</button>
-                    <button class="action-btn" id="cancel-wb-multi-select-btn"
-                        style="display: none; font-size: 16px;">取消</button>
+                    <button type="button" class="action-btn" id="rename-world-book-category-btn" aria-label="重命名类别" title="重命名类别"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.13,5.12L18.88,8.87M3,17.25V21H6.75L17.81,9.94L14.06,6.19L3,17.25Z" /></svg></button>
+                    <button class="action-btn" id="add-world-book-btn" aria-label="新增条目"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
                 </div>
             </header>
+            <header class="app-header wb-select-header" id="wb-category-select-header" style="display: none;">
+                <button class="wb-select-cancel" type="button">取消</button>
+                <span class="wb-select-count" aria-live="polite">选择 0 本</span>
+                <button class="wb-select-delete" type="button" disabled>删除</button>
+            </header>
             <main class="content">
-                <ul class="list-container" id="world-book-list-container"></ul>
-                <div class="placeholder-text" id="no-world-books-placeholder" style="display: none;">
-                    <p>你的世界一片混沌...</p>
-                    <p>点击右上角的“+”创造第一个设定吧！</p>
+                <ul class="list-container" id="world-book-entry-list"></ul>
+                <div class="placeholder-text" id="no-world-book-entries" style="display: none;">
+                    <p>这个类别还没有世界书</p>
+                    <p>点击右上角的“+”添加第一个条目吧</p>
                 </div>
             </main>
-            <div id="world-book-multi-select-bar" style="display: none;">
-                <span id="world-book-select-count">已选择 0 项</span>
-                <button class="btn btn-danger" id="delete-selected-world-books-btn"
-                    style="width: auto; padding: 8px 16px;">删除已选</button>
-            </div>
         </div>
         <div id="edit-world-book-screen" class="screen">
             <header class="app-header">
-                <button class="back-btn" data-target="world-book-screen">
+                <button class="back-btn" data-target="world-book-category-screen">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7" />
     </svg>
@@ -2220,11 +2293,11 @@
                         <textarea id="world-book-content" rows="8" placeholder="详细描述此项设定..." required></textarea>
                     </div>
                     <div class="form-group">
-                        <label>注入位置</label>
+                        <label>世界书类型</label>
                         <div class="form-group radio-group">
-                            <label><input type="radio" name="world-book-position" value="before" checked> 前</label>
-                            <label><input type="radio" name="world-book-position" value="after"> 后</label>
-                            <label><input type="radio" name="world-book-position" value="writing"> 写作</label>
+                            <label><input type="radio" name="world-book-position" value="before" checked> 世界观</label>
+                            <label><input type="radio" name="world-book-position" value="after"> 重要事项</label>
+                            <label><input type="radio" name="world-book-position" value="writing"> 文风</label>
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">保存条目</button>
@@ -2232,6 +2305,75 @@
             </main>
         </div>
         
+        <!-- 正则拥有独立列表与编辑页，替换内容只在隔离预览内解释为 HTML。 -->
+        <div id="regex-category-screen" class="screen">
+            <header class="app-header" id="regex-category-header">
+                <button class="back-btn" data-target="world-book-screen" aria-label="返回正则目录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="1.5" d="m15 19-7-7 7-7"/></svg></button>
+                <div class="title-container"><h1 class="title" id="regex-category-title">正则类别</h1></div>
+                <div class="action-btn-group">
+                    <button type="button" class="action-btn" id="rename-regex-category-btn" aria-label="重命名类别" title="重命名类别"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.13,5.12L18.88,8.87M3,17.25V21H6.75L17.81,9.94L14.06,6.19L3,17.25Z" /></svg></button>
+                    <button type="button" class="action-btn" id="add-regex-rule-btn" aria-label="新增正则"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
+                </div>
+            </header>
+            <header class="app-header wb-select-header" id="regex-category-select-header" style="display: none;">
+                <button class="wb-select-cancel" type="button">取消</button>
+                <span class="wb-select-count" aria-live="polite">选择 0 个正则</span>
+                <button class="wb-select-delete" type="button" disabled>删除</button>
+            </header>
+            <main class="content">
+                <ul class="drafts-card-list" id="regex-rule-list"></ul>
+                <div class="placeholder-text" id="no-regex-rules">这个类别还没有正则，点击“+”添加</div>
+            </main>
+        </div>
+        <div id="edit-regex-screen" class="screen">
+            <header class="app-header">
+                <button class="back-btn" data-target="regex-category-screen" aria-label="返回正则列表"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-width="1.5" d="m15 19-7-7 7-7"/></svg></button>
+                <div class="title-container"><h1 class="title" id="edit-regex-title">创建正则</h1></div>
+                <div class="action-btn-group">
+                    <button type="button" class="action-btn" id="regex-help-btn" title="正则使用说明" aria-label="正则使用说明"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 2-2.5 3.5"/><path d="M12 16.5h.01"/></svg></button>
+                </div>
+            </header>
+            <main class="content">
+                <form id="edit-regex-form">
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-name">名称</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'name')" aria-label="名称说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <input type="text" id="regex-name" required>
+                    </div>
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-category">类别</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'category')" aria-label="类别说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <select id="regex-category" required></select>
+                    </div>
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-pattern">匹配表达式</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'pattern')" aria-label="匹配表达式说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <textarea id="regex-pattern" rows="3" placeholder="只填表达式，不含两侧 /" required spellcheck="false"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-replacement">替换内容</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'replacement')" aria-label="替换内容说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <textarea id="regex-replacement" rows="5" placeholder="支持多行、$1 捕获组与 HTML" spellcheck="false"></textarea>
+                    </div>
+                    <div class="form-group form-group-switch">
+                        <div class="regex-field-heading"><label for="regex-html">HTML 卡片</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'html')" aria-label="HTML 卡片说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <label class="switch"><input type="checkbox" id="regex-html"><span class="slider round"></span></label>
+                    </div>
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-flags">标志（匹配选项）</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'flags')" aria-label="标志说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <input type="text" id="regex-flags" value="g" placeholder="g：全部替换；留空：只替换第一处" spellcheck="false" autocapitalize="off">
+                    </div>
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-mode">处理方式</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'mode')" aria-label="处理方式说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <select id="regex-mode"><option value="storage">修改并保存</option><option value="display">仅显示替换</option></select>
+                    </div>
+                    <div class="form-group">
+                        <div class="regex-field-heading"><label for="regex-order">执行顺序（小的先执行）</label><button type="button" class="settings-group-info-icon regex-field-help" onclick="showHelp('regex', 'order')" aria-label="执行顺序说明"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button></div>
+                        <input type="number" id="regex-order" value="0" step="1">
+                    </div>
+                    <div class="regex-editor-actions">
+                        <button type="button" class="btn btn-neutral" id="preview-regex-rule-btn">预览</button>
+                        <button type="submit" class="btn btn-primary" id="save-regex-rule-btn">保存正则</button>
+                    </div>
+                </form>
+            </main>
+        </div>
         <!-- 设置页面 -->
 <div id="settings-screen" class="screen">
     <header class="app-header">
@@ -2295,6 +2437,14 @@
                     <span class="item-name">系统日志</span>
                 </div>
                 <svg class="chevron-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </div>
+            <!-- 调用明细只记录本浏览器发起的请求，不代表服务商的正式账单 -->
+            <div class="settings-item" data-target="api-call-details-screen">
+                <div class="setting-icon-box">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h8M8 12h3M8 17h3M15 12h1M15 17h1"/></svg>
+                </div>
+                <div class="item-details"><span class="item-name">API 调用明细</span></div>
+                <svg class="chevron-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </div>
         </div>
                     <!-- 第二组：系统 (教程，操作等) -->
@@ -2447,6 +2597,68 @@
 </div>
 
 
+<!-- API 调用明细：概览与日期共用卡片，工具栏按当前查询导出/清除；表格内双向滚动并按需追加记录 -->
+<div id="api-call-details-screen" class="screen">
+    <header class="app-header">
+        <button type="button" class="back-btn" data-target="settings-screen" aria-label="返回设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 19l-7-7 7-7"/></svg>
+        </button>
+        <div class="title-container"><h1 class="title">API 调用明细</h1></div>
+        <div class="action-btn-group api-usage-header-actions">
+            <button type="button" class="action-btn" id="api-usage-help-btn" title="调用明细说明" aria-label="调用明细说明" onclick="showHelp('apiUsage', 'page')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 2-2.5 3.5"/><path d="M12 16h.01"/></svg>
+            </button>
+        </div>
+    </header>
+    <main class="content api-usage-content">
+        <div class="storage-card api-usage-summary">
+            <div class="overview-card" aria-live="polite">
+                <div class="api-usage-cache-hero">
+                    <strong id="api-usage-cache-rate"><span id="api-usage-cache-integer">0</span><span id="api-usage-cache-fraction" class="api-usage-cache-fraction">.00%</span></strong>
+                </div>
+                <div class="overview-info">
+                    <div class="total-size-container">
+                        <span class="total-size-label">已使用额度（预估）</span>
+                        <h2 id="api-usage-total">0.000</h2>
+                    </div>
+                    <div class="backup-actions api-usage-summary-counts">
+                        <div class="storage-item-left"><span class="storage-color-indicator api-usage-call-dot" aria-hidden="true"></span><span id="api-usage-count">调用 0 次</span></div>
+                        <div class="storage-item-left"><span class="storage-color-indicator api-usage-cache-dot" aria-hidden="true"></span><span id="api-usage-cached-count">命中缓存 0 次</span></div>
+                    </div>
+                </div>
+            </div>
+            <hr class="api-usage-summary-divider">
+            <div class="api-usage-date-range">
+                <label for="api-usage-start-date">起<input type="date" id="api-usage-start-date" aria-label="开始日期"></label>
+                <label for="api-usage-end-date">止<input type="date" id="api-usage-end-date" aria-label="结束日期"></label>
+            </div>
+        </div>
+        <div class="storage-card api-usage-statistics">
+            <div class="api-usage-table-toolbar">
+                <span class="api-usage-table-title">· 调用记录</span>
+                <div class="api-usage-table-actions">
+                    <button type="button" class="api-usage-round-btn" id="api-usage-clear-btn" title="清除当前查询结果" aria-label="清除当前查询结果">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 7l-1 13H6L5 7M10 11v6M14 11v6M15 7V4H9v3M4 7h16"/></svg>
+                    </button>
+                    <button type="button" class="api-usage-round-btn" id="api-usage-export-btn" title="导出当前查询结果 CSV" aria-label="导出当前查询结果 CSV">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </button>
+                    <button type="button" class="api-usage-round-btn" id="api-usage-filter-btn" title="筛选 API 类型与功能" aria-label="筛选 API 类型与功能" aria-haspopup="dialog" aria-controls="api-usage-filter-modal">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="api-usage-table-scroll" id="api-usage-table-scroll" tabindex="0" aria-label="调用记录，可左右滚动，向下滑动加载更多">
+                <table class="api-usage-table">
+                    <thead><tr><th scope="col">时间</th><th scope="col">功能</th><th scope="col">结果</th><th scope="col">输入</th><th scope="col">输出</th><th scope="col">缓存</th><th scope="col" title="费用（预估）">费用</th><th scope="col">档位</th><th scope="col">模型</th></tr></thead>
+                    <tbody id="api-usage-table-body"><tr><td colspan="9" class="api-usage-empty">所选日期与筛选条件暂无调用记录</td></tr></tbody>
+                </table>
+                <p class="api-usage-status" id="api-usage-status" role="status"></p>
+            </div>
+        </div>
+    </main>
+</div>
+
 <!-- ==================== API 设置页面（v1.6 重构版）==================== -->
 <div id="api-settings-screen" class="screen">
     <header class="app-header" id="api-settings-header">
@@ -2585,12 +2797,13 @@
                     </div>
                     
                     <div class="form-group form-group-switch" id="api-chat-flex-row" hidden>
-                        <label for="api-chat-flex" title="仅支持的模型可按 Flex 五折档处理；可能排队或返回 429/503，不自动降级全价。聊天与识图等跟随此文字预设，已有自动超时至少 10 分钟；Vertex 需 global，中转代理需确认透传。">Flex 弹性推理（五折）</label>
+                        <label for="api-chat-flex" title="仅支持的模型可按 Flex 档处理；可能排队或返回 429/503，不自动降级全价。已有自动超时至少 10 分钟；OpenAI 兼容代理需支持 service_tier。">Flex 弹性推理（五折）</label>
                         <label class="switch">
                             <input type="checkbox" id="api-chat-flex">
                             <span class="slider round"></span>
                         </label>
                     </div>
+                    <p class="api-flex-hint" id="api-chat-flex-hint" hidden></p>
 
                     <div class="form-group form-group-switch">
                         <label for="api-chat-compat" title="不含图片的消息将以纯文本格式发送，解决部分中转站报错">兼容模式</label>
@@ -2609,6 +2822,21 @@
                         <input type="range" id="api-chat-temp" min="0" max="2" step="0.1" value="0.8" oninput="document.getElementById('chat-temp-val').innerText = this.value">
                     </div>
 
+                    <!-- 单价按每百万 token 填写，默认零；仅文字预设另有 Flex 单价 -->
+                    <details class="api-usage-pricing" id="api-chat-usage-pricing">
+                        <summary>费用设置</summary>
+                        <p>每 1,000,000 token 的单价，只填非负数；默认 0。请自行保持各预设的计价单位一致。</p>
+                        <fieldset><legend>Standard 单价</legend>
+                            <div class="form-group"><label for="api-chat-price-standard-input">输入</label><input type="number" id="api-chat-price-standard-input" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-chat-price-standard-output">输出</label><input type="number" id="api-chat-price-standard-output" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-chat-price-standard-cache">缓存</label><input type="number" id="api-chat-price-standard-cache" min="0" step="any" value="0" inputmode="decimal"></div>
+                        </fieldset>
+                        <fieldset><legend>Flex 单价</legend>
+                            <div class="form-group"><label for="api-chat-price-flex-input">输入</label><input type="number" id="api-chat-price-flex-input" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-chat-price-flex-output">输出</label><input type="number" id="api-chat-price-flex-output" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-chat-price-flex-cache">缓存</label><input type="number" id="api-chat-price-flex-cache" min="0" step="any" value="0" inputmode="decimal"></div>
+                        </fieldset>
+                    </details>
                     <div class="api-scroll-spacer"></div>
                 </div>
 
@@ -2695,6 +2923,15 @@
                         </div>
                     </div>
 
+                    <details class="api-usage-pricing" id="api-emb-usage-pricing">
+                        <summary>费用设置</summary>
+                        <p>每 1,000,000 token 的单价，只填非负数；默认 0。请自行保持各预设的计价单位一致。</p>
+                        <fieldset><legend>Standard 单价</legend>
+                            <div class="form-group"><label for="api-emb-price-standard-input">输入</label><input type="number" id="api-emb-price-standard-input" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-emb-price-standard-output">输出</label><input type="number" id="api-emb-price-standard-output" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-emb-price-standard-cache">缓存</label><input type="number" id="api-emb-price-standard-cache" min="0" step="any" value="0" inputmode="decimal"></div>
+                        </fieldset>
+                    </details>
                     <div class="api-scroll-spacer"></div>
                 </div>
 
@@ -2922,6 +3159,15 @@
                     </div>
 
                     <p class="voice-api-footnote">注意：用量计数按秒统计仅供参考（MiniMax 实际按字符计费），准确用量请在各服务商官方控制台查询。API Key 明文存在这台设备的浏览器里，纯前端没法真正藏住，请勿使用共享的公共 Key。总开关和「收到就自动合成」在聊天列表的侧边栏里，归档仓库在设置页的「GitHub 仓库」里。</p>
+                    <details class="api-usage-pricing" id="api-voice-usage-pricing">
+                        <summary>费用设置</summary>
+                        <p>每 1,000,000 token 的单价，只填非负数；默认 0。未返回 token 用量的合成不会推算费用。请自行保持计价单位一致。</p>
+                        <fieldset><legend>Standard 单价</legend>
+                            <div class="form-group"><label for="api-voice-price-standard-input">输入</label><input type="number" id="api-voice-price-standard-input" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-voice-price-standard-output">输出</label><input type="number" id="api-voice-price-standard-output" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-voice-price-standard-cache">缓存</label><input type="number" id="api-voice-price-standard-cache" min="0" step="any" value="0" inputmode="decimal"></div>
+                        </fieldset>
+                    </details>
                     <div class="api-scroll-spacer"></div>
                 </div>
 
@@ -3066,6 +3312,15 @@
                     </div>
 
                     <p class="voice-api-footnote">注意：图片生成通常需要数秒到半分钟，请耐心等待。部分第三方中转站的 Midjourney 模型可能不兼容 Quality 或 Style 参数，若报错可尝试更换模型。</p>
+                    <details class="api-usage-pricing" id="api-image-usage-pricing">
+                        <summary>费用设置</summary>
+                        <p>每 1,000,000 token 的单价，只填非负数；默认 0。未返回 token 用量的生图不会推算费用。请自行保持计价单位一致。</p>
+                        <fieldset><legend>Standard 单价</legend>
+                            <div class="form-group"><label for="api-image-price-standard-input">输入</label><input type="number" id="api-image-price-standard-input" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-image-price-standard-output">输出</label><input type="number" id="api-image-price-standard-output" min="0" step="any" value="0" inputmode="decimal"></div>
+                            <div class="form-group"><label for="api-image-price-standard-cache">缓存</label><input type="number" id="api-image-price-standard-cache" min="0" step="any" value="0" inputmode="decimal"></div>
+                        </fieldset>
+                    </details>
                     <div class="api-scroll-spacer"></div>
                 </div>
 
@@ -3345,7 +3600,7 @@
                     <input type="color" id="home-status-bar-color-picker" title="点击选择颜色">
                 </div>
                 <!-- 文本输入框 -->
-                <input type="text" id="home-status-bar-color-input" placeholder="#FFFFFF">
+                <input type="text" id="home-status-bar-color-input" placeholder="#BEC9CB">
             </div>
         </div>
                 <div class="form-group">
@@ -3772,12 +4027,12 @@
                         </svg>
                     </button>
                           <!-- 新增联系人 -->
-                    <button class="action-btn" id="peek-messages-add-btn" title="新增联系人">+</button>
+                    <button class="action-btn" id="peek-messages-add-btn" title="新增联系人" aria-label="新增联系人"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
                 </div>
             </header>
             <main class="content">
                 <ul class="list-container" id="peek-chat-list-container">
-                    <!-- Simulated chat list will be rendered here -->
+                    <!-- 模拟聊天列表由脚本渲染。 -->
                 </ul>
             </main>
         </div>
@@ -4165,7 +4420,7 @@
 
             <!-- 2. 新布局：侧边栏 + 内容区 -->
             <main class="content tab-content-area">
-                <!-- 侧边栏：角色在上，世界书在下 -->
+                <!-- 侧边栏：角色、世界书、正则、管理 -->
                 <div class="world-sidebar">
                     <!-- 1. 角色按钮 (默认激活 active) -->
                     <button class="world-sidebar-btn active" data-tab="char">
@@ -4189,7 +4444,15 @@
                         <span>世界书</span>
                     </button>
 
-                    <!-- 3. 管理按钮（论坛 API / 批量删帖 / 正文样式） -->
+                    <!-- 3. 正则按钮：和世界书使用同一套侧栏样式 -->
+                    <button class="world-sidebar-btn" data-tab="regex">
+                        <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M4 18h4v4H4zM17 2h2v4.27l3.7-2.14 1 1.74L20 8l3.7 2.13-1 1.74L19 9.73V14h-2V9.73l-3.7 2.14-1-1.74L16 8l-3.7-2.13 1-1.74L17 6.27z"/>
+                        </svg>
+                        <span>正则</span>
+                    </button>
+
+                    <!-- 4. 管理按钮（论坛 API / 批量删帖 / 正文样式） -->
                     <button class="world-sidebar-btn" data-tab="admin">
                         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" id="settings-alt" class="icon glyph"><path d="M21.9,10.59,20,8.69V6a2,2,0,0,0-2-2H15.31l-1.9-1.9a2,2,0,0,0-2.82,0L8.69,4H6A2,2,0,0,0,4,6V8.69l-1.9,1.9a2,2,0,0,0,0,2.82L4,15.31V18a2,2,0,0,0,2,2H8.69l1.9,1.9a2,2,0,0,0,2.82,0l1.9-1.9H18a2,2,0,0,0,2-2V15.31l1.9-1.9A2,2,0,0,0,21.9,10.59ZM12,16a4,4,0,1,1,4-4A4,4,0,0,1,12,16Z"></path></svg>
                         <span>管理</span>
@@ -4227,11 +4490,12 @@
                         </div>
                     </div>
 
-                    <!-- Tab 2: 世界书 (默认隐藏) -->
+                    <!-- 第二个页签：世界书（默认隐藏） -->
                     <div id="world-tab-wb" class="world-tab-pane">
-                        <!-- 新增：跳转按钮 -->
+                        <!-- 快捷入口保留文字，加号复用统一的线框图标。 -->
                         <div id="jump-to-wb-edit-btn" class="world-book-shortcut-btn">
-                            + 去管理/添加世界书
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            去管理/添加世界书
                         </div>
                         <div class="world-section-title">生效的世界书</div>
 
@@ -4242,7 +4506,19 @@
                         </div>
                     </div>
 
-                    <!-- Tab 3: 管理 (默认隐藏) -->
+                    <!-- 第三个页签：正则只关联大类，不展开单条规则，复用论坛世界书样式 -->
+                    <div id="world-tab-regex" class="world-tab-pane">
+                        <div id="jump-to-regex-edit-btn" class="world-book-shortcut-btn">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            去管理/添加正则
+                        </div>
+                        <div class="world-section-title">生效的正则类别</div>
+                        <div class="world-list-container">
+                            <ul id="forum-regex-list" class="binding-list"></ul>
+                        </div>
+                    </div>
+
+                    <!-- 第四个页签：管理（默认隐藏） -->
                     <!-- 这块的内联样式已收进 forum.css 的 #world-tab-admin 作用域，别再往回写内联 -->
                     <div id="world-tab-admin" class="world-tab-pane">
                         <div class="world-admin-scroll">
@@ -4729,7 +5005,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
     </button>
 
        
-            <button class="btn btn-secondary" id="rpg-choose-partner-btn">+ 选择共同冒险伙伴</button>
+            <button class="btn btn-secondary" id="rpg-choose-partner-btn"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>选择共同冒险伙伴</button>
             
        
 
@@ -5190,7 +5466,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
                 <h1 class="title">书架</h1>
             </div>
             <div class="action-btn-group">
-                <button class="action-btn" id="study-import-btn" title="导入书籍">+</button>
+                <button class="action-btn" id="study-import-btn" title="导入书籍" aria-label="导入书籍"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
             </div>
         </header>
         <div id="st-resume-section" style="display:none"></div>
@@ -6389,12 +6665,12 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
                                 d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.44,0.17-0.48,0.41L9.2,5.77C8.61,6.01,8.08,6.33,7.58,6.71L5.19,5.75C4.97,5.68,4.72,5.75,4.6,5.97L2.68,9.29 c-0.11,0.2-0.06,0.47,0.12,0.61l2.03,1.58C4.78,11.66,4.76,11.97,4.76,12.3c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.04,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.48-0.41l0.36-2.54c0.59-0.24,1.12-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0.01,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
                         </svg>
                     </button>
-                    <button class="action-btn" id="pomodoro-create-task-btn" title="创建任务">+</button>
+                    <button class="action-btn" id="pomodoro-create-task-btn" title="创建任务" aria-label="创建任务"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></button>
                 </div>
             </header>
             <main class="content">
                 <div class="task-list-container" id="pomodoro-task-list">
-                    <!-- Task cards will be rendered here by JS -->
+                    <!-- 任务卡片由脚本在此渲染。 -->
                 </div>
                 <p class="placeholder-text" id="pomodoro-no-tasks-placeholder">还没有专注任务，点击右上角“+”创建一个吧。</p>
             </main>
@@ -6792,10 +7068,15 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
                     <option value="photo-video">文字图片</option>
                     <option value="user-narration">用户剧情旁白</option>
                     <option value="narration">线下模式旁白</option>
+                    <option value="regex-html">HTML 块（正则显示）</option>
                     <option value="display">屏幕提示（通话/模式）</option>
                 </select>
             </div>
 
+            <div id="message-edit-html-fields" class="form-group" hidden>
+                <label for="message-edit-html-rule">卡片正则</label>
+                <select id="message-edit-html-rule" class="form-control"></select>
+            </div>
             <div class="form-group">
                 <textarea id="message-edit-textarea" rows="4" required></textarea>
             </div>
@@ -6912,6 +7193,59 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
 </div>
 
 
+        <!-- 调用明细筛选沿用关联世界书的分组列表；标题前复选框全选本组，勾选为草稿，确定才应用两个维度。 -->
+        <div id="api-usage-filter-modal" class="modal-overlay">
+            <div class="modal-window" role="dialog" aria-modal="true" aria-labelledby="api-usage-filter-title">
+                <h3 id="api-usage-filter-title">筛选调用记录</h3>
+                <div class="api-usage-filter-body">
+                    <details id="api-usage-type-group" class="api-usage-filter-group" open>
+                        <summary class="world-book-category-header"><input type="checkbox" id="api-usage-types-all" class="category-checkbox" aria-label="全选调用 API 类型"><span class="category-name">调用 API 类型</span><span class="category-arrow" aria-hidden="true">▼</span></summary>
+                        <ul class="api-usage-filter-list">
+                            <li class="world-book-select-item"><input type="checkbox" id="api-usage-type-text" class="item-checkbox" value="text" checked><label for="api-usage-type-text">文字api</label></li>
+                            <li class="world-book-select-item"><input type="checkbox" id="api-usage-type-embedding" class="item-checkbox" value="embedding"><label for="api-usage-type-embedding">向量api</label></li>
+                            <li class="world-book-select-item"><input type="checkbox" id="api-usage-type-image" class="item-checkbox" value="image"><label for="api-usage-type-image">图像api</label></li>
+                            <li class="world-book-select-item"><input type="checkbox" id="api-usage-type-voice" class="item-checkbox" value="voice"><label for="api-usage-type-voice">语音api</label></li>
+                        </ul>
+                    </details>
+                    <details id="api-usage-feature-group" class="api-usage-filter-group">
+                        <summary class="world-book-category-header"><input type="checkbox" id="api-usage-features-all" class="category-checkbox" aria-label="全选功能" checked><span class="category-name">功能</span><span class="category-arrow" aria-hidden="true">▼</span></summary>
+                        <ul id="api-usage-feature-list" class="api-usage-filter-list"></ul>
+                        <p id="api-usage-feature-status" class="api-usage-feature-status" role="status"></p>
+                    </details>
+                </div>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-neutral" id="api-usage-filter-cancel-btn">取消</button>
+                    <button type="button" class="btn btn-primary" id="api-usage-filter-apply-btn">确定</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 预览放在统一弹窗区，避免被底部操作条盖住；普通与 HTML 共用测试文本，不参与保存。 -->
+        <div id="regex-preview-modal" class="modal-overlay">
+            <div class="modal-window" role="dialog" aria-modal="true" aria-labelledby="regex-preview-title">
+                <h3 id="regex-preview-title">正则预览</h3>
+                <div class="regex-preview-tabs" role="tablist" aria-label="预览方式">
+                    <button type="button" id="regex-preview-text-tab" role="tab" aria-selected="true" aria-controls="regex-preview-text-panel">普通</button>
+                    <button type="button" id="regex-preview-html-tab" role="tab" aria-selected="false" aria-controls="regex-preview-html-panel" tabindex="-1">HTML</button>
+                </div>
+                <section class="regex-test-section">
+                    <div id="regex-preview-text-panel" role="tabpanel" aria-labelledby="regex-preview-text-tab">
+                        <div class="form-group"><label for="regex-test-original">测试原文</label><textarea id="regex-test-original" rows="4" placeholder="只测试当前填写的这一条规则，无需保存，也不会改变聊天记录。&#10;粘贴一段原文，看看替换后的效果。" spellcheck="false"></textarea></div>
+                        <button type="button" class="btn btn-neutral" id="test-regex-rule-btn">测试替换</button>
+                        <div class="form-group regex-test-result"><label for="regex-test-output">替换结果</label><textarea id="regex-test-output" rows="4" placeholder="没有匹配" readonly aria-live="polite"></textarea></div>
+                    </div>
+                    <div id="regex-preview-html-panel" role="tabpanel" aria-labelledby="regex-preview-html-tab" hidden>
+                        <div id="regex-test-preview"></div>
+                    </div>
+                </section>
+            </div>
+        </div>
+        <div id="regex-selection-modal" class="modal-overlay">
+            <div class="modal-window">
+                <h3>选择要关联的正则类别</h3><ul id="regex-selection-list"></ul>
+                <div class="btn-group"><button type="button" class="btn btn-neutral" id="cancel-regex-selection-btn">取消</button><button type="button" class="btn btn-primary" id="save-regex-selection-btn">确认</button></div>
+            </div>
+        </div>
         <div id="world-book-selection-modal" class="modal-overlay">
             <div class="modal-window">
                 <h3>选择要关联的世界书</h3>
@@ -7265,7 +7599,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
                 选"同聊天API"则跟随每个聊天各自的 API 设置；一旦在此指定预设，所有聊天的图片转化都使用设置的api。<br>
                 请选择支持识图（视觉）的模型，否则转化会失败。<br>
                 超时默认 120 秒，网络差或图片大的时候老是提示"请求超时"就往上调；范围 10–600，留空按默认。<br>
-                所选 Gemini / Vertex 文字预设开启 Flex 时，本次实际等待至少 600 秒，不改写这里保存的秒数。
+                所选 NewAPI / Gemini 文字预设开启 Flex 时，本次实际等待至少 600 秒，不改写这里保存的秒数。
             </div>
             <div class="btn-group">
                 <button type="submit" class="btn btn-primary">保存设置</button>
@@ -8363,8 +8697,12 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
 <script src="js/core/restart_diag.js"></script>
 <script src="js/core/globals.js"></script>
 <script src="js/core/database.js"></script>
+<!-- 调用账本依赖数据库，所有 API 请求层与费用设置都依赖它 -->
+<script src="js/api/api_usage_ledger.js"></script>
 <script src="js/core/lazy_load.js"></script>
 <script src="js/core/utils.js"></script>
+<!-- 正则运行时先于气泡工厂和消息生成层加载；管理 UI 另由 regex.js 负责。 -->
+<script src="js/chat/chat_regex.js"></script>
 
 <!-- API 层：凭据 / 额度 / 请求封装。必须排在 settings 和 chat 之前，两边都依赖它 -->
     <!-- 文本 LLM 统一适配层：gemini 原生 / openai 兼容两种格式的差异都收在这里，
@@ -8390,6 +8728,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
 
 <!-- 设置页面 -->
     <script src="js/settings/api_settings.js"></script>
+    <script src="js/settings/api_call_details.js"></script>
     <script src="js/settings/wallpaper.js"></script>    
     <script src="js/settings/update_log.js"></script>
     <script src="js/settings/tutorial.js"></script>
@@ -8403,6 +8742,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
 
 <!-- 世界书 -->    
     <script src="js/world_book.js"></script>
+    <script src="js/regex.js"></script>
     
 <!-- 聊天室 -->            
     <script src="js/chat/chat_store.js"></script>
@@ -8438,6 +8778,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
     <script src="js/chat/push_node.js"></script>
     <script src="js/chat/chat_feature_call.js"></script>
     <script src="js/chat/chat_weather_context.js"></script>
+    <script src="js/chat/chat_prompt_cache.js"></script>
     <script src="js/chat/chat_ai_service.js"></script>
     <script src="js/chat/chat_bubble_factory.js"></script>
         <script src="js/chat/chat_actions.js"></script>
@@ -8486,6 +8827,7 @@ a 链接 / ul ol li 列表 / code 代码"></textarea>
     <script src="js/study/study_db.js"></script>
     
 <!-- 论坛 -->
+    <script src="js/forum/forum_regex.js"></script>
     <script src="js/forum/forum_core.js"></script>
     <script src="js/forum/forum_render.js"></script>
     <script src="js/forum/forum_detail.js"></script>
