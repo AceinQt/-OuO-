@@ -8,7 +8,7 @@
     font-family: var(--font-family);
     font-size: 15px;
     resize: vertical;
-    /* Allow vertical resizing */
+    /* 允许纵向调整大小 */
 }
 
 #message-edit-textarea:focus {
@@ -16,7 +16,9 @@
     border-color: var(--primary-color);
 }
 
-#message-edit-select {
+/* 消息类型与卡片正则共用左右布局，避免卡片规则另起一行。 */
+#message-edit-select,
+#message-edit-html-fields {
      display:flex; 
      flex-direction: row;
      justify-content: center;   /* 水平居中 */

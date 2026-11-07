@@ -1,16 +1,16 @@
 
 
-/* base */
+/* 基础样式 */
 @import './base/fonts.css';
 @import './base/reset.css';
 @import './base/variables.css';
 @import './base/animation.css';
 @import './base/components.css';
 
-/* pages */
+/* 页面样式 */
 @import './pages/home.css';
 
-/* chat */
+/* 聊天 */
 @import './pages/chat/chat_list.css';
 /* ★ 必须紧跟 chat_list.css —— 外观页的样式原来就躺在那个文件末尾，
    其中几条和它里面的规则权重打平、靠源码顺序分胜负。挪动这一行会改变胜负。 */
@@ -25,19 +25,19 @@
 @import './pages/chat/call_overlay.css';
 @import './pages/chat/notification_settings.css';
 
-/* summary */
+/* 总结 */
 @import './pages/summary.css';
 
-/* peek */
+/* 偷看 */
 @import './pages/peek.css';
 
-/* forum */
+/* 社区 */
 @import './pages/forum.css';
 
-/* rpg */
+/* 角色扮演游戏 */
 @import './pages/rpg_game.css';
 
-/* study */
+/* 学习 */
 @import './pages/study/study_home.css';
 @import './pages/study/study_sidebar.css';
 @import './pages/study/study_bookshelf.css';
@@ -47,19 +47,21 @@
 @import './pages/study/study_exam_info.css';
 @import './pages/study/pomodoro.css';
 
-/* worldbook */
+/* 世界书与正则 */
 @import './pages/world_book.css';
+@import './pages/regex.css';
 
-/* settings */
+/* 设置 */
 @import './pages/settings/settings_screen.css';
 @import './pages/settings/wallpaper.css';
 @import './pages/settings/storage.css';
 @import './pages/settings/customize.css';
 @import './pages/settings/tutorial.css';
 @import './pages/settings/api.css';
+@import './pages/settings/api_call_details.css';
 @import './pages/settings/github_repos.css';
 @import './pages/settings/console.css';
 
-/* base */
+/* 基础样式 */
 @import './base/layout.css';
 @import './base/app_splash.css';

@@ -1,4 +1,4 @@
-/* --- Memory Journal Screen --- */
+/* --- 记忆档案页面 --- */
 #memory-journal-screen .content {
     padding: 15px;
     background-color: var(--gray-color);
@@ -12,8 +12,7 @@
     border-bottom: none;
 }
 
-/* --- Memory Tabs Styles --- */
-/* --- Memory Tabs Styles (复刻收藏页) --- */
+/* --- 记忆页顶部标签（沿用收藏页结构） --- */
 .mem-tab-header {
     display: flex;
     background-color: #fff;
@@ -62,7 +61,7 @@
     border-radius: 2px;
 }
 
-/* --- 记忆页面分栏布局 --- */
+/* --- 记忆页分栏布局（世界书有独立样式，不再共用这里的圆形功能栏） --- */
 .memory-layout-container {
     display: flex;
     flex: 1;
@@ -85,7 +84,7 @@
     gap:15px;
 }
 
-/* 侧边栏隐藏时的样式 (用于日记Tab) */
+/* 侧边栏隐藏时的样式（用于角色日记标签） */
 .summary-sidebar.hidden {
     display: none;
 }

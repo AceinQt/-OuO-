@@ -136,7 +136,6 @@
 }
 
 #multi-select-bar,
-#world-book-multi-select-bar,
 #sticker-manage-bar {
     /* 原本可能有 10px 的 padding，现在加上安全区 */
     padding-bottom: max(10px , var(--safe-bottom));

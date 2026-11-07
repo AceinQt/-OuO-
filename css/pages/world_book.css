@@ -1,22 +1,433 @@
-/* --- 世界书分类样式 --- */
+/* 目录导航与标题栏独立于记忆页；类别仍沿用草稿卡片，不影响各处关联选择器。 */
+#world-book-screen {
+    --wb-card-radius: 16px;
+    --wb-button-radius: 12px;
+    --wb-top-inset: max(12px, var(--safe-top));
+    --wb-header-height: calc(var(--wb-top-inset) + 64px);
+    --wb-page-background: #F8F8F6;
+    background-color: var(--wb-page-background);
+}
+
+/* 左栏背景贴齐页面三边；安全区分别留在左栏按钮和右侧内容内部。 */
+#world-book-screen .wb-layout-container {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    gap: 12px;
+    padding: 0 12px 0 0;
+}
+
+#world-book-screen .wb-feature-sidebar {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 72px;
+    min-height: 0;
+    padding: 0 0 max(12px, var(--safe-bottom));
+    background-color: #fff;
+    border: 0;
+    border-right: 1px solid #EBEBEB;
+    border-radius: 0 var(--wb-card-radius) var(--wb-card-radius) 0;
+}
+
+#world-book-screen .wb-feature-tabs {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* 左右顶栏共用安全区和高度，按钮与分隔线在常态、多选态都保持对齐。 */
+#world-book-screen .wb-sidebar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    order: -1;
+    flex-shrink: 0;
+    width: 48px;
+    height: var(--wb-header-height);
+    margin-bottom: 12px;
+    padding: var(--wb-top-inset) 0 12px;
+    border-bottom: 1px solid #DCDCD8;
+}
+
+#world-book-screen .wb-feature-tab,
+#world-book-screen .wb-sidebar-actions button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: var(--wb-button-radius);
+    color: #666;
+    background-color: transparent;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+/* 左栏仅选中的功能按钮显示主题蓝底白图标，返回与 X 保持透明底。 */
+#world-book-screen .wb-feature-tab.active {
+    background-color: var(--blue-color);
+    color: #fff;
+}
+
+#world-book-screen .wb-feature-tab svg,
+#world-book-screen .wb-sidebar-actions svg {
+    width: 24px;
+    height: 24px;
+}
+
+#world-book-screen button:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+}
+
+/* 返回与取消占同一个位置；X 没有 data-target，不能退出选择后又跳回主页。 */
+#world-book-screen .wb-sidebar-actions .wb-select-cancel,
+#world-book-screen.wb-selecting .wb-sidebar-back {
+    display: none;
+}
+
+#world-book-screen.wb-selecting .wb-sidebar-actions .wb-select-cancel {
+    display: flex;
+}
+
+#world-book-screen .wb-main-column {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* 两套顶栏尺寸相同；安全区纳入顶栏，右侧列不再留固定的底部空白。 */
+#world-book-screen .app-header {
+    gap: 12px;
+    height: var(--wb-header-height);
+    min-height: var(--wb-header-height);
+    padding: var(--wb-top-inset) 0 12px;
+    /* 系统顶栏读取 header 的计算背景色；透明会回退为白色，不能跟随右侧标题区。 */
+    background-color: var(--wb-page-background);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-bottom: 1px solid #DCDCD8;
+}
+
+#world-book-screen .title-container {
+    position: static;
+    transform: none;
+    flex: 1;
+    min-width: 0;
+    align-items: flex-start;
+    text-align: left;
+}
+
+#world-book-screen .title,
+#world-book-screen .wb-select-count {
+    font-size: 20px;
+    font-weight: bold;
+    color: #1A1A1A;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+/* 5.56vw 是屏宽的 5.56%，360px 屏约 20px、430px 屏约 24px，再由 clamp 限制在 20–24px。
+   仅目录标题随屏宽调整，多选计数、按钮和列表维持原字号。 */
+#world-book-screen .app-header .title {
+    /* 按列表优先使用设备上可用的思源宋体、宋体；不同系统及版本不保证预装相同字体。
+       本地候选都不可用时，回退到 fonts.css 引入的 'Noto Serif SC' 网络字体，再回退到系统衬线体。 */
+    font-family: 'Noto Serif CJK SC', 'Source Han Serif SC', 'Source Han Serif CN', 'Songti SC', 'STSong', 'SimSun', 'Noto Serif SC', serif;
+    font-size: clamp(20px, 5.56vw, 24px);
+}
+
+
+#world-book-screen .action-btn-group {
+    flex-shrink: 0;
+}
+
+#world-book-screen .action-btn-group .action-btn,
+#world-book-screen .wb-select-delete {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    padding: 0;
+    border: 1px solid #EBEBEB;
+    border-radius: var(--wb-button-radius);
+    color: #1A1A1A;
+    background-color: #fff;
+    font-size: 32px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+/* 与公共 danger 按钮同色，垃圾桶图标跟随白色前景。 */
+#world-book-screen .wb-select-delete {
+    color: #fff;
+    background-color: #ef5350;
+    border-color: #ef5350;
+}
+
+#world-book-screen .action-btn svg,
+#world-book-screen .wb-select-delete svg {
+    width: 24px;
+    height: 24px;
+}
+
+#world-book-screen button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+#world-book-screen .app-header button:not(.wb-select-delete):not(:disabled):active {
+    background-color: #E3E3DF;
+}
+
+/* 滚动容器贴到底，底部安全区随内容滚动，不占一块固定区域。 */
 #world-book-screen .content {
-    padding: 10px 0 0 0;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    padding: 16px 0 max(12px, var(--safe-bottom));
+    background-color: transparent;
 }
 
-.world-book-category-title {
-    padding: 10px 20px 5px 20px;
+/* 功能面板与顶栏都有 flex 样式，必须显式保留 hidden 的语义。 */
+#world-book-screen [hidden] {
+    display: none !important;
+}
+
+#world-book-screen .wb-category-card {
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: pan-y;
+}
+
+/* 书脊沿用原倾斜纸框的颜色；在这里调整线宽和倾斜角度即可预览。 */
+#world-book-screen .wb-bookshelf-icon {
+    --wb-book-fill: #FDFDFB;
+    --wb-book-stroke: #E0E0E0;
+    --wb-book-stroke-width: 0.5px; /* 数值越小，线条越细。 */
+    --wb-book-tilt: 12deg; /* 最左一本顶部向右靠，0deg 为直立。 */
+    width: 48px;
+    height: 48px;
+    fill: var(--wb-book-fill);
+    stroke: var(--wb-book-stroke);
+    stroke-width: var(--wb-book-stroke-width);
+}
+
+#world-book-screen .wb-bookshelf-icon .wb-book-tilted {
+    transform-box: fill-box;
+    transform-origin: right bottom;
+    transform: rotate(var(--wb-book-tilt));
+}
+
+#world-book-screen .wb-category-card.is-selecting {
+    padding-right: 56px;
+}
+
+/* 单条内容共用书本尺寸与配色；保留 40px 占位，内部使用 24px 图标，不挤压标题/预览。 */
+.wb-entry-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+}
+
+/* 只指定尺寸与颜色，空心填充和线宽沿用 Lucide SVG 自身属性，避免旧书本样式覆盖。 */
+.wb-entry-icon svg {
+    width: 24px;
+    height: 24px;
+    color: #C8C8C3;
+}
+
+/* 类别内条目与正则规则统一为独立卡片；仅覆盖本页，不改变其他列表。 */
+#world-book-category-screen .content {
+    padding-bottom: max(16px, var(--safe-bottom));
+}
+
+#world-book-entry-list {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+#world-book-category-screen .world-book-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px;
+    background-color: #FFFFFF;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-touch-callout: none;
+    touch-action: pan-y;
+}
+
+#world-book-category-screen .world-book-item:active {
+    background-color: #F2F2F0;
+}
+
+#world-book-category-screen .item-details {
+    min-width: 0;
+    flex: 1;
+    padding-left: 0;
+}
+
+#world-book-category-screen .item-name {
+    font-size: 17px;
+    font-weight: 500;
+    color: #1A1A1A;
+}
+
+#world-book-category-screen .item-name,
+#world-book-category-title {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#world-book-category-screen .title-container {
+    /* 为右侧的类别编辑与新增条目两个按钮预留空间，长名称仍居中截断。 */
+    max-width: calc(100% - 210px);
+}
+
+#world-book-category-title {
+    max-width: 100%;
+}
+
+#world-book-category-screen .item-preview {
+    margin-top: 4px;
+}
+
+.wb-row-arrow {
+    color: #aaa;
+    font-size: 24px;
+    flex-shrink: 0;
+}
+
+/* 与正则卡片共用右侧勾选位置，原有节点不改，长按与勾选行为仍由列表处理。 */
+.wb-row-check {
+    display: none;
+    position: absolute;
+    top: 50%;
+    right: 20px;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 24px;
+    border: 1.5px solid #ccc;
+    border-radius: 50%;
+    box-sizing: border-box;
+}
+
+#world-book-category-screen.wb-selecting .world-book-item {
+    padding-right: 56px;
+}
+
+#world-book-category-screen.wb-selecting .wb-row-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#world-book-category-screen.wb-selecting .wb-row-arrow {
+    display: none;
+}
+
+#world-book-category-screen .world-book-item.selected {
+    background-color: #EBF5FF;
+    border-color: var(--primary-color, #007bff);
+}
+
+#world-book-category-screen .selected .wb-row-check {
+    background: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+#world-book-category-screen .selected .wb-row-check::after {
+    content: '✓';
+    font-size: 14px;
+    font-weight: bold;
+}
+
+/* 窄屏跟随正则卡片收紧边距，多选仍为右侧勾选预留空间。 */
+@media (max-width: 380px) {
+    #world-book-category-screen .world-book-item {
+        padding: 12px;
+        gap: 6px;
+    }
+    #world-book-category-screen.wb-selecting .world-book-item {
+        padding-right: 56px;
+    }
+}
+
+/* 保留 app-header 本身的高度及顶部安全区，只调整栏内控件。 */
+.wb-select-header {
+    gap: 12px;
+}
+
+.wb-select-count {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
     font-size: 16px;
-    font-weight: 600;
-    color: var(--secondary-color);
-    background-color: #F5FBFF;
-    border-bottom: 1px solid #DAF0FC;
-    border-top: 1px solid #DAF0FC;
-    margin-top: 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-#world-book-list-container>.world-book-category-title:first-child {
-    margin-top: 0;
-    border-top: none;
+.wb-select-cancel,
+.wb-select-delete {
+    flex-shrink: 0;
+    border: 0;
+    border-radius: 8px;
+    font: inherit;
+    padding: 8px 10px;
+    cursor: pointer;
+}
+
+.wb-select-cancel {
+    color: var(--primary-color);
+    background: transparent;
+}
+
+.wb-select-delete {
+    color: white;
+    background: var(--danger-color, #ff6b6b);
+}
+
+.wb-select-header button:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+#world-book-screen .placeholder-text,
+#world-book-category-screen .placeholder-text {
+    padding: 40px 16px;
+    text-align: center;
 }
 
 /* --- 世界书分类选择样式 --- */
@@ -75,47 +486,94 @@
     padding-bottom: 10px;
 }
 
-/* --- 世界书批量选择模式样式 --- */
-#world-book-multi-select-bar {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    background: rgba(255, 255, 255, 0.8);
-    backdrop-filter: blur(10px);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 10px 20px;
-    border-top: 1px solid #eee;
-    z-index: 20;
-    animation: slideUp 0.3s ease-out;
+/* 私聊关联双列：表头、类别全选和条目始终共用网格，不把布局带到群聊等单列弹窗。 */
+.wb-mode-list {
+    padding: 0;
+    list-style: none;
 }
 
-.world-book-item.is-selecting {
+.wb-mode-list .wb-mode-heading,
+.wb-mode-list .wb-mode-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px 48px;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 0;
+}
+
+/* 仅顶层表头吸附在列表滚动区顶部；不透明底色避免下方条目透上来。 */
+.wb-mode-list > .wb-mode-heading {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--white-color);
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid #eee;
+}
+
+.wb-mode-heading > span:not(:first-child) {
+    text-align: center;
+}
+
+.wb-mode-list .world-book-items-list {
+    padding-left: 0;
+}
+
+.wb-mode-category-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: left;
+    min-width: 0;
+    border: 0;
+    background: transparent;
+    padding: 8px 0;
+    font: inherit;
     cursor: pointer;
 }
 
-.world-book-item.selected::after {
-    content: '✓';
-    position: absolute;
-    top: 50%;
-    left: 15px;
-    transform: translateY(-50%);
-    background-color: var(--primary-color);
-    color: white;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
+.wb-mode-category-toggle .category-name,
+.wb-mode-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.wb-mode-name {
+    padding-left: 10px;
+    font-size: 14px;
+}
+
+.wb-mode-type {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-secondary, #888);
+}
+
+.wb-mode-list .wb-mode-cell {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 14px;
-    font-weight: bold;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    min-height: 44px;
+    margin: 0;
+    cursor: pointer;
 }
 
-.world-book-item.selected {
-    padding-left: 50px;
-    background-color: #EBF5FF;
+/* 与群聊统一使用 20px 原生复选框，不再自绘勾形，也不指定 accent-color。
+   强制主题底色会让浏览器重新选择勾的对比色，反而与群聊的默认配色不一致。 */
+.wb-mode-list input.wb-mode-checkbox {
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.wb-mode-list input.wb-mode-checkbox:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+}
+
+.wb-mode-list input.wb-mode-checkbox:disabled {
+    cursor: not-allowed;
 }

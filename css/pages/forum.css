@@ -1384,8 +1384,12 @@ body.forum-multi-select-on .forum-multi-action-bar {
     margin-bottom: 12px;
 }
 
-/* --- 修改：世界页面微调 --- */
+/* 世界页面快捷入口：线框加号与文字居中对齐。 */
 .world-book-shortcut-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     width: 100%;
     padding: 12px;
     background-color: var(--top-pinned-bg);

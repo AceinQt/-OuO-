@@ -48,6 +48,14 @@
     display: none;
 }
 
+/* Flex 契约/直连限制要在手机上直接可见，不能只放鼠标悬停的 title 里。 */
+.api-flex-hint {
+    margin: -12px 0 20px;
+    color: var(--text-color, #666);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
 /* ── 预设管理按钮组 (5个按钮两端对齐) ────────────────────────── */
 .api-preset-btns-row {
     display: flex;

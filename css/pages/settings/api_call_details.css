@@ -1,0 +1,394 @@
+/* 调用明细的背景与卡片沿用存储备份页，结果用文字而非颜色区分。 */
+#api-call-details-screen {
+    /* 项目原有变量拼作 dgray，兼容本页约定的 dgrey 名称，仍跟随主题灰色。 */
+    --dgrey-color: var(--dgray-color);
+    min-width: 0;
+    overflow: hidden;
+    background: #f2f2f7;
+    color: var(--text-color);
+}
+
+/* 页头沿用系统日志的共享布局，仅改为不透明白底，避免透出调用页的背景色。 */
+#api-call-details-screen .app-header {
+    background-color: var(--white-color);
+}
+
+#api-call-details-screen .title-container {
+    max-width: calc(100% - 120px);
+}
+
+.api-usage-header-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+/* 线型图标必须显式保留空心，不能让通用按钮的 fill 把路径灌成实心。 */
+#api-call-details-screen svg {
+    fill: none;
+}
+
+#api-call-details-screen .api-usage-content {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    padding: 15px;
+    padding-bottom: max(15px, var(--safe-bottom));
+}
+
+/* 概览与日期共用卡片；横向统计放在内层，两端留白的横线分隔下方日期。 */
+.api-usage-summary {
+    flex-shrink: 0;
+    padding: 10px 20px;
+}
+
+.api-usage-summary-divider {
+    border: 0;
+    border-top: 1px solid var(--line-color);
+    margin: 10px 0;
+}
+
+.api-usage-cache-hero {
+    width: 45%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+#api-usage-cache-rate {
+    --api-cache-percent: 0%;
+    font-size: clamp(64px, 16vw, 80px);
+    font-weight: 600;
+    letter-spacing: -2px;
+    line-height: 1.1;
+    white-space: nowrap;
+    color: var(--dgrey-color);
+    color: color-mix(in srgb, var(--primary-color) var(--api-cache-percent), var(--dgrey-color));
+}
+
+/* 整数沿用大字号，小数点、两位小数与百分号固定为 15px，并取消大数字的紧缩字距。 */
+.api-usage-cache-fraction {
+    font-size: 15px;
+    letter-spacing: 0;
+}
+
+#api-call-details-screen .total-size-container {
+    padding: 5px 0 0 15px;
+}
+
+#api-usage-total {
+    margin: 2px 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-color);
+    overflow-wrap: anywhere;
+}
+
+.api-usage-summary .overview-info {
+    box-sizing: border-box;
+    min-width: 0;
+}
+
+/* gap 控制两行次数的上下间距，仅覆盖本页；圆点与文字的间距由下一条规则控制。 */
+#api-call-details-screen .api-usage-summary-counts {
+    width: 100%;
+    font-size: 13px;
+    color: var(--text-color);
+    gap: 4px;
+}
+
+.api-usage-summary-counts .storage-item-left {
+    gap: 8px;
+    padding: 0;
+}
+
+.api-usage-call-dot {
+    background: var(--dgrey-color);
+}
+
+.api-usage-cache-dot {
+    background: var(--primary-color);
+}
+
+/* 表格卡片占满剩余高度；工具按钮固定，只有表格与底部加载提示随内容滚动。 */
+.api-usage-statistics {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    gap: 12px;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.api-usage-date-range {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.api-usage-date-range label {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
+    font-size: 12px;
+}
+
+.api-usage-date-range input {
+    box-sizing: border-box;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    padding: 9px 6px;
+    border: 1px solid var(--line-color);
+    border-radius: var(--border-radius);
+    background: var(--white-color);
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 12px;
+}
+
+.api-usage-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    gap: 12px;
+}
+
+.api-usage-table-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.api-usage-table-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.api-usage-round-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 8px;
+    border: none;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--dgrey-color) 12%, transparent);
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+.api-usage-round-btn svg {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+}
+
+.api-usage-round-btn:disabled {
+    opacity: 0.45;
+}
+
+.api-usage-round-btn:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+}
+
+/* 筛选独立挂在全局弹窗区，沿用关联世界书的窗口与分组列表，不受表格裁切。 */
+#api-usage-filter-modal {
+    z-index: 102;
+}
+
+#api-usage-filter-modal .modal-window {
+    width: 90%;
+    max-width: 380px;
+}
+
+.api-usage-filter-body {
+    max-height: 40vh;
+    overflow-y: auto;
+    margin-bottom: 20px;
+}
+
+.api-usage-filter-group {
+    border-bottom: 1px solid var(--line-color);
+}
+
+.api-usage-filter-group:last-child {
+    border-bottom: 0;
+}
+
+.api-usage-filter-group summary {
+    list-style: none;
+}
+
+.api-usage-filter-group summary::-webkit-details-marker {
+    display: none;
+}
+
+.api-usage-filter-group[open] .category-arrow {
+    transform: rotate(180deg);
+}
+
+/* 不用 world-book-items-list：它靠 .open 控制 max-height，和原生 details 的展开状态不同。 */
+.api-usage-filter-list {
+    list-style: none;
+    padding: 0 0 0 25px;
+    margin: 0;
+}
+
+#api-usage-filter-modal .world-book-select-item {
+    border-bottom-color: var(--line-color);
+}
+
+/* 与关联世界书一样沿用原生复选框；浅色主题的 accent-color 会让浏览器将勾号改成黑色。 */
+#api-usage-filter-modal input[type="checkbox"] {
+    flex-shrink: 0;
+}
+
+#api-usage-filter-modal label {
+    overflow-wrap: anywhere;
+    cursor: pointer;
+}
+
+.api-usage-feature-status {
+    margin: 0;
+    padding: 8px 5px 12px 30px;
+    color: var(--text-color);
+    font-size: 12px;
+}
+
+.api-usage-feature-status:empty {
+    display: none;
+}
+
+.api-usage-status {
+    position: sticky;
+    left: 0;
+    margin: 0;
+    padding: 12px 0 2px;
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: center;
+    color: var(--text-color);
+}
+
+.api-usage-status:empty {
+    display: none;
+}
+
+/* 横向滚动只在这个盒子内部发生；min-height:0 防止长表格挤走概览与日期。 */
+.api-usage-table-scroll {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+/* 能放下时按可用宽度分配余量；放不下时由不换行的内容撑宽，只在滚动盒内横向滚动。 */
+.api-usage-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 各列统一居中并沿用固定紧凑留白；宽屏靠表格分配余量，不再单独对齐数字或加宽档位边界。 */
+.api-usage-table th,
+.api-usage-table td {
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--line-color);
+    text-align: center;
+    vertical-align: top;
+    white-space: nowrap;
+}
+
+.api-usage-table th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--gray-color);
+    font-weight: 600;
+}
+
+/* 只在日期末尾的换行符断行，不把日期本身拆成多行。 */
+.api-usage-table td:first-child {
+    white-space: pre;
+}
+
+.api-usage-table td:last-child:not(.api-usage-empty) {
+    width: 150px;
+    white-space: normal;
+}
+
+/* 模型仅显示名称，最多两行；宽度放在内层，防止自动表格布局忽略单元格的最大宽度。 */
+.api-usage-model-name {
+    display: -webkit-box;
+    width: 150px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    max-height: 3em;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    margin-inline: auto;
+}
+
+/* 空表跨九列，不是日期单元格，可以正常换行且保持居中。 */
+.api-usage-table td.api-usage-empty {
+    padding: 32px 12px;
+    text-align: center;
+    white-space: normal;
+}
+
+/* 四种预设共用的原生折叠区默认收起，键盘和触屏都不需额外事件绑定。 */
+.api-usage-pricing {
+    flex-shrink: 0;
+    margin: 12px 0 20px;
+    border: 1px solid var(--line-color);
+    border-radius: var(--border-radius);
+    color: var(--text-color);
+    background: var(--white-color);
+}
+
+.api-usage-pricing summary {
+    cursor: pointer;
+    padding: 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.api-usage-pricing p {
+    padding: 0 12px;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.api-usage-pricing fieldset {
+    min-width: 0;
+    margin: 12px;
+    padding: 10px;
+    border: 1px solid var(--line-color);
+    border-radius: var(--border-radius);
+}
+
+.api-usage-pricing legend {
+    padding: 0 4px;
+    font-size: 12px;
+}
+
+.api-usage-pricing .form-group:last-child {
+    margin-bottom: 0;
+}

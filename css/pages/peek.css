@@ -584,7 +584,7 @@
 
 
 /* =========================================
-   7. Cart Screen
+   7. 购物车页面
    ========================================= */
 #peek-cart-screen { background-color: #f8f9fa; }
 #peek-cart-screen .content { 
@@ -602,7 +602,10 @@
 .cart-item-image {
     width: 80px; height: 80px;
     border-radius: 10px;
-    object-fit: cover;
+    padding: 16px;
+    flex-shrink: 0;
+    color: #555;
+    stroke-width: 2; /* 购物袋图标粗细，可直接调整数值。 */
     margin-right: 15px;
     background-color: #eee;
 }
@@ -634,7 +637,7 @@
 }
 
 /* =========================================
-   8. Transfer Station (WeChat File Transfer)
+   8. 中转站（文件传输助手）
    ========================================= */
 #peek-transfer-station-screen { background-color: #ededed; }
 
@@ -672,11 +675,17 @@
 
 .transfer-station-input-area .plus-btn {
     width: 36px; height: 36px; margin-left: 8px;
-    background-image: url('../../png/peek_transfer_plus.png');
-    background-size: 24px; background-position: center;
-    background-repeat: no-repeat;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    padding: 0;
     background-color: #f7f7f7;
+    color: #333;
     border: none;
+}
+
+.transfer-station-input-area .plus-btn svg {
+    width: 24px; height: 24px;
+    stroke-width: 2; /* 信封勾选图标粗细，可直接调整数值。 */
 }
 
 /* =========================================

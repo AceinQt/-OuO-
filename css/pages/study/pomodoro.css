@@ -442,7 +442,7 @@
     font-weight: 600;
 }
 
-/* --- Pomodoro Record Card in Chat (New Style) --- */
+/* --- 聊天中的专注记录卡片 --- */
 .pomodoro-record-card {
     width: 230px;
     background-color: #fff;
@@ -467,6 +467,9 @@
 .pomodoro-record-icon {
     width: 50px;
     height: 50px;
+    color: #333;
+    stroke-width: 2; /* 礼炮图标粗细，可直接调整数值。 */
+    transform: scaleX(-1); /* 只水平翻转礼炮，不翻转卡片与文字。 */
     margin-right: 15px;
     flex-shrink: 0;
 }

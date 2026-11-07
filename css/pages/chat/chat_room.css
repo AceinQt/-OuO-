@@ -223,6 +223,14 @@
     gap:4px;
 }
 
+/* 转账和分享卡始终占满普通气泡的宽度上限，不随金额、标题长短收缩。
+   只给这两类内容列定宽；仍由上面的 70% 限制窄屏，尾部时间占位时允许继续缩小。
+   光给卡片 width:100% 不够：父列若是 auto，短内容仍会把整列缩成一小块。 */
+.message-content-col:has(> .transfer-card, > .forum-share-card) {
+    width: calc(260px + var(--bub-stroke-x, 0px));
+    min-width: 0;
+}
+
 /* 接收方内容左对齐 */
 .message-wrapper.received .message-content-col {
     align-items: flex-start;
@@ -886,6 +894,12 @@
     margin: 0px;
 }
 
+.pv-card-image-overlay,
+.pv-card-actions {
+    /* 图片层和操作组共用同一条渐隐曲线，文字由底层自然露出，避免按钮先跳变。 */
+    transition: opacity 0.5s ease-in-out;
+}
+
 .pv-card-image-overlay {
     position: absolute;
     top: 0;
@@ -894,11 +908,11 @@
     height: 100%;
     background-size: cover;
     background-position: center;
-    transition: opacity 0.5s ease-in-out;
     z-index: 2;
 }
 
-.pv-card-image-overlay.hidden {
+.pv-card-image-overlay.hidden,
+.pv-card-actions.hidden {
     opacity: 0;
     pointer-events: none;
 }
@@ -915,56 +929,21 @@
     z-index: 1;
 }
 
-.pv-card-footer {
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.6), transparent);
-    color: white;
-    padding: 20px 10px 8px;
-    font-size: 12px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
+/* opacity 过渡会创建层叠上下文，因此整个操作组必须在图片层之上。
+   包装层不拦截卡片点击，只让按钮接收；文字面再立即收回按钮热区。 */
+.pv-card-actions {
     position: absolute;
-    bottom: 0;
-    left: 0;
-    width: 100%;
-    z-index: 3;
+    inset: 0;
+    z-index: 4;
     pointer-events: none;
-    transition: opacity 0.5s ease-in-out;
 }
 
-.pv-card-footer.hidden {
-    opacity: 0;
-}
-
-.pv-card-footer svg {
-    width: 14px;
-    height: 14px;
-    fill: white;
-    flex-shrink: 0;
-}
-
-.pv-card-generate {
-    width: 28px;
-    height: 28px;
-    margin-left: auto;
-    padding: 5px;
-    border: 0;
-    border-radius: 50%;
-    color: white;
-    background: rgba(0, 0, 0, 0.38);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
+.pv-card-actions > button {
     pointer-events: auto;
 }
 
-.pv-card-generate[hidden] {
-    display: none;
-}
-
-.pv-card-generate:hover {
-    background: rgba(0, 0, 0, 0.62);
+.pv-card-actions.hidden > button {
+    pointer-events: none;
 }
 
 .pv-card-generate:disabled {
@@ -972,22 +951,14 @@
     cursor: wait;
 }
 
-.pv-card-generate svg {
-    width: 17px;
-    height: 17px;
-    fill: none;
-    stroke: currentColor;
-}
-
-/* 图片气泡右上角的放大按钮：纯图片和文字图片共用
-   .image-ocr-btn 是真实图片右下角的"转文字"键，占位对应 pv-card 的生图键，
-   两种图片气泡的右下角动作键因此统一；除了位置以外和放大键完全同一套观感。 */
+/* 生图和放大共用右上角的位置与观感；真实图片的转文字键仍留在右下角。 */
+.pv-card-generate,
 .image-zoom-btn,
 .image-ocr-btn {
     position: absolute;
     top: 8px;
     right: 8px;
-    z-index: 4;                             /* 高过 pv-card 的 overlay(2) 和 footer(3) */
+    z-index: 4;                             /* 高过图片覆盖层（2），文字面隐藏整个操作组 */
     width: 28px;
     height: 28px;
     padding: 5px;
@@ -1006,16 +977,19 @@
     bottom: 8px;
 }
 
+.pv-card-generate[hidden],
 .image-zoom-btn[hidden],
 .image-ocr-btn[hidden] {
     display: none;
 }
 
+.pv-card-generate:hover,
 .image-zoom-btn:hover,
 .image-ocr-btn:hover {
     background: rgba(0, 0, 0, 0.62);
 }
 
+.pv-card-generate svg,
 .image-zoom-btn svg,
 .image-ocr-btn svg {
     width: 17px;
@@ -1276,94 +1250,79 @@
     word-break: break-all;
 }
 
+/* 转账统一用主题纯色，不再加载背景图片或叠加模糊、遮罩。 */
 .transfer-card {
-    width: 240px;
-    height: auto;
+    width: 100%;
+    max-width: calc(260px + var(--bub-stroke-x, 0px));
     border-radius: var(--border-radius);
     margin: 0;
     overflow: hidden;
-    position: relative;    
+    position: relative;
+    background-color: var(--primary-color);
     color: white;
 }
 
-.message-wrapper.received .transfer-card {    
+/* 收款、退回后只淡化底色，不降低整张卡的透明度，金额和备注仍保持清楚。
+   外观生成器为自选底色生成同样的完成态规则；这里负责默认主题色。 */
+.transfer-card.received,
+.transfer-card.returned {
+    background-color: var(--accent-color);
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.message-wrapper.received .transfer-card {
     cursor: pointer;
 }
 
-.transfer-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-size: cover;
-    background-position: center;
-    filter: blur(4px);
-    transform: scale(1.1);
-    z-index: 1;
+.transfer-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 14px;
 }
 
-.transfer-card.sent-transfer::before {
-    background-image: url('../../../png/transfer_card_sent.png');
+.transfer-icon {
+    width: 40px;
+    height: 40px;
+    stroke-width: 2; /* 转账 Q 图标的线条粗细：数值越小越细，如 1.5；越大越粗。 */
+    flex-shrink: 0;
 }
 
-.transfer-card.received-transfer::before {
-    background-image: url('../../../png/transfer_card_recv.png');
-}
-
-.transfer-card .overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.3);
-    z-index: 2;
-    transition: background-color 0.5s ease;
-}
-
-.transfer-card.received .overlay {
-    background-color: rgba(168, 212, 255, 0.4);
-}
-
-.transfer-card.returned .overlay {
-    background-color: rgba(100, 100, 100, 0.5);
-}
-
-.transfer-content {
-    position: relative;
-    z-index: 3;
-    padding: 20px;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-}
-
-.transfer-title {
-    font-size: 14px;
-    margin: 0 0 5px 0;
-    opacity: 0.9;
+.transfer-details {
+    flex: 1;
+    min-width: 0;
 }
 
 .transfer-amount {
-    font-size: 28px;
-    font-weight: bold;
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.25;
     margin: 0;
-}
-
-.transfer-remark {
-    font-size: 14px;
-    margin-top: 10px;
-    opacity: 0.9;
-    line-height: 1.4;
-    word-break: break-all;
+    overflow-wrap: anywhere;
 }
 
 .transfer-status {
     font-size: 12px;
-    margin-top: 15px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(255, 255, 255, 0.3);
-    opacity: 0.8;
+    line-height: 1.4;
+    margin: 4px 0 0;
+    opacity: 0.85;
+    overflow-wrap: anywhere;
+}
+
+.transfer-divider {
+    margin: 0 14px;
+    border-top: 1px solid currentColor;
+    opacity: 0.25;
+}
+
+.transfer-remark {
+    font-size: 14px;
+    margin: 0;
+    padding: 10px 14px;
+    opacity: 0.9;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
 }
 
 .gift-card {
@@ -1384,6 +1343,8 @@
 .gift-card-icon {
     width: 50px;
     height: 50px;
+    color: #333;
+    stroke-width: 2; /* 礼物图标粗细，可直接调整数值。 */
     margin-right: 15px;
     flex-shrink: 0;
 }
@@ -2270,6 +2231,8 @@
         390    259     250（-9）
      所以这里 width:100% + max-width:260px：宽屏封顶跟气泡一样是 260px，
      窄屏则被 70% 的父列压住一起缩，两头都对齐。
+     父列还要由上面的 :has(> .transfer-card, > .forum-share-card) 定宽，
+     否则只有卡片 width:100%，短标题仍会跟着 auto 父列缩成一小块。
      ⚠️ 连那个 `+ var(--bub-stroke-x)` 的描边补偿也要跟着抄 —— 用户给普通气泡加描边时
         气泡的封顶会放宽那么几像素（理由见 .message-content-col 那段注释），
         这里不跟的话宽屏上卡片就比上下的气泡窄一截、右边缘对不齐。
