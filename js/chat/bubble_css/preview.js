@@ -1,4 +1,4 @@
-// --- START OF FILE bubble_css/preview.js ---
+// --- 气泡外观预览模块 ---
 // ======================================================================
 // 外观页上半部分那个 200px 高的预览 iframe。
 //
@@ -156,21 +156,27 @@ function getDynamicBubblePreview(timeFormat) {
         </div>
     `);
 
-    // 5. 转账气泡
+    // 5. 转账气泡：复用真实卡片内部结构，金额/状态在上，分隔线和备注在下。
     html += getRow(false, `
         <div class="transfer-card received-transfer">
-            <div class="overlay"></div>
-            <div class="transfer-content">
-                <p class="transfer-title">转账给你</p><p class="transfer-amount">¥50.00</p><p class="transfer-status">待查收</p>
-            </div>
+            ${createTransferCardContent('50.00', '转账给你', '请你喝杯咖啡').outerHTML}
         </div>
     `);
     html += getRow(true, `
         <div class="transfer-card sent-transfer">
-            <div class="overlay"></div>
-            <div class="transfer-content">
-                <p class="transfer-title">给你转账</p><p class="transfer-amount">¥100.00</p><p class="transfer-status">待查收</p>
-            </div>
+            ${createTransferCardContent('100.00', '待查收', '').outerHTML}
+        </div>
+    `);
+
+    // 完成态与待处理态并排保留，调主题色时能看见浅底和字色是否清楚。
+    html += getRow(false, `
+        <div class="transfer-card received-transfer received">
+            ${createTransferCardContent('50.00', '已收款', '请你喝杯咖啡').outerHTML}
+        </div>
+    `);
+    html += getRow(true, `
+        <div class="transfer-card sent-transfer returned">
+            ${createTransferCardContent('100.00', '已退回', '').outerHTML}
         </div>
     `);
 

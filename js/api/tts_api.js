@@ -164,6 +164,20 @@ function _clampVoiceKnob(raw, spec) {
     return spec.integer ? Math.round(value) : Math.round(value * 100) / 100;
 }
 
+/** 独立加载语音 API 时的报价兜底；价格按预设隔离，缺项不借用全局值。 */
+function _normalizeVoiceUsagePricing(raw) {
+    if (typeof window !== 'undefined' && window.ApiUsageLedger?.normalizePricing) {
+        return window.ApiUsageLedger.normalizePricing(raw);
+    }
+    const pricing = raw || {};
+    return Object.fromEntries(['standard', 'flex'].map(tier => [tier,
+        Object.fromEntries(['input', 'output', 'cache'].map(kind => {
+            const value = Number(pricing[tier]?.[kind]);
+            return [kind, Number.isFinite(value) && value >= 0 ? value : 0];
+        }))
+    ]));
+}
+
 /**
  * 归一化单条音色预设。
  *
@@ -199,6 +213,7 @@ function _normalizeVoicePreset(raw, legacyConfig) {
             ? String(p.apiKey).trim()
             : String(legacy.apiKey || '').trim(),
         model: String(p.model || def.defaultModel).trim() || def.defaultModel,
+        usagePricing: _normalizeVoiceUsagePricing(p.usagePricing),
         speakerId: String(p.speakerId || '').trim(),
         // MiniMax 账户下的 GroupId（控制台「账户信息」里那个 19 位数字）。
         // ★ 实测国内 api.minimaxi.com 的 t2a_v2 **不带它也能过鉴权**（带与不带
@@ -654,12 +669,12 @@ function _buildMinimaxEndpoint(preset) {
 // 各服务商的合成实现
 // ============================================================
 // 两个 _synthesizeXxx 的契约完全一致，加一家照这个形状再写一个：
-//   入参 (preset, text, fetchOptions)
+//   入参 (preset, text, fetchOptions, feature)
 //   出参 { bytes, mime, source, duration, logid }   duration 单位秒，拿不到给 0
 //   出错抛 _voiceError（message 可直接展示；服务端没受理的带 billed:false）
 // 配额、超时、取消都在外层 synthesizeVoice 里统一处理，这两个函数不管。
 
-async function _synthesizeDoubao(preset, text, fetchOptions) {
+async function _synthesizeDoubao(preset, text, fetchOptions, feature = '语音合成') {
     const body = {
         model: preset.model || ttsProviderDef('doubao').defaultModel,
         // ★ 只发台词。原先这里会把「声音描述」拌成 `{描述}说道："{台词}"`，
@@ -676,55 +691,82 @@ async function _synthesizeDoubao(preset, text, fetchOptions) {
     // 逐字节一致，免得某个音色对 pitch_rate:0 和缺省的处理有细微差别。
     if (preset.pitch) body.audio_config.pitch_rate = preset.pitch;
 
-    let response;
+    // 用量账本只认服务商回传的 token；原有秒制配额仍独立校正，不拿来估费用。
+    let usageTracker = null;
+    let usageError = null;
     try {
-        response = await fetch(_buildDoubaoEndpoint(preset), {
-            method: 'POST',
-            headers: {
-                // ★ 只有这两个头。X-Api-Key 不在 CORS 白名单里，所以 key 走 query。
-                //   X-Api-Request-Id 在白名单里（已实测），带上是为了出问题时能对 logid。
-                'Content-Type': 'application/json',
-                'X-Api-Request-Id': _voiceRequestId()
-            },
-            body: JSON.stringify(body),
-            ...fetchOptions
-        });
+        let response;
+        try {
+            usageTracker = typeof beginApiUsage === 'function'
+                ? beginApiUsage({ cfg: preset, feature, protocol: 'openai', requestBody: body })
+                : null;
+            response = await fetch(_buildDoubaoEndpoint(preset), {
+                method: 'POST',
+                headers: {
+                    // ★ 只有这两个头。X-Api-Key 不在 CORS 白名单里，所以 key 走 query。
+                    //   X-Api-Request-Id 在白名单里（已实测），带上是为了出问题时能对 logid。
+                    'Content-Type': 'application/json',
+                    'X-Api-Request-Id': _voiceRequestId()
+                },
+                body: JSON.stringify(body),
+                ...fetchOptions
+            });
+            usageTracker?.response?.(response);
+        } catch (error) {
+            // 账本保留原始网络/取消错误，调用方仍收到既有的中文语音错误文案。
+            usageError = error;
+            throw _voiceError(`连接语音服务失败：${error.message}`,
+                { retryable: true, billed: false, cause: error });
+        }
+
+        const logid = response.headers.get('X-Tt-Logid') || '';
+
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (_) { /* 下面按 HTTP 状态处理 */ }
+        if (payload) usageTracker?.usage?.(payload);
+
+        if (payload && payload.code && Number(payload.code) !== 0) {
+            // 业务报错 → 按火山的口径，请求已经处理过了，预扣不退
+            // 保留原业务错误与预扣规则；完整解析的业务拒绝不是断流，HTTP 200 也保留已知费用。
+            const error = _describeTtsError(DOUBAO_TTS_ERRORS, payload.code, payload.message, logid, 'Logid');
+            Object.assign(error, { status: response.status, response });
+            throw error;
+        }
+        if (!response.ok) {
+            throw _voiceError(
+                `语音合成失败（HTTP ${response.status}）${logid ? `（Logid ${logid}）` : ''}`,
+                { retryable: response.status >= 500, logid, billed: false, status: response.status, response }
+            );
+        }
+        if (!payload) throw _voiceError('语音服务返回了无法解析的内容', { retryable: true, logid });
+
+        if (!(typeof payload.audio === 'string' && payload.audio)
+            && typeof payload.url === 'string' && payload.url) {
+            // 合成 POST 已完整读体并通过业务校验，URL 下载失败不能覆盖付费调用的成功。
+            // 缺 audio/url 时仍由下方原校验报错，不提前标成功。
+            await usageTracker?.finish?.();
+            usageTracker = null;
+        }
+        const audio = await _extractDoubaoAudio(payload);
+        return {
+            bytes: audio.bytes,
+            mime: audio.mime,
+            source: audio.source,
+            // 账单按 original_duration 走；duration 是最终音频长度（受语速影响）
+            duration: Number(payload.original_duration) || Number(payload.duration) || 0,
+            logid
+        };
     } catch (error) {
-        throw _voiceError(`连接语音服务失败：${error.message}`,
-            { retryable: true, billed: false, cause: error });
+        usageError = usageError || error;
+        throw error;
+    } finally {
+        await usageTracker?.finish?.(usageError);
     }
-
-    const logid = response.headers.get('X-Tt-Logid') || '';
-
-    let payload = null;
-    try {
-        payload = await response.json();
-    } catch (_) { /* 下面按 HTTP 状态处理 */ }
-
-    if (payload && payload.code && Number(payload.code) !== 0) {
-        // 业务报错 → 按火山的口径，请求已经处理过了，预扣不退
-        throw _describeTtsError(DOUBAO_TTS_ERRORS, payload.code, payload.message, logid, 'Logid');
-    }
-    if (!response.ok) {
-        throw _voiceError(
-            `语音合成失败（HTTP ${response.status}）${logid ? `（Logid ${logid}）` : ''}`,
-            { retryable: response.status >= 500, logid, billed: false }
-        );
-    }
-    if (!payload) throw _voiceError('语音服务返回了无法解析的内容', { retryable: true, logid });
-
-    const audio = await _extractDoubaoAudio(payload);
-    return {
-        bytes: audio.bytes,
-        mime: audio.mime,
-        source: audio.source,
-        // 账单按 original_duration 走；duration 是最终音频长度（受语速影响）
-        duration: Number(payload.original_duration) || Number(payload.duration) || 0,
-        logid
-    };
 }
 
-async function _synthesizeMinimax(preset, text, fetchOptions) {
+async function _synthesizeMinimax(preset, text, fetchOptions, feature = '语音合成') {
     const body = {
         model: preset.model || ttsProviderDef('minimax').defaultModel,
         text,
@@ -746,65 +788,84 @@ async function _synthesizeMinimax(preset, text, fetchOptions) {
     // 同豆包：音调 0 就整个字段不发，保持和加这个功能之前一致
     if (preset.pitch) body.voice_setting.pitch = preset.pitch;
 
-    let response;
+    // 用量账本只认服务商回传的 token；原有秒制配额仍独立校正，不拿来估费用。
+    let usageTracker = null;
+    let usageError = null;
     try {
-        response = await fetch(_buildMinimaxEndpoint(preset), {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                // Authorization 在 MiniMax 的 CORS 白名单里（已实测预检 200），
-                // 所以这家能规规矩矩用请求头，不用像豆包那样把 key 塞进 query。
-                'Authorization': `Bearer ${preset.apiKey}`
-            },
-            body: JSON.stringify(body),
-            ...fetchOptions
-        });
+        let response;
+        try {
+            usageTracker = typeof beginApiUsage === 'function'
+                ? beginApiUsage({ cfg: preset, feature, protocol: 'openai', requestBody: body })
+                : null;
+            response = await fetch(_buildMinimaxEndpoint(preset), {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    // Authorization 在 MiniMax 的 CORS 白名单里（已实测预检 200），
+                    // 所以这家能规规矩矩用请求头，不用像豆包那样把 key 塞进 query。
+                    'Authorization': `Bearer ${preset.apiKey}`
+                },
+                body: JSON.stringify(body),
+                ...fetchOptions
+            });
+            usageTracker?.response?.(response);
+        } catch (error) {
+            // 账本保留原始网络/取消错误，调用方仍收到既有的中文语音错误文案。
+            usageError = error;
+            throw _voiceError(`连接语音服务失败：${error.message}`,
+                { retryable: true, billed: false, cause: error });
+        }
+
+        const traceId = response.headers.get('Trace-Id') || '';
+
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (_) { /* 下面按 HTTP 状态处理 */ }
+        if (payload) usageTracker?.usage?.(payload);
+
+        // ★ 必须先看 base_resp 再看 HTTP 状态：MiniMax 把业务错误也放在 HTTP 200 里，
+        //   反过来判断的话鉴权失败会被当成"成功但没音频"，报错完全指错方向。
+        const baseResp = (payload && payload.base_resp) || null;
+        if (baseResp && Number(baseResp.status_code) !== 0) {
+            const error = _describeTtsError(MINIMAX_TTS_ERRORS,
+                baseResp.status_code, baseResp.status_msg, traceId, 'Trace');
+            Object.assign(error, { status: response.status, response });
+            throw error;
+        }
+        if (!response.ok) {
+            throw _voiceError(
+                `语音合成失败（HTTP ${response.status}）${traceId ? `（Trace ${traceId}）` : ''}`,
+                { retryable: response.status >= 500, logid: traceId, billed: false, status: response.status, response }
+            );
+        }
+        if (!payload) {
+            throw _voiceError('语音服务返回了无法解析的内容', { retryable: true, logid: traceId });
+        }
+
+        const audioHex = payload.data && payload.data.audio;
+        if (!audioHex) {
+            throw _voiceError('响应里没有音频数据', { retryable: true, logid: traceId });
+        }
+
+        // audio_length 是毫秒。MiniMax 其实按字符计费，但本地配额是秒制（豆包定的），
+        // 统一折成秒记账 —— 这个计数器的作用是"发现异常烧量"，不是复现账单。
+        const audioLength = Number((payload.extra_info || {}).audio_length);
+        const duration = audioLength > 0 ? Math.round(audioLength / 10) / 100 : 0;
+
+        return {
+            bytes: _hexToBytes(audioHex),
+            mime: VOICE_MIME_TYPE,
+            source: 'audio',
+            duration,
+            logid: traceId
+        };
     } catch (error) {
-        throw _voiceError(`连接语音服务失败：${error.message}`,
-            { retryable: true, billed: false, cause: error });
+        usageError = usageError || error;
+        throw error;
+    } finally {
+        await usageTracker?.finish?.(usageError);
     }
-
-    const traceId = response.headers.get('Trace-Id') || '';
-
-    let payload = null;
-    try {
-        payload = await response.json();
-    } catch (_) { /* 下面按 HTTP 状态处理 */ }
-
-    // ★ 必须先看 base_resp 再看 HTTP 状态：MiniMax 把业务错误也放在 HTTP 200 里，
-    //   反过来判断的话鉴权失败会被当成"成功但没音频"，报错完全指错方向。
-    const baseResp = (payload && payload.base_resp) || null;
-    if (baseResp && Number(baseResp.status_code) !== 0) {
-        throw _describeTtsError(MINIMAX_TTS_ERRORS,
-            baseResp.status_code, baseResp.status_msg, traceId, 'Trace');
-    }
-    if (!response.ok) {
-        throw _voiceError(
-            `语音合成失败（HTTP ${response.status}）${traceId ? `（Trace ${traceId}）` : ''}`,
-            { retryable: response.status >= 500, logid: traceId, billed: false }
-        );
-    }
-    if (!payload) {
-        throw _voiceError('语音服务返回了无法解析的内容', { retryable: true, logid: traceId });
-    }
-
-    const audioHex = payload.data && payload.data.audio;
-    if (!audioHex) {
-        throw _voiceError('响应里没有音频数据', { retryable: true, logid: traceId });
-    }
-
-    // audio_length 是毫秒。MiniMax 其实按字符计费，但本地配额是秒制（豆包定的），
-    // 统一折成秒记账 —— 这个计数器的作用是"发现异常烧量"，不是复现账单。
-    const audioLength = Number((payload.extra_info || {}).audio_length);
-    const duration = audioLength > 0 ? Math.round(audioLength / 10) / 100 : 0;
-
-    return {
-        bytes: _hexToBytes(audioHex),
-        mime: VOICE_MIME_TYPE,
-        source: 'audio',
-        duration,
-        logid: traceId
-    };
 }
 
 const _VOICE_SYNTHESIZERS = {
@@ -839,6 +900,7 @@ function _voiceRequestId() {
  *                                ★ 凭据来自预设本身，不再读任何全局 Key
  * @param {object} [args.settings] 老数据迁移用（预设缺 apiKey 时借它的顶层 apiKey）
  * @param {boolean}[args.quotaOncePerDay] 超额提示当天只弹一次（后台自动合成传 true）
+ * @param {string} [args.feature] 用量分类，设置页可传「语音试听」
  * @param {AbortSignal} [args.signal] 外部取消信号，会和内部超时叠加
  *
  * @returns {Promise<{bytes: Uint8Array, mime: string, format: string,
@@ -849,7 +911,7 @@ function _voiceRequestId() {
  *                 retryable=true    → 值得重试
  *                 code / logid      → 排查用
  */
-async function synthesizeVoice({ text, profile, settings, quotaOncePerDay = false, signal } = {}) {
+async function synthesizeVoice({ text, profile, settings, quotaOncePerDay = false, signal, feature = '语音合成' } = {}) {
     // ★ 再归一化一遍：试听路径传进来的是"表单上还没保存"的预设，可能有越界的语速/音调
     //   或缺字段。settings 只用于把老数据的全局 Key 补给缺 Key 的预设。
     const preset = _normalizeVoicePreset(profile || {},
@@ -883,7 +945,7 @@ async function synthesizeVoice({ text, profile, settings, quotaOncePerDay = fals
 
     let result;
     try {
-        result = await synthesize(preset, line, { signal: controller.signal });
+        result = await synthesize(preset, line, { signal: controller.signal }, feature);
     } catch (error) {
         // 服务端没受理就没产生账单，预扣退回来（billed:false 由各 _synthesizeXxx 标注）。
         // 已被受理的业务错误不退 —— 那笔钱已经花了。

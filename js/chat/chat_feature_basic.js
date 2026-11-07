@@ -1,4 +1,4 @@
-// --- chat_feature.js --- 
+// --- 聊天基础功能：语音、图片、转账与位置 ---
              const voiceMessageBtn = document.getElementById('voice-message-btn'),
                 sendVoiceModal = document.getElementById('send-voice-modal'),
                 sendVoiceForm = document.getElementById('send-voice-form'),
@@ -112,7 +112,9 @@
                     url:      d.url || d.apiUrl || '',
                     key:      d.key || d.apiKey || '',
                     model:    d.model || '',
-                    provider: d.provider || 'newapi'
+                    provider: d.provider || 'newapi',
+                    // 只取这条预设自身的价格；旧预设缺报价时不能借用全局默认的报价。
+                    usagePricing: d.usagePricing
                 });
                 const _findPreset = (name) => (db.apiPresets || [])
                     .filter(p => !p.type || p.type === 'chat')
@@ -163,6 +165,8 @@
                 const controller = new AbortController();
                 const timer = setTimeout(() => controller.abort(), timeoutSec * 1000);
 
+                let usageTracker = null;
+                let usageError = null;
                 try {
                     let body;
 
@@ -200,6 +204,9 @@
                     // 识图自己保留图文组装/解析，但 Flex 与聊天共用发送入口，
                     // 不能只借端点和鉴权头，否则 Gemini 的顶层计费字段会漏掉。
                     const request = buildLLMRequest(cfg, body, { stream: false });
+                    usageTracker = typeof beginApiUsage === 'function'
+                        ? beginApiUsage({ cfg, feature: '识图', protocol: llmIsGeminiShape(provider) ? 'gemini' : 'openai', requestBody: request.body })
+                        : null;
                     const response = await fetch(request.endpoint, {
                         method: 'POST',
                         headers: request.headers,
@@ -207,23 +214,36 @@
                         signal: controller.signal
                     });
 
+                    usageTracker?.response?.(response);
                     if (!response.ok) {
                         let detail = '';
-                        try { detail = ((await response.text()) || '').slice(0, 120); } catch (e) {}
-                        throw new Error(`API ${response.status}${detail ? ' ' + detail : ''}`);
+                        try {
+                            // 同一响应体读一次，HTTP 错误若仍带用量也要记下来。
+                            const text = (await response.text()) || '';
+                            detail = text.slice(0, 120);
+                            try { usageTracker?.usage?.(JSON.parse(text)); } catch (_) {}
+                        } catch (_) {}
+                        throw Object.assign(new Error(`API ${response.status}${detail ? ' ' + detail : ''}`),
+                            { status: response.status, response });
                     }
 
                     const json = await response.json();
+                    usageTracker?.usage?.(json);
+                    // 部分中转把业务错误藏在 HTTP 200，先保留用量，再把错误交给调用方和账本。
+                    if (json.error) throw Object.assign(new Error(json.error.message || '识图API返回业务错误'),
+                        { status: response.status, response });
                     return llmIsGeminiShape(provider)
                         ? (json.candidates?.[0]?.content?.parts || [])
                             .filter(p => !p.thought && typeof p.text === 'string')
                             .map(p => p.text).join('')
                         : (json.choices?.[0]?.message?.content || '');
                 } catch (err) {
+                    usageError = err;
                     if (err.name === 'AbortError') throw new Error(`请求超时（${timeoutSec}秒）`);
                     throw err;
                 } finally {
                     clearTimeout(timer);
+                    await usageTracker?.finish?.(usageError);
                 }
             }
 

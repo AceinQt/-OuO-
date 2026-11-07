@@ -422,8 +422,12 @@ function setupGroupChatSystem() {
     linkGroupWorldBookBtn.addEventListener('click', () => {
         const group = db.groups.find(g => g.id === currentChatId);
         if (!group) return;
-        renderCategorizedWorldBookList(document.getElementById('world-book-selection-list'), db.worldBooks, group.worldBookIds || [], 'wb-select-group');
-        document.getElementById('world-book-selection-modal').classList.add('visible');
+        openChatWorldBookSelection(group.id, 'group');
+    });
+
+    document.getElementById('link-group-regex-btn')?.addEventListener('click', () => {
+        const group = db.groups.find(g => g.id === currentChatId);
+        if (group && typeof openChatRegexSelection === 'function') openChatRegexSelection(group.id, 'group');
     });
 
     // 16. 最大记忆轮数：点击菜单唤起输入弹窗（与私聊一致）
@@ -639,6 +643,9 @@ if (groupApiPresetSel) {
     groupApiPresetSel.value = group.chatApiPreset || '';
 }
 
+const groupCacheToggle = document.getElementById('setting-group-cache-optimization');
+if (groupCacheToggle) groupCacheToggle.checked = group.cacheOptimizationEnabled === true;
+
 // 天气：隐藏 input 暂存，侧栏只显示文案，具体设置走弹窗
 const groupWeatherModeInput = document.getElementById('setting-group-weather-mode');
 if (groupWeatherModeInput) {
@@ -729,10 +736,10 @@ function renderGroupMembersInSettings(group) {
         groupMembersListContainer.appendChild(memberDiv);
     });
 
-    // ── 添加按钮 ──────────────────────────────────────────
+    // ── 添加按钮：加号复用统一的线框图标，保留原有委托点击入口 ──
     const addBtn = document.createElement('div');
     addBtn.className = 'add-member-btn';
-    addBtn.innerHTML = `<div class="add-icon">+</div><span>添加</span>`;
+    addBtn.innerHTML = `<div class="add-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></div><span>添加</span>`;
     groupMembersListContainer.appendChild(addBtn);
 
     // ── 移除按钮（紧跟添加按钮）───────────────────────────
@@ -849,6 +856,12 @@ if (groupTimePEl) group.timePerceptionEnabled = groupTimePEl.checked;
 const groupApiPresetSel = document.getElementById('setting-group-api-preset');
 if (groupApiPresetSel) {
     group.chatApiPreset = groupApiPresetSel.value;
+}
+const groupCacheToggleSave = document.getElementById('setting-group-cache-optimization');
+if (groupCacheToggleSave) {
+    const changed = groupCacheToggleSave.checked !== (group.cacheOptimizationEnabled === true);
+    group.cacheOptimizationEnabled = groupCacheToggleSave.checked;
+    if (changed && typeof ChatPromptCache !== 'undefined') ChatPromptCache.reset(group);
 }
 const groupWeatherModeInputSave = document.getElementById('setting-group-weather-mode');
 if (groupWeatherModeInputSave) {

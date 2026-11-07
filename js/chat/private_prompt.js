@@ -1,15 +1,26 @@
-            // --- AI Interaction & Prompts ---
-            function generatePrivateSystemPrompt(character, retrievedContext = '', weatherText = '') {
-                const worldBooksBefore = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).map(wb => wb.content).join('\n');
-                const worldBooksAfter = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).map(wb => wb.content).join('\n');
-                // --- 新增：获取“写作专用”的世界书 ---
-                const worldBooksWriting = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'writing')).filter(Boolean).map(wb => wb.content).join('\n');
+            // 私聊提示词：分段模式收集实时资料，未传数组时保留原文及原顺序。
+            function generatePrivateSystemPrompt(character, retrievedContext = '', weatherText = '', dynamicParts = null) {
+                const cacheOptimized = Array.isArray(dynamicParts);
+                const dynamic = text => {
+                    if (!cacheOptimized) return text;
+                    if (text) dynamicParts.push(text);
+                    return '';
+                };
+                // 线上/线下选择只约束普通私聊；通话仍使用关联并集，不受两列限制。
+                const chatWorldBooks = getChatWorldBooks(character, character.callMode ? 'all' : undefined);
+                const worldBooksBefore = chatWorldBooks.filter(wb => wb.position === 'before').map(wb => wb.content).join('\n');
+                const worldBooksAfter = chatWorldBooks.filter(wb => wb.position === 'after').map(wb => wb.content).join('\n');
  
                 // --------------------------------
                 const now = new Date();
                 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
     const currentWeekDay = weekDays[now.getDay()]; // getDay() 返回 0-6，0是周日
-                const currentTime = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${currentWeekDay} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                const currentDate = `${now.getFullYear()}年${pad(now.getMonth() + 1)}月${pad(now.getDate())}日 星期${currentWeekDay}`;
+                const currentClock = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+                const currentTime = cacheOptimized ? currentClock : `${currentDate} ${currentClock}`;
+                // 日期在一天内固定，放第一段；只有时分与天气放实时段。仍遵守时间感知开关。
+                const finish = prompt => cacheOptimized && character.timePerceptionEnabled
+                    ? `${prompt}\n\n**当前日期**：${currentDate}\n` : prompt;
                 
                 // 辅助函数：计算距今多少天
     const getDaysAgo = (dateStr) => {
@@ -63,7 +74,8 @@ if (character.callMode === 'voice') {
     let prompt = `你正在和${character.myName}进行【语音通话】。\n\n`;
     prompt += `## 角色档案\n`;
     prompt += `**你的角色名**：${character.realName}\n`;
-    prompt += `**你的当前状态**：${character.status}\n`;
+    // 优化路径从历史中的状态更新理解现状，不再额外注入当前状态值；更新状态的规则保留。
+    if (!cacheOptimized) prompt += `**你的当前状态**：${character.status}\n`;
     prompt += `**你的角色设定**：${character.persona || '一个友好的伙伴。'}\n\n`;
     if (worldBooksBefore) prompt += `**世界观背景**：\n${worldBooksBefore}\n\n`;
     if (character.myPersona) prompt += `**对方信息（${character.myName}）**：${character.myPersona}\n\n`;
@@ -72,12 +84,12 @@ if (character.callMode === 'voice') {
 }
     if (allFavsCombined) prompt += `**重要记忆**：\n${allFavsCombined}\n\n`;
     if (retrievedContext) {
-        prompt += `【动态记忆检索】\n以下是与当前通话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`;
+        prompt += dynamic(`【动态记忆检索】\n以下是与当前通话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`);
     }
     
     const watchingContext = getWatchingPostsContext(character);
 if (watchingContext) {
-    prompt += `${watchingContext}\n\n`;
+    prompt += dynamic(`${watchingContext}\n\n`);
 }
 
     prompt += `## 通话规则\n`;
@@ -93,14 +105,14 @@ if (watchingContext) {
     prompt += `6. **挂断通话**：如果对话需要自然结束，你可以主动挂断，单起一行输出：[${character.realName}挂断了通话]。\n`; 
     // 调节旋钮：天气并进时间这一条，见 plans/weather-prompt-refit.md
     if (character.timePerceptionEnabled && weatherText) {
-        prompt += `7. 现在是 ${currentTime}，${weatherText}。以上真实天气情况供你参考，不要刻意或反复提及天气。`;
+        prompt += dynamic(`7. 现在是 ${currentTime}，${weatherText}。以上真实天气情况供你参考，不要刻意或反复提及天气。`);
     } else if (character.timePerceptionEnabled) {
-        prompt += `7. 现在是 ${currentTime}。`;
+        prompt += dynamic(`7. 现在是 ${currentTime}。`);
     } else if (weatherText) {
-        prompt += `7. ${weatherText}。以上真实天气情况供你参考，但请不要刻意或反复提及天气。`;
+        prompt += dynamic(`7. ${weatherText}。以上真实天气情况供你参考，但请不要刻意或反复提及天气。`);
     }
 
-    return prompt;
+    return finish(prompt);
 }
                     if (character.offlineModeEnabled || character.callMode === 'video') {
     const isVideoCall = character.callMode === 'video';
@@ -118,7 +130,7 @@ if (watchingContext) {
                     prompt += `**主角**：${character.realName}\n\n`;
                     prompt += `${character.persona}\n\n`;
                     prompt += `⚠️ **这是${character.realName}的完整人设，请仔细阅读。后续创作的每一个细节都要符合这份人设。**\n\n`;
-                    prompt += `**主角当前状态**：${character.status}\n\n`;
+                    if (!cacheOptimized) prompt += `**主角当前状态**：${character.status}\n\n`;
                     prompt += `---\n\n`;
                     
                     prompt += `💡 **关于“状态”的特殊定义**：\n`;
@@ -129,10 +141,15 @@ if (watchingContext) {
                         prompt += `**世界观设定**：\n${worldBooksBefore}\n\n`;
                     }
 
-                    // 调节旋钮：天气数据放在情境/档案区（低注意力的参考资料位），不放文末写作手册的自问区。
-                    // 若 AI 忽略天气 → 把 chat_ai_service.js 自问第 4 条扩成"什么天气？"；
-                    // 若 AI 反复重复天气 → 把下面这句改短。详见 plans/weather-prompt-refit.md
-                    if (weatherText) {
+                    // 原路径天气在档案区、时间在记忆引言；优化路径把时分和天气合成一句实时资料。
+                    // 即使没有收藏记忆，开启时间感知也能给出当前时分，日期由 finish 放入固定段。
+                    if (cacheOptimized && (character.timePerceptionEnabled || weatherText)) {
+                        const timeAndWeather = character.timePerceptionEnabled
+                            ? `现在是 ${currentClock}${weatherText ? `，${weatherText}` : ''}` : weatherText;
+                        const weatherHint = weatherText
+                            ? '（写景时可自然带入上述天气，而不是从上下文推测当前的天气，但请不要反复描写同一天气特征，也不要让角色刻意谈论天气。）' : '';
+                        dynamic(`**当前${character.timePerceptionEnabled ? '时间' : ''}${weatherText ? (character.timePerceptionEnabled ? '与天气' : '室外天气') : ''}**：${timeAndWeather}。${weatherHint}\n\n`);
+                    } else if (weatherText) {
                         prompt += `**当前室外天气**：${weatherText}。（写景时可自然带入上述天气，而不是从上下文推测当前的天气，但请不要反复描写同一天气特征，也不要让角色刻意谈论天气。）\n\n`;
                     }
 
@@ -148,19 +165,19 @@ if (watchingContext) {
 
                     // 记忆
                     if (allFavs) {
-                        prompt += character.timePerceptionEnabled
+                        prompt += character.timePerceptionEnabled && !cacheOptimized
                             ? `**重要记忆**：现在是 ${currentTime}，这是需要铭记的历史互动：\n${allFavs}\n\n`
                             : `**重要记忆**：这是需要铭记的历史互动：\n${allFavs}\n\n`;
                         prompt += `*这些记忆会影响${character.realName}的反应，但不要刻意提及"我记得..."，让它自然地影响情绪和判断。*\n\n`;
                     }
                     
                     if (retrievedContext) {
-        prompt += `【动态记忆检索】\n以下是与当前对话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`;
+        prompt += dynamic(`【动态记忆检索】\n以下是与当前对话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`);
     }
                     
                     const watchingContext = getWatchingPostsContext(character);
                     if (watchingContext) {
-                        prompt += `${watchingContext}\n\n`;
+                        prompt += dynamic(`${watchingContext}\n\n`);
                     }
                     
 
@@ -172,7 +189,7 @@ if (watchingContext) {
                     
                     prompt += `现在，请回顾上述人设，准备开始续写你的小说。\n`;
                     
-                    return prompt;
+                    return finish(prompt);
                 }
                 // --- 插入代码结束，下方是原有的线上模式逻辑 ---
                 let prompt = `你正在一个名为“OuO”的线上聊天软件中扮演一个角色。请严格遵守以下规则：\n`;
@@ -186,7 +203,7 @@ if (watchingContext) {
                 if (worldBooksBefore) {
                     prompt += `${worldBooksBefore}\n`;
                 }
-                prompt += `1. 你的角色名是：${character.realName}。我的名字是：${character.myName}。你的当前状态是：${character.status}。\n`;
+                prompt += `1. 你的角色名是：${character.realName}。我的名字是：${character.myName}。${cacheOptimized ? '' : `你的当前状态是：${character.status}。`}\n`;
                 prompt += `2. 你的角色设定是：${character.persona || "一个友好、乐于助人的伙伴。"}\n`;
                 if (worldBooksAfter) {
                     prompt += `${worldBooksAfter}\n`;
@@ -200,12 +217,12 @@ if (watchingContext) {
     }
     
     if (retrievedContext) {
-        prompt += `【动态记忆检索】\n以下是与当前对话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`;
+        prompt += dynamic(`【动态记忆检索】\n以下是与当前对话最相关的历史片段，仅供参考，无需刻意提及：\n${retrievedContext}\n\n`);
     }
     
     const watchingContext = getWatchingPostsContext();
                 if (watchingContext) {
-                    prompt += `${watchingContext}\n`;
+                    prompt += dynamic(`${watchingContext}\n`);
                 }
     
                 prompt += `4. 我的消息中可能会出现特殊格式，请根据其内容和你的角色设定进行回应：
@@ -217,7 +234,7 @@ if (watchingContext) {
     - [${character.myName}发送了位置：{地点名}；地址：{详细地址}]：我给你分享了我所在的位置。
     - [${character.myName}的分享：(换行)标题：xxx(换行)类别：xxx(换行)内容：xxx(换行)附加信息：xxx]：我分享给你一张卡片，可能是喵坛帖子、文件、链接、商品等任何东西。「类别」告诉你这是什么东西，「内容」是它的正文（你能看到全文），「附加信息」是额外说明。分享的内容你无需特地接收就能看到。
     - [${character.myName}引用“{被引用内容}”并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。
-    - [${character.myName} 撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。例如，可以装作没看见并等待我的下一句话，或好奇地问一句“怎么撤回啦？”。
+    - [${character.myName}撤回了一条消息：{撤回的消息原文}]：我撤回了之前发送的某一条消息，冒号后是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。例如，可以装作没看见并等待我的下一句话，或好奇地问一句“怎么撤回啦？”。
     - [剧情旁白: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。
 5. ✨重要✨ 当我给你转账时，你必须对此做出回应。你有两个选择，且必须严格遵循以下格式之一，这条指令消息本身不会显示给用户，但会触发转账状态的变化。你可以选择在发送这条指令后，再附带一条普通的聊天消息来表达你的想法。
     a) 接收转账: [${character.realName}接收${character.myName}的转账]
@@ -231,7 +248,7 @@ if (watchingContext) {
 附加信息：补充说明（可选）]
 注意：正文里不要顶格写“标题：”“类别：”“内容：”“附加信息：”这几个字，否则会被误认成字段分隔。
 7. ✨重要✨ 你需要在对话中**积极地**改变你的状态。比如，聊到一半你可能会说“我先去洗个澡”，然后更新你的状态，以反映你当前的行为或心情。这会让互动更真实。格式为：[${character.realName}更新状态为：xxx]。例如：[${character.realName}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。
-8. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了上一条消息：{被撤回消息的原文}]。
+8. ✨重要✨ 你可以像真人一样撤回自己之前发送的任意一条消息，不限于上一条。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[${character.realName}撤回了一条消息：{撤回的消息原文}]。这里的原文必须完整照抄目标消息的正文，不含外层的消息格式，不要改写或省略。大括号仅表示占位，实际输出时替换为原文。
 9. ✨重要✨ 你可以选择我的单独一条消息引用，当你想要针对某句话做出单独回应时，格式为：[${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]。
 10. 你可以主动发起通话邀请，格式为：[${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]。
 11. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。
@@ -252,7 +269,7 @@ if (watchingContext) {
     g) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
     h) 更新状态(此条不显示): [${character.realName}更新状态为：{新状态}]
     i) 引用我的回复: [${character.realName}引用“{我的某条消息内容}”并回复：{回复内容}]
-    j) 撤回上一条消息(此条不显示): [${character.realName}撤回了上一条消息：{被撤回消息的原文}]
+    j) 按原文撤回一条消息(原消息位置保留撤回提示): [${character.realName}撤回了一条消息：{撤回的消息原文}]
     k) 主动发起通话邀请: [${character.realName}发起了语音通话邀请] 或 [${character.realName}发起了视频通话邀请]
     l) 发送位置: [${character.realName}发送了位置：{地点名}；地址：{详细地址}]`;
 
@@ -310,7 +327,7 @@ if (watchingContext) {
                 } else if (weatherText) {
                     rule15Prefix = `${weatherText}。你应知晓当前正确的天气，而不是从上下文推测当前的天气，但不要刻意或反复提及天气（例如，不要没头没脑地聊天气），`;
                 }
-                prompt += `15. ${rule15Prefix}不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
+                prompt += `15. ${dynamic(rule15Prefix)}不要主动结束对话，除非我明确提出。保持你的人设，自然地进行对话。`;
 
-                return prompt;
+                return finish(prompt);
             }

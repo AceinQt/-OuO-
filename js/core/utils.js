@@ -40,9 +40,12 @@ function switchScreen(targetId) {
 
     targetScreen.classList.add('active');
 
-    // 关闭所有遮罩层和侧边栏
+    // 关闭所有遮罩层和侧边栏；通用弹窗先执行取消，结束等待并还原临时输入控件。
     document.querySelectorAll('.modal-overlay, .action-sheet-overlay, .settings-sidebar')
-        .forEach(o => o.classList.remove('visible', 'open'));
+        .forEach(o => {
+            if (typeof AppUI !== 'undefined' && typeof AppUI.dismiss === 'function' && AppUI.dismiss(o)) return;
+            o.classList.remove('visible', 'open');
+        });
 
     // 更新底部导航栏高亮
     document.querySelectorAll('.bottom-tab-bar .tab-item').forEach(t => {
@@ -286,9 +289,9 @@ function updateThemeColorForScreen(targetId, targetScreen) {
         return;
     }
 
-    // 2. 主页特殊处理
+    // 2. 主页独立默认色：只在未自定义时贴合初始壁纸，不改其他页面或底栏的默认值。
     if (targetId === 'home-screen' && typeof window.db !== 'undefined') {
-        setAndroidThemeColor(window.db.homeStatusBarColor || '#FFFFFF');
+        setAndroidThemeColor(window.db.homeStatusBarColor || '#BEC9CB');
         document.body.style.backgroundColor = window.db.homeNavigationBarColor || '#FFFFFF';
         return;
     }
@@ -473,6 +476,20 @@ document.addEventListener('DOMContentLoaded', () => {
 // ==========================================================
 const AppUI = {
     /**
+     * 遮罩、系统返回和切屏共用的关闭入口：必须执行原按钮回调，不能只隐藏后留下悬空的 Promise。
+     * 取消按钮显式标记，不按颜色判断——confirmPending 的禁用确定按钮也会使用 btn-neutral。
+     * 返回 false 表示不是可关闭的通用弹窗，交给调用方保留原有处理。
+     */
+    dismiss(overlay = document.getElementById('app-global-dialog')) {
+        if (!overlay || overlay.id !== 'app-global-dialog' || !overlay.classList.contains('visible')) return false;
+        const button = overlay.querySelector('[data-appui-dismiss]');
+        if (button) button.click();
+        // progress 没有 Promise；保留“隐藏即停止”，不要误点确定或改变停止按钮的等待语义。
+        else overlay.classList.remove('visible');
+        return true;
+    },
+
+    /**
      * 基础显示函数
      */
     show({ title = "提示", content = "", type = "alert", placeholder = "", confirmText = "确定", cancelText = "取消" } = {}) {
@@ -522,12 +539,14 @@ const AppUI = {
             if (type === 'alert') {
                 // 单个按钮使用主色调
                 const btn = createBtn(confirmText, "btn-primary", () => resolve(true));
+                btn.dataset.appuiDismiss = '';
                 actionsEl.appendChild(btn);
                 setTimeout(() => btn.focus(), 50);
             } 
             else if (type === 'confirm') {
                 // 取消用灰色(neutral)，确定用主色(primary)
                 const cancelBtn = createBtn(cancelText, "btn-neutral", () => resolve(false));
+                cancelBtn.dataset.appuiDismiss = '';
                 const confirmBtn = createBtn(confirmText, "btn-primary", () => resolve(true));               
                 actionsEl.appendChild(confirmBtn);
                 actionsEl.appendChild(cancelBtn);
@@ -537,6 +556,7 @@ const AppUI = {
                 inputEl.placeholder = placeholder;
 
                 const cancelBtn = createBtn(cancelText, "btn-neutral", () => resolve(null));
+                cancelBtn.dataset.appuiDismiss = '';
                 const confirmBtn = createBtn(confirmText, "btn-primary", () => resolve(inputEl.value));
                 actionsEl.appendChild(confirmBtn);
                 actionsEl.appendChild(cancelBtn);
@@ -638,6 +658,7 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
 
             // 取值必须在 close() 之前读，close 会把 textarea 从 DOM 里摘掉
             const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(null));
+            cancelBtn.dataset.appuiDismiss = '';
             const confirmBtn = document.createElement('button');
             confirmBtn.className     = 'btn btn-primary';
             confirmBtn.style.flex    = '1';
@@ -774,6 +795,7 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
             };
 
             const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(null));
+            cancelBtn.dataset.appuiDismiss = '';
             const confirmBtn = createBtn(confirmText, 'btn-primary',  () => {
                 const result = {};
                 readers.forEach((read, key) => { result[key] = read(); });
@@ -824,6 +846,7 @@ async confirm(content, title = "确认操作", confirmText = "确定", cancelTex
 
             const confirmBtn = createBtn(confirmText, 'btn-primary', () => resolve(true));
             const cancelBtn  = createBtn(cancelText,  'btn-neutral', () => resolve(false));
+            cancelBtn.dataset.appuiDismiss = '';
 
             // 计算完成前禁用确定，只能取消
             // 禁用时用灰色（和取消按钮一致），别让它看起来还能点

@@ -44,6 +44,20 @@ function _newImagePresetId() {
     return `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** 单独加载 API 层时也保留预设报价；缺字段归零，绝不继承旧全局价格。 */
+function _normalizeImageUsagePricing(raw) {
+    if (typeof window !== 'undefined' && window.ApiUsageLedger?.normalizePricing) {
+        return window.ApiUsageLedger.normalizePricing(raw);
+    }
+    const pricing = raw || {};
+    return Object.fromEntries(['standard', 'flex'].map(tier => [tier,
+        Object.fromEntries(['input', 'output', 'cache'].map(kind => {
+            const value = Number(pricing[tier]?.[kind]);
+            return [kind, Number.isFinite(value) && value >= 0 ? value : 0];
+        }))
+    ]));
+}
+
 /** 归一化单条生图预设（支持从老版本全局配置继承 url/key） */
 function _normalizeImagePreset(raw, legacyConfig) {
     const p = raw || {};
@@ -57,6 +71,7 @@ function _normalizeImagePreset(raw, legacyConfig) {
         // 只有旧数据缺字段时才继承旧全局值；显式空字符串不会借用别的凭据。
         apiUrl: p.apiUrl !== undefined ? String(p.apiUrl).trim() : String(legacy.apiUrl || '').trim(),
         apiKey: p.apiKey !== undefined ? String(p.apiKey).trim() : String(legacy.apiKey || '').trim(),
+        usagePricing: _normalizeImageUsagePricing(p.usagePricing),
         // 下面是 OpenAI 体系常用参数
         model: String(p.model || 'dall-e-3').trim(),
         size: String(p.size || '1024x1024').trim(),
@@ -328,12 +343,13 @@ async function _downloadGeneratedImage(url, signal) {
     return { ...validated, source: 'url' };
 }
 
-async function _readImageApiError(response) {
+async function _readImageApiError(response, usageTracker) {
     let text = '';
     try { text = await response.text(); } catch (_) {}
     if (!text) return '';
     try {
         const data = JSON.parse(text);
+        usageTracker?.usage?.(data);
         return String(data?.error?.message || data?.message || data?.detail || '').trim();
     } catch (_) {
         return text.trim().slice(0, 300);
@@ -542,68 +558,95 @@ function _extractChatText(payload) {
  * 站方文档原话也对得上：「普通模式支持文字与参考图；开启 openai 格式时使用纯文字生图」，
  * 那个"普通模式"就是这条 chat 路。
  */
-async function _generateChatImage(apiUrl, apiKey, preset, prompt, referenceImage, signal) {
+async function _generateChatImage(apiUrl, apiKey, preset, prompt, referenceImage, signal, feature = '图片生成') {
     const endpoint = _buildOpenAIChatEndpoint(apiUrl);
     const reference = String(referenceImage || '').trim();
 
     const content = [{ type: 'text', text: prompt }];
     if (reference) content.push({ type: 'image_url', image_url: { url: reference } });
 
-    let response;
-    try {
-        response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify({
-                model: preset.model,
-                messages: [{ role: 'user', content }]
-            }),
-            signal
-        });
-    } catch (error) {
-        if (error && error.name === 'AbortError') throw error;
-        throw new Error(`连接生图接口失败：${error.message || '网络错误'}`);
-    }
+    const payload = { model: preset.model, messages: [{ role: 'user', content }] };
 
-    if (!response.ok) {
-        const detail = await _readImageApiError(response);
-        if (response.status === 404) {
-            throw new Error(`HTTP 404：该接口地址没有开放对话式生图（${endpoint}），参考图用不了。请去掉参考图，或换一个支持的渠道${detail ? `：${detail}` : ''}`);
+    // 每次实际请求独立记账；响应体读完才收尾，ZIP/裸图没有用量时不猜 token。
+    let usageTracker = null;
+    let usageError = null;
+    try {
+        let response;
+        try {
+            usageTracker = typeof beginApiUsage === 'function'
+                ? beginApiUsage({ cfg: preset, feature, protocol: 'openai', requestBody: payload })
+                : null;
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+            usageTracker?.response?.(response);
+        } catch (error) {
+            // 请求失败保留原始错误分类，展示给用户的中文错误文案照旧。
+            usageError = error;
+            if (error && error.name === 'AbortError') throw error;
+            throw new Error(`连接生图接口失败：${error.message || '网络错误'}`);
         }
-        throw new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`);
-    }
 
-    let payloadData;
-    try {
-        payloadData = await response.json();
-    } catch (_) {
-        throw new Error('接口返回格式异常：响应不是有效 JSON');
-    }
+        if (!response.ok) {
+            const detail = await _readImageApiError(response, usageTracker);
+            // HTTP 错误响应已读完，带上状态供账本区别于断流；展示文案保持原样。
+            const message = response.status === 404
+                ? `HTTP 404：该接口地址没有开放对话式生图（${endpoint}），参考图用不了。请去掉参考图，或换一个支持的渠道${detail ? `：${detail}` : ''}`
+                : `HTTP ${response.status}${detail ? `：${detail}` : ''}`;
+            throw Object.assign(new Error(message), { status: response.status, response });
+        }
 
-    const found = _findImageInChatResponse(payloadData);
-    if (!found) {
-        // 把响应结构打进控制台：换了中转站、格式没见过时靠这个定位
-        console.warn('[图片] 对话式生图没找到图片，响应结构：', payloadData);
-        const text = _extractChatText(payloadData);
-        throw new Error(
-            `模型「${preset.model}」没有返回图片${text ? `，它回的是文字：${text}` : ''}。`
-            + '带参考图需要多模态生图模型（如 Nano Banana、Gemini 系），纯文生图模型（dall-e、Flux 等）用不了参考图'
-        );
-    }
+        let payloadData;
+        try {
+            payloadData = await response.json();
+        } catch (_) {
+            throw new Error('接口返回格式异常：响应不是有效 JSON');
+        }
+        usageTracker?.usage?.(payloadData);
+        if (payloadData?.error) {
+            // JSON 已完整解析，业务拒绝仍是完整响应；保留 HTTP 信息，别让已知用量变成断流未知。
+            throw Object.assign(new Error(payloadData.error.message || '生图接口返回业务错误'),
+                { status: response.status, response });
+        }
 
-    if (found.kind === 'url') return _downloadGeneratedImage(found.value, signal);
-    const decoded = _decodeBase64Image(found.value, 'image/png');
-    return { ...decoded, source: found.kind === 'dataUrl' ? 'url' : 'b64_json' };
+        const found = _findImageInChatResponse(payloadData);
+        if (!found) {
+            // 把响应结构打进控制台：换了中转站、格式没见过时靠这个定位
+            console.warn('[图片] 对话式生图没找到图片，响应结构：', payloadData);
+            const text = _extractChatText(payloadData);
+            throw new Error(
+                `模型「${preset.model}」没有返回图片${text ? `，它回的是文字：${text}` : ''}。`
+                + '带参考图需要多模态生图模型（如 Nano Banana、Gemini 系），纯文生图模型（dall-e、Flux 等）用不了参考图'
+            );
+        }
+
+        if (found.kind === 'url') {
+            // POST 已完整读体且确认有图，CDN 下载是另一段，不得把它失败归到付费调用。
+            await usageTracker?.finish?.();
+            usageTracker = null;
+            return await _downloadGeneratedImage(found.value, signal);
+        }
+        const decoded = _decodeBase64Image(found.value, 'image/png');
+        return { ...decoded, source: found.kind === 'dataUrl' ? 'url' : 'b64_json' };
+    } catch (error) {
+        usageError = usageError || error;
+        throw error;
+    } finally {
+        await usageTracker?.finish?.(usageError);
+    }
 }
 
 /**
  * OpenAI 格式图像生成请求
  * 支持 DALL-E 2, DALL-E 3，以及部分中转站封装的 Midjourney 等。
  */
-async function _generateOpenAIImage(apiUrl, apiKey, preset, prompt, signal) {
+async function _generateOpenAIImage(apiUrl, apiKey, preset, prompt, signal, feature = '图片生成') {
     const endpoint = _buildOpenAIImageEndpoint(apiUrl);
     const payload = {
         model: preset.model,
@@ -618,44 +661,70 @@ async function _generateOpenAIImage(apiUrl, apiKey, preset, prompt, signal) {
         if (preset.style) payload.style = preset.style;
     }
 
-    let response;
+    // 每次实际请求独立记账；响应体读完才收尾，ZIP/裸图没有用量时不猜 token。
+    let usageTracker = null;
+    let usageError = null;
     try {
-        response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`
-            },
-            body: JSON.stringify(payload),
-            signal
-        });
+        let response;
+        try {
+            usageTracker = typeof beginApiUsage === 'function'
+                ? beginApiUsage({ cfg: preset, feature, protocol: 'openai', requestBody: payload })
+                : null;
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+            usageTracker?.response?.(response);
+        } catch (error) {
+            // 请求失败保留原始错误分类，展示给用户的中文错误文案照旧。
+            usageError = error;
+            if (error && error.name === 'AbortError') throw error;
+            throw new Error(`连接生图接口失败：${error.message || '网络错误'}`);
+        }
+
+        if (!response.ok) {
+            const detail = await _readImageApiError(response, usageTracker);
+            throw Object.assign(new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`),
+                { status: response.status, response });
+        }
+
+        let payloadData;
+        try {
+            payloadData = await response.json();
+        } catch (_) {
+            throw new Error('接口返回格式异常：响应不是有效 JSON');
+        }
+        usageTracker?.usage?.(payloadData);
+        if (payloadData?.error) {
+            // JSON 已完整解析，业务拒绝仍是完整响应；保留 HTTP 信息，别让已知用量变成断流未知。
+            throw Object.assign(new Error(payloadData.error.message || '生图接口返回业务错误'),
+                { status: response.status, response });
+        }
+
+        const firstImage = payloadData && Array.isArray(payloadData.data) ? payloadData.data[0] : null;
+        if (!firstImage || (!firstImage.url && !firstImage.b64_json)) {
+            throw new Error('接口返回格式异常，未找到图片数据');
+        }
+
+        if (firstImage.b64_json) {
+            const decoded = _decodeBase64Image(firstImage.b64_json, 'image/png');
+            return { ...decoded, source: 'b64_json' };
+        }
+        // 保留上面的无图校验；通过后付费响应已完成，临时链接失败仍原样反馈但不改账单。
+        await usageTracker?.finish?.();
+        usageTracker = null;
+        return await _downloadGeneratedImage(firstImage.url, signal);
     } catch (error) {
-        if (error && error.name === 'AbortError') throw error;
-        throw new Error(`连接生图接口失败：${error.message || '网络错误'}`);
+        usageError = usageError || error;
+        throw error;
+    } finally {
+        await usageTracker?.finish?.(usageError);
     }
-
-    if (!response.ok) {
-        const detail = await _readImageApiError(response);
-        throw new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`);
-    }
-
-    let payloadData;
-    try {
-        payloadData = await response.json();
-    } catch (_) {
-        throw new Error('接口返回格式异常：响应不是有效 JSON');
-    }
-
-    const firstImage = payloadData && Array.isArray(payloadData.data) ? payloadData.data[0] : null;
-    if (!firstImage || (!firstImage.url && !firstImage.b64_json)) {
-        throw new Error('接口返回格式异常，未找到图片数据');
-    }
-
-    if (firstImage.b64_json) {
-        const decoded = _decodeBase64Image(firstImage.b64_json, 'image/png');
-        return { ...decoded, source: 'b64_json' };
-    }
-    return _downloadGeneratedImage(firstImage.url, signal);
 }
 
 /**
@@ -663,7 +732,7 @@ async function _generateOpenAIImage(apiUrl, apiKey, preset, prompt, signal) {
  * 参考图直接作为一个 inlineData part 塞进同一轮 user 消息 —— 原生形状本来就支持，
  * 不像 OpenAI 那边要为了带图另开一条 chat/completions 的路。
  */
-async function _generateVertexImage(apiUrl, apiKey, preset, prompt, referenceImage, signal) {
+async function _generateVertexImage(apiUrl, apiKey, preset, prompt, referenceImage, signal, feature = '图片生成') {
     const modelPath = _vertexExpressImageModelPath(preset);
     const endpoint = _buildVertexImageEndpoint(apiUrl, modelPath);
 
@@ -682,69 +751,90 @@ async function _generateVertexImage(apiUrl, apiKey, preset, prompt, referenceIma
     const aspectRatio = _vertexAspectRatio(preset.size);
     if (aspectRatio) generationConfig.imageConfig.aspectRatio = aspectRatio;
 
-    let response;
-    try {
-        response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify({
-                contents: [{ role: 'user', parts }],
-                generationConfig
-            }),
-            signal
-        });
-    } catch (error) {
-        if (error && error.name === 'AbortError') throw error;
-        throw new Error(`连接生图接口失败：${error.message || '网络错误'}`);
-    }
+    const payload = { contents: [{ role: 'user', parts }], generationConfig };
 
-    if (!response.ok) {
-        const detail = await _readImageApiError(response);
-        if (response.status === 404) {
-            throw new Error(
-                `HTTP 404：Google 说找不到模型「${preset.model}」（${modelPath}）。`
-                + '通常是模型名写错，或者没填 Project ID 导致区域被后端随便挑'
-                + `${detail ? `：${detail}` : ''}`
-            );
+    // 每次实际请求独立记账；响应体读完才收尾，ZIP/裸图没有用量时不猜 token。
+    let usageTracker = null;
+    let usageError = null;
+    try {
+        let response;
+        try {
+            usageTracker = typeof beginApiUsage === 'function'
+                ? beginApiUsage({ cfg: preset, feature, protocol: 'gemini', requestBody: payload })
+                : null;
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+            usageTracker?.response?.(response);
+        } catch (error) {
+            // 请求失败保留原始错误分类，展示给用户的中文错误文案照旧。
+            usageError = error;
+            if (error && error.name === 'AbortError') throw error;
+            throw new Error(`连接生图接口失败：${error.message || '网络错误'}`);
         }
-        throw new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`);
-    }
 
-    let payloadData;
-    try {
-        payloadData = await response.json();
-    } catch (_) {
-        throw new Error('接口返回格式异常：响应不是有效 JSON');
-    }
+        if (!response.ok) {
+            const detail = await _readImageApiError(response, usageTracker);
+            if (response.status === 404) {
+                throw Object.assign(new Error(
+                    `HTTP 404：Google 说找不到模型「${preset.model}」（${modelPath}）。`
+                    + '通常是模型名写错，或者没填 Project ID 导致区域被后端随便挑'
+                    + `${detail ? `：${detail}` : ''}`
+                ), { status: response.status, response });
+            }
+            throw Object.assign(new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}`),
+                { status: response.status, response });
+        }
 
-    const found = _findVertexInlineImage(payloadData);
-    if (found) return { ..._decodeBase64Image(found.data, found.mimeType), source: 'b64_json' };
+        let payloadData;
+        try {
+            payloadData = await response.json();
+        } catch (_) {
+            throw new Error('接口返回格式异常：响应不是有效 JSON');
+        }
+        usageTracker?.usage?.(payloadData);
+        if (payloadData?.error) {
+            throw Object.assign(new Error(payloadData.error.message || '生图接口返回业务错误'),
+                { status: response.status, response });
+        }
 
-    // 没图时把原因说清楚。生图被安全过滤器拦掉的典型形状就是
-    // parts 整个空掉、只留一个 finishReason，什么文字都没有。
-    console.warn('[图片] Vertex 生图没找到图片，响应结构：', payloadData);
-    const candidate = payloadData && Array.isArray(payloadData.candidates) ? payloadData.candidates[0] : null;
-    const finishReason = String((candidate && candidate.finishReason) || '').trim();
-    const blockReason = String(
-        (payloadData && payloadData.promptFeedback && payloadData.promptFeedback.blockReason) || ''
-    ).trim();
-    const text = _extractVertexText(candidate);
+        const found = _findVertexInlineImage(payloadData);
+        if (found) return { ..._decodeBase64Image(found.data, found.mimeType), source: 'b64_json' };
 
-    if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/i.test(`${finishReason} ${blockReason}`)) {
+        // 没图时把原因说清楚。生图被安全过滤器拦掉的典型形状就是
+        // parts 整个空掉、只留一个 finishReason，什么文字都没有。
+        console.warn('[图片] Vertex 生图没找到图片，响应结构：', payloadData);
+        const candidate = payloadData && Array.isArray(payloadData.candidates) ? payloadData.candidates[0] : null;
+        const finishReason = String((candidate && candidate.finishReason) || '').trim();
+        const blockReason = String(
+            (payloadData && payloadData.promptFeedback && payloadData.promptFeedback.blockReason) || ''
+        ).trim();
+        const text = _extractVertexText(candidate);
+
+        if (/SAFETY|PROHIBITED|BLOCKLIST|SPII|RECITATION/i.test(`${finishReason} ${blockReason}`)) {
+            throw Object.assign(new Error(
+                `这张图被 Google 的内容安全策略拦下了（${finishReason || blockReason}），模型没有出图。`
+                + '换个说法或改掉敏感描述再试'
+            ), { status: response.status, response });
+        }
         throw new Error(
-            `这张图被 Google 的内容安全策略拦下了（${finishReason || blockReason}），模型没有出图。`
-            + '换个说法或改掉敏感描述再试'
+            `模型「${preset.model}」没有返回图片`
+            + (text ? `，它回的是文字：${text}` : '')
+            + (finishReason ? `（结束原因 ${finishReason}）` : '')
+            + '。请确认这是生图模型（名字里带 image，如 gemini-3-pro-image）'
         );
+    } catch (error) {
+        usageError = usageError || error;
+        throw error;
+    } finally {
+        await usageTracker?.finish?.(usageError);
     }
-    throw new Error(
-        `模型「${preset.model}」没有返回图片`
-        + (text ? `，它回的是文字：${text}` : '')
-        + (finishReason ? `（结束原因 ${finishReason}）` : '')
-        + '。请确认这是生图模型（名字里带 image，如 gemini-3-pro-image）'
-    );
 }
 
 /** 在 Gemini 原生响应里找第一个 inlineData 图片。 */
@@ -1017,7 +1107,7 @@ async function _unzipFirstImage(bytes) {
  * NovelAI 生图。提示词已由 composeImagePrompt 按 NAI 规则拼好（半角逗号、
  * 画风在前、不带画面比例）。
  */
-async function _generateNaiImage(apiUrl, apiKey, preset, prompt, negativePrompt, signal) {
+async function _generateNaiImage(apiUrl, apiKey, preset, prompt, negativePrompt, signal, feature = '图片生成') {
     const endpoint = _buildNaiImageEndpoint(apiUrl);
     const { width, height } = _naiDimensions(preset.size);
     const uc = String(negativePrompt || '').trim();
@@ -1059,53 +1149,74 @@ async function _generateNaiImage(apiUrl, apiKey, preset, prompt, negativePrompt,
         }
     };
 
-    let response;
+    // 每次实际请求独立记账；响应体读完才收尾，ZIP/裸图没有用量时不猜 token。
+    let usageTracker = null;
+    let usageError = null;
     try {
-        response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${apiKey}`,
-                // 官方 spec 里这个端点的 produces 是 [application/zip, application/json]，
-                // 送这个头就能直接拿 base64、省掉解压。中转站不一定转发，所以下面留了 ZIP 兜底。
-                'Accept': 'application/json'
-            },
-            body: JSON.stringify(payload),
-            signal
-        });
-    } catch (error) {
-        if (error && error.name === 'AbortError') throw error;
-        throw new Error(`连接 NovelAI 生图接口失败：${error.message || '网络错误'}`);
-    }
-
-    if (!response.ok) {
-        const detail = await _readImageApiError(response);
-        throw new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}${_naiStatusHint(response.status)}`);
-    }
-
-    let bytes = new Uint8Array(await response.arrayBuffer());
-    if (!bytes.byteLength) throw new Error('NovelAI 接口返回了空响应');
-
-    // ★ 认内容不认响应头：中转站的 content-type 经常缺失或写错，
-    //   和 _findImageInChatResponse 一个路数——只看字节长什么样。
-    if (bytes[0] === 0x50 && bytes[1] === 0x4b) {           // 'PK' → ZIP
-        bytes = await _unzipFirstImage(bytes);
-        return { ..._validateImageBytes(bytes, 'image/png'), source: 'zip' };
-    }
-    if (bytes[0] === 0x7b) {                                 // '{'  → JSON
-        let parsed;
+        let response;
         try {
-            parsed = JSON.parse(new TextDecoder().decode(bytes));
-        } catch (_) {
-            throw new Error('NovelAI 接口返回格式异常：响应不是有效 JSON');
+            usageTracker = typeof beginApiUsage === 'function'
+                ? beginApiUsage({ cfg: preset, feature, protocol: 'openai', requestBody: payload })
+                : null;
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${apiKey}`,
+                    // 官方 spec 里这个端点的 produces 是 [application/zip, application/json]，
+                    // 送这个头就能直接拿 base64、省掉解压。中转站不一定转发，所以下面留了 ZIP 兜底。
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify(payload),
+                signal
+            });
+            usageTracker?.response?.(response);
+        } catch (error) {
+            usageError = error;
+            if (error && error.name === 'AbortError') throw error;
+            throw new Error(`连接 NovelAI 生图接口失败：${error.message || '网络错误'}`);
         }
-        const first = parsed && Array.isArray(parsed.images) ? parsed.images[0] : null;
-        const base64 = first && (first.image || first.b64_json);
-        if (!base64) throw new Error('NovelAI 接口返回格式异常，未找到图片数据');
-        return { ..._decodeBase64Image(base64, 'image/png'), source: 'b64_json' };
+
+        if (!response.ok) {
+            const detail = await _readImageApiError(response, usageTracker);
+            throw Object.assign(new Error(`HTTP ${response.status}${detail ? `：${detail}` : ''}${_naiStatusHint(response.status)}`),
+                { status: response.status, response });
+        }
+
+        let bytes = new Uint8Array(await response.arrayBuffer());
+        if (!bytes.byteLength) throw new Error('NovelAI 接口返回了空响应');
+
+        // ★ 认内容不认响应头：中转站的 content-type 经常缺失或写错，
+        //   和 _findImageInChatResponse 一个路数——只看字节长什么样。
+        if (bytes[0] === 0x50 && bytes[1] === 0x4b) {           // 'PK' → ZIP
+            bytes = await _unzipFirstImage(bytes);
+            return { ..._validateImageBytes(bytes, 'image/png'), source: 'zip' };
+        }
+        if (bytes[0] === 0x7b) {                                 // '{'  → JSON
+            let parsed;
+            try {
+                parsed = JSON.parse(new TextDecoder().decode(bytes));
+            } catch (_) {
+                throw new Error('NovelAI 接口返回格式异常：响应不是有效 JSON');
+            }
+            usageTracker?.usage?.(parsed);
+            if (parsed?.error) {
+                throw Object.assign(new Error(parsed.error.message || 'NovelAI 生图接口返回业务错误'),
+                    { status: response.status, response });
+            }
+            const first = parsed && Array.isArray(parsed.images) ? parsed.images[0] : null;
+            const base64 = first && (first.image || first.b64_json);
+            if (!base64) throw new Error('NovelAI 接口返回格式异常，未找到图片数据');
+            return { ..._decodeBase64Image(base64, 'image/png'), source: 'b64_json' };
+        }
+        // 已经是裸图片字节（有些中转站直接回 PNG）
+        return { ..._validateImageBytes(bytes, 'image/png'), source: 'b64_json' };
+    } catch (error) {
+        usageError = usageError || error;
+        throw error;
+    } finally {
+        await usageTracker?.finish?.(usageError);
     }
-    // 已经是裸图片字节（有些中转站直接回 PNG）
-    return { ..._validateImageBytes(bytes, 'image/png'), source: 'b64_json' };
 }
 
 // ============================================================
@@ -1128,12 +1239,13 @@ async function _generateNaiImage(apiUrl, apiKey, preset, prompt, negativePrompt,
  *   不给则照旧走 images/generations —— 原有行为一行不动。
  *   NAI 那条路不支持参考图（图生图是另一套 action:'img2img' 参数），会直接报错而不是静默忽略。
  * @param {object} [args.settings] 覆盖 db.imageSettings (给设置页试听用)
+ * @param {string} [args.feature] 用量分类，设置页试生成可传「图片生成测试」
  * @param {AbortSignal} [args.signal] 外部取消信号
  * @param {number} [args.slowAfterMs] 慢请求提醒阈值，默认 120 秒；提醒后请求继续运行
  * @param {(info: {elapsedMs: number}) => void|Promise<void>} [args.onSlow] 超过提醒阈值时调用
  * @returns {Promise<{bytes: Uint8Array, mime: string, source: 'b64_json'|'url'|'zip'}>}
  */
-async function generateImage({ prompt, preset, stylePrompt, negativePrompt, referenceImage, settings, signal, slowAfterMs, onSlow } = {}) {
+async function generateImage({ prompt, preset, stylePrompt, negativePrompt, referenceImage, settings, signal, slowAfterMs, onSlow, feature = '图片生成' } = {}) {
     const promptText = String(prompt || '').trim();
     if (!promptText) throw new Error('提示词不能为空');
 
@@ -1170,7 +1282,8 @@ async function generateImage({ prompt, preset, stylePrompt, negativePrompt, refe
                     imagePreset,
                     finalPrompt,
                     reference,
-                    requestScope.signal
+                    requestScope.signal,
+                    feature
                 );
 
             case 'openai':
@@ -1181,14 +1294,16 @@ async function generateImage({ prompt, preset, stylePrompt, negativePrompt, refe
                         imagePreset,
                         finalPrompt,
                         reference,
-                        requestScope.signal
+                        requestScope.signal,
+                        feature
                     )
                     : await _generateOpenAIImage(
                         imagePreset.apiUrl,
                         imagePreset.apiKey,
                         imagePreset,
                         finalPrompt,
-                        requestScope.signal
+                        requestScope.signal,
+                        feature
                     );
 
             case 'nai':
@@ -1204,7 +1319,8 @@ async function generateImage({ prompt, preset, stylePrompt, negativePrompt, refe
                     imagePreset,
                     finalPrompt,
                     negativePrompt,
-                    requestScope.signal
+                    requestScope.signal,
+                    feature
                 );
 
             default:

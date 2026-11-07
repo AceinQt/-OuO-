@@ -31,9 +31,8 @@ window.selectedMessageIds = new Set();
 window.showHiddenInSelect = false;
 
 // --- 世界书与编辑器 ---
+// 世界书多选和目录导航状态由 world_book.js 管理，各层选择集互不混用。
 window.currentEditingWorldBookId = null;
-window.isWorldBookMultiSelectMode = false;
-window.selectedWorldBookIds = new Set();
 
 // --- 番茄钟状态 ---
 window.currentPomodoroTask = null;

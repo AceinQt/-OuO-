@@ -360,6 +360,9 @@ function generateCssFromState() {
             ruleSel = sel;
         } else if (isNarration) {
             ruleSel = `${nwSelf} ${sel}`;
+        } else if (baseType === 'transfer') {
+            // 转账的 .received 是「已收款」状态，不是收发方向，不能拿它兜底匹配对方。
+            ruleSel = `.message-wrapper.${sideClass} ${sel}, ${sel}.${sideClass}-transfer`;
         } else {
             ruleSel = sel.split(',').map(s => {
                 const sTrim = s.trim();
@@ -501,9 +504,9 @@ function generateCssFromState() {
             // 像素数写进 --bub-stroke-x，chat_room.css 里 .message-content-col 的 70%
             // 和 .message-bubble 的 260px 两处 max-width 都加它，于是不管哪条在夹人，
             // 正文宽都和「没描边」时逐像素相同。
-            // ★ 只有普通气泡那一族吃这碗饭：旁白是全宽卡片（压根不在 .message-content-col
-            //   里，自己 max-width:none），引用画在气泡**内部**，转账/图片各有更小的上限
-            //   —— 给它们补也补不到正文宽上去。
+            // ★ 普通气泡那一族保正文宽：旁白是全宽卡片（不在内容列里），引用在气泡内部，
+            //   图片另有尺寸上限，不参与。转账与分享则刻意跟普通气泡等宽，一起接收补偿；
+            //   转账自己的描边仍扣在卡片内部，不再重复加到外宽上。
             // ★ 变量设在**内容列**（气泡的祖先，靠继承传给气泡），并用 :has() 限定
             //   「这条消息的气泡正是这一类」。一条消息只有一颗气泡，所以不会串到
             //   别的类型/另一侧去；没描边的消息列宽一个像素都不动。
@@ -518,7 +521,7 @@ function generateCssFromState() {
                 const edge = (side) => (sides.length === 4 || sides.includes(side)) ? conf.strokeW : 0;
                 const padX = (conf.strokeW > 0 && sides.length > 0) ? edge('left') + edge('right') : 0;
                 basicCss += `.message-wrapper.${sideClass} .message-content-col`
-                    + `:has(.message-bubble, .voice-bubble, .forum-share-card)`
+                    + `:has(.message-bubble, .voice-bubble, .forum-share-card, .transfer-card)`
                     + ` { --bub-stroke-x: ${padX}px; }\n`;
             }
 
@@ -598,6 +601,21 @@ function generateCssFromState() {
             basicCss += `${svgSel} { color: ${conf.fontColor} !important; }\n`;
             const fillSel = parts.map(s => `${s} svg:not([fill="none"])`).join(', ');
             basicCss += `${fillSel} { fill: ${conf.fontColor} !important; }\n`;
+        }
+
+        // 自选底色/字色带 !important，会盖过默认完成态；按同一方向补上浅底深字规则。
+        // 图标也改为继承完成态字色，避免此前的 SVG 染色把它单独留成白色。
+        if (baseType === 'transfer' && (
+            conf.bg.toUpperCase() !== defaultConf.bg.toUpperCase()
+            || conf.opacity !== defaultConf.opacity
+            || conf.fontColor.toUpperCase() !== defaultConf.fontColor.toUpperCase()
+        )) {
+            const bg = conf.bg.toUpperCase() !== defaultConf.bg.toUpperCase() || conf.opacity !== defaultConf.opacity
+                ? hexToRgba(conf.bg, conf.opacity) : 'var(--primary-color)';
+            const ink = conf.fontColor.toUpperCase() !== defaultConf.fontColor.toUpperCase() ? conf.fontColor : bg;
+            const completed = ruleSel.split(',').flatMap(s => ['received', 'returned'].map(status => `${s.trim()}.${status}`));
+            basicCss += `${completed.join(', ')} { background-color: color-mix(in srgb, ${bg} 18%, white) !important; color: color-mix(in srgb, ${ink} 15%, #263238) !important; }\n`;
+            basicCss += `${completed.map(s => `${s} svg`).join(', ')} { color: inherit !important; }\n`;
         }
     }
 

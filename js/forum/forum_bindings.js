@@ -1,8 +1,41 @@
-// forum_bindings.js - 世界设定绑定：世界书/角色/聊天记录关联、API预设选择
+// forum_bindings.js - 世界设定绑定：世界书/正则类别/角色/聊天记录关联、API预设选择
+
+// 只列大类，不复制或展开规则；类别内以后新增/移入的规则会自动跟随关联。
+function renderForumRegexList(container, selectedIds = []) {
+    container.replaceChildren();
+    const categories = Array.isArray(db.regexCategories) ? db.regexCategories : [];
+    if (!categories.length) {
+        const empty = document.createElement('li');
+        empty.className = 'placeholder-text';
+        empty.textContent = '暂无正则类别';
+        container.appendChild(empty);
+        return;
+    }
+    const selected = new Set(selectedIds);
+    categories.forEach(category => {
+        // 复用世界书的类别头，但不添加折叠箭头和子条目。
+        const group = document.createElement('li');
+        group.className = 'world-book-category-group';
+        const label = document.createElement('label');
+        label.className = 'world-book-category-header';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'category-checkbox forum-regex-checkbox';
+        checkbox.value = category.id;
+        checkbox.checked = selected.has(category.id);
+        const name = document.createElement('span');
+        name.className = 'category-name';
+        name.textContent = category.name;
+        label.append(checkbox, name);
+        group.appendChild(label);
+        container.appendChild(group);
+    });
+}
 
             function setupForumBindingFeature() {
                 const worldBookList = document.getElementById('forum-worldbook-list');
                 const charList = document.getElementById('forum-char-list');
+                const regexList = document.getElementById('forum-regex-list');
                 const saveBtn = document.getElementById('world-save-btn');
 
                 // 获取关联记忆相关的 DOM
@@ -15,7 +48,7 @@
                 const tabs = document.querySelectorAll('.world-sidebar-btn');
                 const panes = document.querySelectorAll('.world-tab-pane');
 
-                // 顶部那句「勾选后请点击右上角保存」只对角色/世界书两个勾选列表成立，
+                // 顶部那句「勾选后请点击右上角保存」对角色/世界书/正则三个勾选列表成立，
                 // 「管理」Tab 里没有复选框，挂着会误导
                 const tipEl = document.getElementById('world-content-tips');
                 const syncTip = (tabName) => {
@@ -48,10 +81,19 @@
 
                     newJumpBtn.addEventListener('click', () => {
                         showToast('已前往“世界书”页面');
-                        if (typeof renderWorldBookList === 'function') {
-                            renderWorldBookList();
-                        }
-                        switchScreen('world-book-screen');
+                        navigateTo('world-book-screen');
+                    });
+                }
+
+                const regexJumpBtn = document.getElementById('jump-to-regex-edit-btn');
+                if (regexJumpBtn) {
+                    const newJumpBtn = regexJumpBtn.cloneNode(true);
+                    regexJumpBtn.parentNode.replaceChild(newJumpBtn, regexJumpBtn);
+                    newJumpBtn.addEventListener('click', () => {
+                        // 先切到共用目录，再选择正则页签，避免落在世界书列表。
+                        navigateTo('world-book-screen');
+                        setWorldBookFeatureTab('regex');
+                        showToast('已前往“正则”页面');
                     });
                 }
 
@@ -129,6 +171,8 @@ if (forumApiSel && typeof window.populateChatApiPresetSelect === 'function') {
                         });
                     }
 
+                    if (regexList) renderForumRegexList(regexList, currentBindings.regexCategoryIds || []);
+
                     // --- 填充角色 & 群聊混合列表 ---
                     charList.innerHTML = '';
                     const groups = db.groups || [];
@@ -194,6 +238,8 @@ if (forumApiSel && typeof window.populateChatApiPresetSelect === 'function') {
 
                         db.forumBindings = {
     worldBookIds: selectedWorldBookIds,
+    regexCategoryIds: regexList ? Array.from(regexList.querySelectorAll('.forum-regex-checkbox:checked')).map(input => input.value)
+        : (db.forumBindings?.regexCategoryIds || []),
     charIds: selectedCharIds,
     groupIds: selectedGroupIds,
     userPersonaIds: db.forumBindings ? db.forumBindings.userPersonaIds : [],

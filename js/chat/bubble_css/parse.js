@@ -1,4 +1,4 @@
-// --- START OF FILE bubble_css/parse.js ---
+// --- 气泡外观反解模块 ---
 // ======================================================================
 // CSS → basicState（反解），外加一长串老预设的兼容迁移。
 //
@@ -145,6 +145,19 @@ function syncBasicUiFromCss(css) {
                         if (basicState.styles[key]) {
                             basicState.styles[key] = { ...basicState.styles[key], ...parsed.styles[key] };
                         }
+                    }
+                    // 旧转账用图片当底，META 却把未修改的颜色记成橙色；旧生成器不会为它发 CSS。
+                    // 纯色卡默认改为主题色后，只把这类占位值归回新默认，避免再编辑预设时突然变橙。
+                    // 只要转账已有显式背景规则就保留（包括手写 CSS），不覆盖用户主动设置的颜色。
+                    const rulesOnly = css.replace(/\/\*[\s\S]*?\*\//g, '');
+                    const hasTransferBackground = /[^{}]*\.transfer-card\b[^{}]*\{[^}]*\bbackground(?:-color)?\s*:/i.test(rulesOnly);
+                    if (!hasTransferBackground) {
+                        ['transfer_sent', 'transfer_received'].forEach(key => {
+                            const conf = basicState.styles[key];
+                            if (conf.bg.toUpperCase() === '#FF9900' && conf.opacity === 1) {
+                                conf.bg = defaultBasicState.styles[key].bg;
+                            }
+                        });
                     }
                 }
                 parsedFromMeta = true;

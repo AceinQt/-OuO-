@@ -11,7 +11,7 @@
 // 调用 callLLM 时只提供 OpenAI 形状的 messages，转换由本文件负责。
 //
 // provider 的差异收在 buildLLMRequestTarget()（端点+鉴权+Vertex Flex 头）、
-// buildLLMRequest()（发送前统一处理请求体）和 llmIsGeminiShape()（解析形状）。
+// buildLLMRequest()（发送前统一处理原生/兼容协议的 Flex 请求体）和 llmIsGeminiShape()（解析形状）。
 
 // ── Gemini 请求体统一用 camelCase，兼容现有代理 ───────────────
 // 现有 Go 代理只认 systemInstruction / inlineData / mimeType 的结构体 tag，
@@ -74,7 +74,10 @@ function normalizeLLMConfig(cfg) {
         projectId: String(cfg.projectId || '').trim(),
         flexEnabled: !!cfg.flexEnabled,
         temperature: cfg.temperature,
-        streamEnabled: cfg.streamEnabled !== false
+        streamEnabled: cfg.streamEnabled !== false,
+        // 费率随当前预设走；归一化配置不能把它丢掉或继承另一份默认报价。
+        usagePricing: typeof ApiUsageLedger !== 'undefined' ? ApiUsageLedger.normalizePricing(cfg.usagePricing) : cfg.usagePricing,
+        presetName: cfg.presetName || cfg.name || ''
     };
 }
 
@@ -184,6 +187,9 @@ function buildLLMRequestTarget(cfg, o = {}) {
         // Vertex Flex PayGo 的官方调用契约是请求头，不靠 body 字段猜测路由。
         // shared 绕过 Provisioned Throughput，第二个头指定 flex：只用 Flex，
         // 不在失败后偷偷切 Standard。关闭时两个头都缺席，不改变默认计费路径。
+        // 此契约需要服务端转发；官方域名的浏览器预检目前拒绝这两个头（403）。
+        // 不能删头改成未经验证的 body 字段来假装修好；OpenAI 格式代理用下面
+        // service_tier，由代理在服务端转换两头，可避开浏览器这层 CORS 限制。
         // https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/flex-paygo
         if (cfg.flexEnabled) {
             headers['X-Vertex-AI-LLM-Request-Type'] = 'shared';
@@ -227,30 +233,67 @@ function buildLLMRequestTarget(cfg, o = {}) {
 // mock 测试只证明参数；Vertex 是否走 Flex 看 usageMetadata.trafficType
 // 是否为 ON_DEMAND_FLEX。AI Studio 可观察 x-gemini-service-tier，但浏览器/代理
 // 不暴露响应头时 null 不是失败证据；仍须结合实际响应/用量验证，不能承诺代理透传。
+// 选择 NewAPI 代表 OpenAI 兼容协议，不代表代理必然支持 Flex。显式开启时只发送
+// 顶层 service_tier，由支持该契约的代理（如 ouo-vertex2oai）在服务端转换 Vertex 头；
+// 不按模型名自动启用，不把 Vertex 头送进浏览器，也不在失败时改发全价请求。
 function buildLLMRequest(cfg, body, o = {}) {
     const target = buildLLMRequestTarget(cfg, o);
     if (cfg?.provider === 'gemini' && cfg.flexEnabled) {
         body = { ...body, serviceTier: 'flex' };
+    } else if ((cfg?.provider || 'newapi') === 'newapi' && cfg?.flexEnabled) {
+        body = { ...body, service_tier: 'flex' };
+    }
+    // OpenAI 兼容流的用量通常在正文结束后的独立帧，须显式请求并读到 EOF。
+    if (!target.isGeminiShape && o.stream) {
+        body = { ...body, stream_options: { ...body.stream_options, include_usage: true } };
     }
     return { ...target, body };
 }
 
 // Flex 排队可能以分钟计；已有自动超时至少给 10 分钟，不给普通请求增加等待，
 // 也不把原本无超时的主聊天改成自动中止。调用方的 signal/手动取消仍优先。
-// 只按 provider 判断：中转站即使模型名含 gemini，也不冒充 Google 原生接口。
+// 仅原生 Google 与显式开启的 NewAPI 代理适用，其他 provider 不靠模型名猜。
 function getLLMTimeout(cfg, timeout) {
-    if (cfg?.flexEnabled && llmIsGeminiShape(cfg.provider)
+    if (cfg?.flexEnabled && (llmIsGeminiShape(cfg.provider) || (cfg.provider || 'newapi') === 'newapi')
         && Number.isFinite(timeout) && timeout > 0) {
         return Math.max(timeout, 600000);
     }
     return timeout;
 }
 
+/** 代理可能先建立 HTTP 200 的 SSE 连接再报错；错误事件绝不能当空回复吞掉。 */
+function throwLLMResponseError(json) {
+    if (!json?.error) return;
+    const detail = json.error;
+    const status = [detail.code, detail.status].map(Number)
+        .find(value => Number.isFinite(value) && value > 0);
+    const message = typeof detail === 'string' ? detail : (detail.message || '上游请求失败');
+    const err = new Error(`API Error${Number.isFinite(status) && status > 0 ? ': ' + status : ''}: ${message}`);
+    if (Number.isFinite(status) && status > 0) err.status = status;
+    err.code = detail.code || detail.type || detail.status;
+    throw err;
+}
+
+/** 错误体可为 JSON 或 SSE；只采集用量，错误仍由原 HTTP 分支抛出。 */
+function collectLLMErrorUsage(detail, tracker) {
+    if (!tracker) return;
+    let payload;
+    try { payload = JSON.parse(detail); } catch (_) { /* 纯文本或 SSE */ }
+    if (payload) { tracker.usage(payload); return; }
+    detail.split(/\r?\n\r?\n/).forEach(event => {
+        const data = event.split(/\r?\n/).filter(line => line.startsWith('data:'))
+            .map(line => line.slice(5).trim()).join('');
+        if (!data || data === '[DONE]') return;
+        try { payload = JSON.parse(data); } catch (_) { return; }
+        tracker.usage(payload);
+    });
+}
+
 // ── SSE 解析 ────────────────────────────────────────────────
 // 两家的流式都是 SSE，差别只在每个事件的 JSON 结构。
 // 注意：必须按空行切事件、跨 chunk 保留残余，不能按 '\n' 逐行 JSON.parse ——
 // 一个 JSON 可能被 TCP 切在中间，逐行解析会静默丢字。
-async function _readSSE(response, isGemini, onChunk, meta) {
+async function _readSSE(response, isGemini, onChunk, meta, usageTracker) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let full = '', buffer = '', raw = '';
@@ -276,37 +319,53 @@ async function _readSSE(response, isGemini, onChunk, meta) {
         if (r) meta.finishReason = r;
     };
 
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        raw += chunk;
-        buffer += chunk;
-
-        const events = buffer.split(/\r?\n\r?\n/);
-        buffer = events.pop();   // 末尾可能是半个事件，留到下一轮
-        for (const ev of events) {
-            // 一个事件可能有多行 data:，拼起来才是完整 JSON
-            const data = ev.split(/\r?\n/)
-                .filter(l => l.startsWith('data:'))
-                .map(l => l.slice(5).trim())
-                .join('');
-            if (!data || data === '[DONE]') continue;
-            try {
-                const json = JSON.parse(data);
-                noteFinish(json);
-                if (isGemini) collectGemini(json);
-                else emit(json.choices?.[0]?.delta?.content || '');
-            } catch (e) { /* 半包或非 JSON，忽略 */ }
+    const collectEvent = ev => {
+        // 多行 data 属于同一事件；usage-only 帧不带 choices 也必须采集。
+        const data = ev.split(/\r?\n/).filter(l => l.startsWith('data:'))
+            .map(l => l.slice(5).trim()).join('');
+        if (!data || data === '[DONE]') return;
+        let json;
+        try { json = JSON.parse(data); } catch (_) { return; }
+        usageTracker?.usage(json);
+        throwLLMResponseError(json);
+        noteFinish(json);
+        if (isGemini) collectGemini(json);
+        else emit(json.choices?.[0]?.delta?.content || '');
+    };
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            raw += chunk;
+            buffer += chunk;
+            const events = buffer.split(/\r?\n\r?\n/);
+            buffer = events.pop();
+            events.forEach(collectEvent);
         }
+        const tail = decoder.decode();
+        raw += tail;
+        buffer += tail;
+        if (buffer.trim()) collectEvent(buffer); // EOF 未带空行的最后用量帧也不能丢。
+    } catch (error) {
+        // 流内错误/回调异常也要关闭响应流，不能清掉超时后留下上游继续等待。
+        // 取消失败不能盖掉原始 API 错误（已 abort 的 reader 也可能拒绝 cancel）。
+        try { await reader.cancel?.(error); } catch (_) { /* 保留原始错误 */ }
+        throw error;
     }
 
     // 兜底：旧版代理的 :streamGenerateContent 不发 SSE，返回一个 JSON 数组
     if (isGemini && !full && raw.trim()) {
-        try {
-            const arr = JSON.parse(raw.trim());
-            (Array.isArray(arr) ? arr : [arr]).forEach(j => { noteFinish(j); collectGemini(j); });
-        } catch (e) {
+        let arr;
+        try { arr = JSON.parse(raw.trim()); } catch (_) { /* 仅解析失败才走旧代理文本兜底 */ }
+        if (arr) {
+            (Array.isArray(arr) ? arr : [arr]).forEach(j => {
+                usageTracker?.usage(j);
+                throwLLMResponseError(j);
+                noteFinish(j);
+                collectGemini(j);
+            });
+        } else {
             const re = /"text":\s*"((?:[^"\\]|\\.)*)"/g;
             let m;
             while ((m = re.exec(raw)) !== null) {
@@ -353,8 +412,9 @@ function _extractFinishReason(json, isGemini) {
  * @param {boolean}  [opts.stream]     覆盖 cfg.streamEnabled；有 onChunk 时默认走流式
  * @param {Function} [opts.onChunk]    (delta, accumulated) 实时回调，仅流式有效
  * @param {AbortSignal} [opts.signal]
- * @param {number}   [opts.timeout]    毫秒；未传 signal 时内部建 AbortController，Google Flex 至少 10 分钟
+ * @param {number}   [opts.timeout]    毫秒；未传 signal 时内部建 AbortController，Google / NewAPI Flex 至少 10 分钟
  * @param {object}   [opts.extraBody]  合并进请求体（OpenAI 分支）或 generationConfig（Gemini 分支）
+ * @param {string}   [opts.feature]    调用明细中的明确功能名，不从提示词推断
  * @param {object}   [opts.meta]       传一个空对象进来，返回后可读 meta.finishReason
  *                                     （'content_filter' / 'length' / 'stop' / null，两家已归一）
  * @returns {Promise<string>} 完整文本
@@ -395,6 +455,9 @@ async function callLLM(opts = {}) {
         signal = ac.signal;
     }
 
+    const usageTracker = typeof beginApiUsage === 'function'
+        ? beginApiUsage({ cfg, feature: opts.feature || '文本生成', requestBody: request.body }) : null;
+    let requestError = null;
     try {
         const response = await fetch(request.endpoint, {
             method: 'POST',
@@ -403,19 +466,27 @@ async function callLLM(opts = {}) {
             signal
         });
 
+        usageTracker?.response(response);
         if (!response.ok) {
             const detail = await response.text().catch(() => '');
+            collectLLMErrorUsage(detail, usageTracker);
             const err = new Error(`API Error: ${response.status}${detail ? ' ' + detail.slice(0, 200) : ''}`);
             err.response = response;
             err.status = response.status;
             throw err;
         }
 
-        if (stream) return await _readSSE(response, isGeminiShape, opts.onChunk, opts.meta);
+        if (stream) return await _readSSE(response, isGeminiShape, opts.onChunk, opts.meta, usageTracker);
         const json = await response.json();
+        usageTracker?.usage(json);
+        throwLLMResponseError(json);
         if (opts.meta) opts.meta.finishReason = _extractFinishReason(json, isGeminiShape);
         return _extractNonStream(json, isGeminiShape);
+    } catch (error) {
+        requestError = error;
+        throw error;
     } finally {
         if (timer) clearTimeout(timer);
+        await usageTracker?.finish(requestError);
     }
 }

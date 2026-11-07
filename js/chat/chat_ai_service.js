@@ -3,6 +3,17 @@
 // ==========================================
 let callAbortController = null;   // ← 新增：通话请求中止器
 
+// 撤回原文可能含嵌套方括号，必须找到整个动作的外层结尾，不能停在第一个 ]。
+function getAiWithdrawBlockEnd(text, start) {
+    if (!/^\[[^\[\]\r\n]*?撤回了(?:上一条|一条)消息[:：]/.test(text.slice(start))) return -1;
+    let depth = 0;
+    for (let i = start; i < text.length; i++) {
+        if (text[i] === '[') depth++;
+        if (text[i] === ']' && --depth === 0) return i;
+    }
+    return -1;
+}
+
 function getMixedContent(responseData) {
     const results =[];
     let i = 0;
@@ -11,7 +22,7 @@ function getMixedContent(responseData) {
         const nextTagStart = responseData.indexOf('<', i);
         const nextBracketStart = responseData.indexOf('[', i);
 
-        // Find the start of the next special block
+        // 找到下一个特殊块的起点
         let firstSpecialIndex = -1;
         if (nextTagStart !== -1 && nextBracketStart !== -1) {
             firstSpecialIndex = Math.min(nextTagStart, nextBracketStart);
@@ -19,14 +30,14 @@ function getMixedContent(responseData) {
             firstSpecialIndex = Math.max(nextTagStart, nextBracketStart);
         }
 
-        // If no special blocks left, the rest is plain text
+        // 已无特殊块，剩余内容全部按普通文本处理
         if (firstSpecialIndex === -1) {
             const text = responseData.substring(i).trim();
             if (text) results.push({ type: 'text', content: `[unknown的消息：${text}]` });
             break;
         }
 
-        // If there's plain text before the special block, add it
+        // 特殊块之前若有普通文本，先收进结果
         if (firstSpecialIndex > i) {
             const text = responseData.substring(i, firstSpecialIndex).trim();
             if (text) results.push({ type: 'text', content: `[unknown的消息：${text}]` });
@@ -34,9 +45,9 @@ function getMixedContent(responseData) {
 
         i = firstSpecialIndex;
 
-        // Process the block
+        // 处理特殊块
         if (responseData[i] === '<') {
-            // Potential HTML block
+            // 可能是 HTML 块
             const tagMatch = responseData.substring(i).match(/^<([a-zA-Z0-9]+)/);
             if (tagMatch) {
                 const tagName = tagMatch[1];
@@ -44,7 +55,7 @@ function getMixedContent(responseData) {
                 let searchIndex = i;
                 let blockEnd = -1;
 
-                // Find the end of the outermost tag
+                // 按嵌套层数寻找最外层标签的结束位置
                 while (searchIndex < responseData.length) {
                     const openTagPos = responseData.indexOf('<' + tagName, searchIndex);
                     const closeTagPos = responseData.indexOf('</' + tagName, searchIndex);
@@ -60,7 +71,7 @@ function getMixedContent(responseData) {
                             break;
                         }
                     } else {
-                        break; // Malformed, no closing tag
+                        break; // 标签不完整，找不到闭合位置
                     }
                 }
 
@@ -76,6 +87,12 @@ function getMixedContent(responseData) {
         }
 
         if (responseData[i] === '[') {
+            const withdrawEnd = getAiWithdrawBlockEnd(responseData, i);
+            if (withdrawEnd !== -1) {
+                results.push({ type: 'text', content: responseData.slice(i, withdrawEnd + 1) });
+                i = withdrawEnd + 1;
+                continue;
+            }
             // 分享卡片要特殊对待：它是多行的，而且「内容」是大段自由文本，
             // 里面很可能出现 ] （"第[三]章"、"价格[特价]39元"）。下面那条按
             // **第一个** ] 收尾的通用规则会把卡片截半截，剩下的半张卡还会漏成
@@ -94,7 +111,7 @@ function getMixedContent(responseData) {
                 }
             }
 
-            // Potential [...] block
+            // 可能是 [...] 文本块
             const endBracket = responseData.indexOf(']', i);
             if (endBracket !== -1) {
                 const text = responseData.substring(i, endBracket + 1);
@@ -104,8 +121,8 @@ function getMixedContent(responseData) {
             }
         }
 
-        // If we got here, it was a false alarm (e.g., a lone '<' or '[').
-        // Treat it as plain text and move on.
+        // 能走到这里说明不是有效块（例如孤立的 '<' 或 '['），
+        // 按普通文本收进结果，再继续向后扫描。
         const nextSpecial1 = responseData.indexOf('<', i + 1);
         const nextSpecial2 = responseData.indexOf('[', i + 1);
         let endOfText = -1;
@@ -347,6 +364,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     timestamp: Date.now()
                 };
                 if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
+                if (window.ChatRegex) ChatRegex.applyStorage(message, chat, targetChatType);
                 chat.history.push(message);
                 // ★ 要 await：下面 speakCallBubble 靠 data-voice-msg-id 回查刚建的那个气泡，
                 //   不等它贴进 DOM 就查，查到的是 null，于是静默不出声。
@@ -385,9 +403,30 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 shareBlocks = masked.blocks;
             }
 
+            // 同样保护撤回块：原文中的方括号与换行必须原样参与全文匹配。
+            // 先遮住分享卡片，避免把卡片引用的撤回文本误当作要执行的指令。
+            const withdrawBlocks = [];
+            let withdrawToken = '__OUO_WITHDRAW__';
+            while (processedResponse.includes(withdrawToken)) withdrawToken += '_';
+            const withdrawHead = /\[[^\[\]\r\n]*?撤回了(?:上一条|一条)消息[:：]/g;
+            let withdrawHeadMatch;
+            while ((withdrawHeadMatch = withdrawHead.exec(processedResponse))) {
+                const start = withdrawHeadMatch.index;
+                const end = getAiWithdrawBlockEnd(processedResponse, start);
+                if (end === -1) continue;
+                const token = `${withdrawToken}${withdrawBlocks.length}__`;
+                withdrawBlocks.push({ token, content: processedResponse.slice(start, end + 1) });
+                processedResponse = processedResponse.slice(0, start) + token + processedResponse.slice(end + 1);
+                withdrawHead.lastIndex = start + token.length;
+            }
+
             processedResponse = processedResponse.replace(/\]\s*\[/g, ']\n[');
             processedResponse = processedResponse.replace(/([^\n>])\s*\[(?!system-narration|system-display)/g, '$1\n[');
             processedResponse = processedResponse.replace(/\]\s*([^\n<])/g, ']\n$1');
+
+            for (const block of withdrawBlocks) {
+                processedResponse = processedResponse.replace(block.token, () => `\n${block.content}\n`);
+            }
 
             // 填回去，并保证每张卡片独占一行（占位符前后可能粘着别的话）
             if (shareBlocks.length && typeof restoreShareBlocks === 'function') {
@@ -457,27 +496,37 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                 if (capturedCallSessionId && chat.currentCallSessionId !== capturedCallSessionId) return;
                 isFirstMsg = false;
 
-                const aiWithdrawRegex = /\[(.*?)撤回了上一条消息：([\s\S]*?)\]/;
+                const aiWithdrawRegex = /^\[(.*?)撤回了(?:上一条|一条)消息[:：]([\s\S]*)\]$/;
                 const withdrawMatch = item.content.match(aiWithdrawRegex);
                 if (withdrawMatch) {
                     const characterName = withdrawMatch[1];
-                    const originalContent = withdrawMatch[2];
-                    let lastAssistantMessageIndex = -1;
-                    for (let i = chat.history.length - 1; i >= 0; i--) {
-                        if (chat.history[i].role === 'assistant' && !chat.history[i].isWithdrawn) {
-                            lastAssistantMessageIndex = i;
+                    const originalContent = withdrawMatch[2].trim();
+                    let messageToWithdraw = null;
+                    let cleanOriginalContent = '';
+                    // 新指令使用「一条」，兼容旧「上一条」；两种都按原文定位，绝不无条件撤最后一句。
+                    // 倒序取最近的全文匹配；只忽略首尾空白，不做子串/模糊匹配，找不到就跳过。
+                    for (let i = chat.history.length - 1; originalContent && i >= 0; i--) {
+                        const candidate = chat.history[i];
+                        if (candidate.role !== 'assistant' || candidate.isWithdrawn || typeof candidate.content !== 'string') continue;
+                        const cleanContentMatch = candidate.content.trim().match(/^\[.*?的(?:消息|语音)[:：]([\s\S]*)\]$/);
+                        const candidateContent = cleanContentMatch ? cleanContentMatch[1] : candidate.content;
+                        if (candidateContent.trim() === originalContent) {
+                            messageToWithdraw = candidate;
+                            cleanOriginalContent = candidateContent;
                             break;
                         }
                     }
-                    if (lastAssistantMessageIndex !== -1) {
-                        const messageToWithdraw = chat.history[lastAssistantMessageIndex];
+                    if (messageToWithdraw) {
                         messageToWithdraw.isWithdrawn = true;
-                        const cleanContentMatch = messageToWithdraw.content.match(/\[.*?的消息：([\s\S]+?)\]/);
-                        messageToWithdraw.originalContent = cleanContentMatch ? cleanContentMatch[1] : messageToWithdraw.content;
-                        messageToWithdraw.content = `[system: ${characterName} withdrew a message. Original: ${originalContent}]`;
+                        messageToWithdraw.originalContent = cleanOriginalContent;
+                        messageToWithdraw.content = `[${characterName}撤回了一条消息：${cleanOriginalContent}]`;
+                        // content 与 parts 同步保留撤回事实和全文，避免其他读取入口仍拿到旧发言。
+                        if (messageToWithdraw.parts) {
+                            messageToWithdraw.parts = [{ type: 'text', text: messageToWithdraw.content }];
+                        }
                         renderMessages(false, true);
-                        await saveMessageToDB(messageToWithdraw, targetChatId, targetChatType);     
-                    }                    
+                        await saveMessageToDB(messageToWithdraw, targetChatId, targetChatType);
+                    }
                     continue;
                 }
 
@@ -535,6 +584,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             timestamp: Date.now(),
                         };
                         if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
+                        if (window.ChatRegex) ChatRegex.applyStorage(message, chat, targetChatType);
                         chat.history.push(message);
                         // ★ 这里要 await：下面 speakCallBubble 靠 data-voice-msg-id 回查刚建的
                         //   那个气泡，不等它贴进 DOM 就查，查到的是 null，于是静默不出声。
@@ -577,6 +627,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             };
                         }
                         if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
+                        if (window.ChatRegex) ChatRegex.applyStorage(message, chat, targetChatType);
                         chat.history.push(message);
                         newMessagesForDB.push(message); 
                         addMessageBubble(message, targetChatId, targetChatType);
@@ -615,6 +666,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                         // 照片/视频描述走这一支：把预生成占的 id 和画好的图装配回来
                         if (typeof applyPreparedImage === 'function') applyPreparedImage(item, message);
                         if (chat.currentCallSessionId) message.callSessionId = chat.currentCallSessionId;
+                        if (window.ChatRegex) ChatRegex.applyStorage(message, chat, targetChatType);
                         chat.history.push(message);
                         newMessagesForDB.push(message);
                         addMessageBubble(message, targetChatId, targetChatType);
@@ -662,6 +714,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                                 };
                             }
 
+                            if (window.ChatRegex) ChatRegex.applyStorage(message, chat, targetChatType);
                             group.history.push(message);
                             addMessageBubble(message, targetChatId, targetChatType);
                             newMessagesForDB.push(message); 
@@ -684,6 +737,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                             if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(message);
                             // 群聊的照片/视频也走 standardMatch 这一支，同样要装配预生成结果
                             if (typeof applyPreparedImage === 'function') applyPreparedImage(item, message);
+                            if (window.ChatRegex) ChatRegex.applyStorage(message, chat, targetChatType);
                             group.history.push(message);
                             addMessageBubble(message, targetChatId, targetChatType);
                             newMessagesForDB.push(message);
@@ -738,6 +792,7 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
             NotifyCenter.notifyMessages(chat, targetChatType, newMessagesForDB);
         }
 
+        return newMessagesForDB;
     } catch (error) {
         console.error("🔴 处理 AI 回复时发生错误:", error);
     } finally {
@@ -781,9 +836,10 @@ async function getAiReply(chatId, chatType, isBackground = false, proactiveApiPr
             x.name === _overrideName && (!x.type || x.type === 'chat')
         );
         if (_preset && _preset.data) {
-            // 其余字段保留全局兜底；Flex 属于当前预设，旧预设缺字段就是关闭。
+            // Flex 和费率都属于当前预设，缺字段不能继承另一份全局计费配置。
             effectiveApiSettings = { ...db.apiSettings, ..._preset.data,
-                flexEnabled: !!_preset.data.flexEnabled };
+                flexEnabled: !!_preset.data.flexEnabled,
+                usagePricing: _preset.data.usagePricing, presetName: _preset.name };
         }
     }
     
@@ -829,15 +885,19 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
         messageArea.scrollTop = messageArea.scrollHeight;
     }
     
-    let retrievedContext = '';
-    if (chat.vectorMemoryEnabled) {
-        retrievedContext = await buildRetrievedMemoryContext(
-            chat.history || [],
-            chat
-        );
-    }
-    
+    // 只有开启缓存优化才选择固定窗口；关闭仍使用原先的最近 N 条截取。
+    let cachePlan = null;
+    let usageTracker = null, requestError = null;
     try {
+        const cacheEnabled = chat.cacheOptimizationEnabled === true && typeof ChatPromptCache !== 'undefined';
+        if (cacheEnabled) cachePlan = ChatPromptCache.prepare(chat, effectiveApiSettings);
+        let retrievedContext = '';
+        if (chat.vectorMemoryEnabled) {
+            retrievedContext = await buildRetrievedMemoryContext(
+                chat.history || [], chat, cachePlan ? cachePlan.history : null
+            );
+        }
+        const dynamicParts = cacheEnabled ? [] : null;
         let systemPrompt, requestBody;
         const isCompatibilityMode = effectiveApiSettings.compatibilityModeEnabled || false; 
         // ★ 天气上下文：按该聊天绑定的地点取数，仅注入本次请求，不写入历史。
@@ -847,13 +907,13 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
             weatherText = (await getWeatherPromptContext(chat)) || '';
         }
         if (chatType === 'private') {
-            systemPrompt = generatePrivateSystemPrompt(chat, retrievedContext, weatherText);
+            systemPrompt = generatePrivateSystemPrompt(chat, retrievedContext, weatherText, dynamicParts);
         } else {
-            systemPrompt = generateGroupSystemPrompt(chat, retrievedContext, weatherText);
+            systemPrompt = generateGroupSystemPrompt(chat, retrievedContext, weatherText, dynamicParts);
         }
 
-        let rawHistory = chat.history.slice(-chat.maxMemory);
-        const historySlice = rawHistory.filter(msg => {
+        // 优化路径要先合并固定写作手册并校验窗口，随后才选实际发送的历史。
+        const prepareHistory = rawHistory => rawHistory.filter(msg => {
             if (msg.isAiIgnore) return false;
             return true;
         }).map(msg => {
@@ -867,7 +927,8 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
             //    就地改会把内存和随后落库的格式一起改掉，气泡当场退化成普通文字条。
             // ⚠️ content 和 parts[].text 两边都要改 —— 下面两个 provider 分支
             //    读的是 parts，只改 content 等于没改。
-            if (!msg || !msg.callSessionId) return msg;
+            // 撤回原文不能再经过语音/旁白等格式改写，否则行为记录中的全文会失真。
+            if (!msg || msg.isWithdrawn || !msg.callSessionId) return msg;
             const swap = t => (typeof t === 'string' ? t.replace(/的语音[:：]/g, '的消息：') : t);
             return {
                 ...msg,
@@ -880,7 +941,7 @@ if (chatType === 'private' && chat.offlineModeEnabled) {
 
         let offlineReinforcement = null;
 if (chatType === 'private' && chat.offlineModeEnabled) {
-            const worldBooksWriting = (chat.worldBookIds ||[]).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'writing')).filter(Boolean).map(wb => wb.content).join(''); 
+            const worldBooksWriting = getChatWorldBooks(chat, 'offline').filter(wb => wb.position === 'writing').map(wb => wb.content).join('');
             offlineReinforcement = `[🛑 严格执行以下写作手册]
 ## 1. 🧠 动笔前的快速自问（100字以内，无需输出，心底自问）
 1.  **人设**：**往上看一眼双方最后的互动内容**，根据${chat.realName}的人设，他/她现在会是什么心境？
@@ -933,14 +994,37 @@ if (chatType === 'private' && chat.callMode === 'video') {
 }
 
 // 两者互斥，取其一作为本次请求的写作手册注入
-const activeReinforcement = offlineReinforcement || callReinforcement;
+let activeReinforcement = offlineReinforcement || callReinforcement;
+let historySlice;
+if (cachePlan) {
+    // 写作手册本身不随轮次变化，放入第一段，避免后置 system 被网关提取回前面。
+    if (activeReinforcement) systemPrompt += `\n\n${activeReinforcement}`;
+    const previousStart = cachePlan.history[0]?.id;
+    // 取天气/检索期间用户可能又发了话；发送前重新读取窗口，不能漏掉这些最新输入。
+    cachePlan = ChatPromptCache.withPrompt(ChatPromptCache.prepare(chat, effectiveApiSettings), systemPrompt);
+    if (chat.vectorMemoryEnabled && cachePlan.history[0]?.id !== previousStart) {
+        // 固定资料改变可能重建历史基底，检索排重也要跟着采用重建后的实际窗口。
+        retrievedContext = await buildRetrievedMemoryContext(chat.history || [], chat, cachePlan.history);
+        dynamicParts.length = 0;
+        systemPrompt = chatType === 'private'
+            ? generatePrivateSystemPrompt(chat, retrievedContext, weatherText, dynamicParts)
+            : generateGroupSystemPrompt(chat, retrievedContext, weatherText, dynamicParts);
+        if (activeReinforcement) systemPrompt += `\n\n${activeReinforcement}`;
+    }
+    historySlice = prepareHistory(ChatPromptCache.arrange(cachePlan, dynamicParts));
+    activeReinforcement = null;
+} else {
+    historySlice = prepareHistory(chat.history.slice(-chat.maxMemory));
+}
 
         if (llmIsGeminiShape(provider)) {
             const contents = historySlice.map(msg => {
                 const role = (msg.role === 'assistant' || msg.role === 'model') ? 'model' : 'user';
                 let parts;
                 
-                if (msg.parts && msg.parts.length > 0) {
+                if (msg.isWithdrawn) {
+                    parts = [{ text: msg.content }];
+                } else if (msg.parts && msg.parts.length > 0) {
      parts = msg.parts.map(p => {
         if (p.type === 'text' || p.type === 'html') {
             let text = p.text; 
@@ -1015,7 +1099,10 @@ const activeReinforcement = offlineReinforcement || callReinforcement;
             
             historySlice.forEach(msg => {
                 let content;
-                if (msg.role === 'user' && msg.quote) {
+                if (msg.isWithdrawn) {
+                    // content 已是带原文的撤回记录；不能被残留 quote 重新包装成普通回复。
+                    content = msg.content;
+                } else if (msg.role === 'user' && msg.quote) {
                      const replyTextMatch = msg.content.match(/\[.*?[:：]([\s\S]+?)\]/); 
                      const replyText = replyTextMatch ? replyTextMatch[1] : msg.content;
                      content = `[${chat.myName}引用"${msg.quote.content}"并回复：${replyText}]`;
@@ -1092,23 +1179,37 @@ requestBody = { model: model, messages: apiMessages, stream: streamEnabled, temp
             { stream: streamEnabled }
         );
 
-        callAbortController = new AbortController();          // ← 每次请求前重置
+        usageTracker = typeof beginApiUsage === 'function' ? beginApiUsage({
+            cfg: effectiveApiSettings, requestBody: body,
+            feature: proactiveApiPresetName || isBackground ? '后台定时回复'
+                : chat.callMode ? '通话回复' : chat.offlineModeEnabled ? '线下回复'
+                : chatType === 'group' ? '群聊回复' : '聊天回复'
+        }) : null;
+        callAbortController = new AbortController();          // 每次请求重置，中止不影响下一轮
 const response = await fetch(endpoint, {
     method: 'POST',
     headers: headers,
     body: JSON.stringify(body),
     signal: callAbortController.signal                // ← 挂载信号
 });
+        usageTracker?.response(response);
         if (!response.ok) {
-            const error = new Error(`API Error: ${response.status} ${await response.text()}`);
+            const detail = await response.text();
+            collectLLMErrorUsage(detail, usageTracker);
+            const error = new Error(`API Error: ${response.status} ${detail}`);
+            error.status = response.status;
             error.response = response;
             throw error;
         }
 
+        let replyMessages;
         if (streamEnabled) {
-            await processStream(response, chat, provider, chatId, chatType);
+            replyMessages = await processStream(response, chat, provider, chatId, chatType, usageTracker);
         } else {
             const result = await response.json();
+            usageTracker?.usage(result);
+            throwLLMResponseError(result);
+            await usageTracker?.finish(); // 用量在 API 读完时落盘，不等后续打字机/合成。
             let fullResponse = "";
             if (llmIsGeminiShape(provider)) {
                 // 同样要跳过 thought part，否则思考内容会被当成正文
@@ -1119,10 +1220,15 @@ const response = await fetch(endpoint, {
             } else {
                 fullResponse = result.choices[0].message.content || "";
             }
-            await handleAiReplyContent(fullResponse, chat, chatId, chatType);
+            replyMessages = await handleAiReplyContent(fullResponse, chat, chatId, chatType);
+        }
+        if (cachePlan && ChatPromptCache.commit(cachePlan, replyMessages || [])) {
+            // 窗口只存锚点/指纹和轮数，精准落盘；刷新后继续同一周期，不复制正文。
+            await saveSingleChat(chatId, chatType);
         }
 
     } catch (error) {
+    requestError = error;
     if (error.name === 'AbortError') {
         // 通话已挂断，fetch 被主动中止，静默处理即可
     } else if (!isBackground) {
@@ -1135,6 +1241,7 @@ const response = await fetch(endpoint, {
         console.error("[Timer后台固定模式错误]", error);
     }
 }finally {
+        await usageTracker?.finish(requestError);
         // 同样，只有前台处理时，才解开 UI
         if (!isBackground) {
             isGenerating = false;
@@ -1152,7 +1259,7 @@ document.getElementById('call-mic-btn')?.removeAttribute('disabled');
 // ==========================================
 // 处理流式输出 (Stream)
 // ==========================================
-async function processStream(response, chat, apiType, targetChatId, targetChatType) {
+async function processStream(response, chat, apiType, targetChatId, targetChatType, usageTracker) {
     const reader = response.body.getReader(), decoder = new TextDecoder();
     const isGemini = llmIsGeminiShape(apiType);
     let fullResponse = "", buffer = "", raw = "";
@@ -1166,39 +1273,49 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
         }
     };
 
-    for (; ;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        raw += chunk;
-        buffer += chunk;
-
-        const events = buffer.split(/\r?\n\r?\n/);
-        buffer = events.pop();   // 末尾可能是半个事件，留到下一轮
-        for (const ev of events) {
-            // 一个 SSE 事件可能有多行 data:，拼起来才是完整 JSON
-            const data = ev.split(/\r?\n/)
-                .filter(l => l.startsWith("data:"))
-                .map(l => l.slice(5).trim())
-                .join("");
-            if (!data || data === "[DONE]") continue;
-            try {
-                const json = JSON.parse(data);
-                if (isGemini) {
-                    collectGemini(json);
-                } else {
-                    fullResponse += json.choices?.[0]?.delta?.content || "";
-                }
-            } catch (e) { /* 半包或非 JSON，忽略 */ }
+    const collectEvent = ev => {
+        const data = ev.split(/\r?\n/).filter(l => l.startsWith('data:'))
+            .map(l => l.slice(5).trim()).join('');
+        if (!data || data === '[DONE]') return;
+        let json;
+        try { json = JSON.parse(data); } catch (_) { return; }
+        usageTracker?.usage(json); // 正文为空的最后用量帧一样要采集。
+        throwLLMResponseError(json);
+        if (isGemini) collectGemini(json);
+        else fullResponse += json.choices?.[0]?.delta?.content || '';
+    };
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = decoder.decode(value, { stream: true });
+            raw += chunk;
+            buffer += chunk;
+            const events = buffer.split(/\r?\n\r?\n/);
+            buffer = events.pop();
+            events.forEach(collectEvent);
         }
+        const tail = decoder.decode();
+        raw += tail;
+        buffer += tail;
+        if (buffer.trim()) collectEvent(buffer);
+    } catch (error) {
+        // 报错后主动关闭流，让代理停止上游；UI 收尾仍交给 getAiReply 的 finally。
+        try { await reader.cancel?.(error); } catch (_) { /* 不覆盖原始错误 */ }
+        throw error;
     }
 
     // 兜底：旧版代理的 :streamGenerateContent 不发 SSE，而是返回一个 JSON 数组
     if (isGemini && !fullResponse && raw.trim()) {
-        try {
-            const arr = JSON.parse(raw.trim());
-            (Array.isArray(arr) ? arr : [arr]).forEach(collectGemini);
-        } catch (e) {
+        let arr;
+        try { arr = JSON.parse(raw.trim()); } catch (_) { /* 旧代理非 JSON 时才取文本 */ }
+        if (arr) {
+            (Array.isArray(arr) ? arr : [arr]).forEach(json => {
+                usageTracker?.usage(json);
+                throwLLMResponseError(json);
+                collectGemini(json);
+            });
+        } else {
             const textRegex = /"text":\s*"((?:[^"\\]|\\.)*)"/g;
             let match;
             while ((match = textRegex.exec(raw)) !== null) {
@@ -1208,7 +1325,8 @@ async function processStream(response, chat, apiType, targetChatId, targetChatTy
         }
     }
 
-    await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType);
+    await usageTracker?.finish();
+    return await handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType);
 }
 
 // ==========================================
@@ -1306,6 +1424,9 @@ async function handleRegenerate() {
         const statusTextEl = document.getElementById('chat-room-status-text');
         if (statusTextEl) statusTextEl.textContent = chat.status;
                         if(typeof renderCharacters === 'function') renderCharacters();
+    }
+    if (chat.cacheOptimizationEnabled === true && typeof ChatPromptCache !== 'undefined') {
+        ChatPromptCache.undo(chat, removedMessages);
     }
 await deleteMessagesFromDB(removedMessages.map(m=>m.id));
     await saveSingleChat(currentChatId, currentChatType);

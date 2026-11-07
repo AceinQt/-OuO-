@@ -416,6 +416,10 @@ const rawPosts = cleanContent.split('===SEP===');
                                 avatar: null,
                                 isNew: true   // 未读，点开详情即已读
                             };
+                            if (window.ForumRegex) {
+                                ForumRegex.applyStorage(newPost);
+                                newPost.comments.forEach(comment => ForumRegex.applyStorage(comment));
+                            }
                             newPostsToAdd.push(newPost);
                         }
                     });
@@ -565,6 +569,7 @@ const lines = cleanContentComments.split('\n');
                     if (newComments.length > 0) {
                         if (!post.comments) post.comments = [];
 
+                        if (window.ForumRegex) newComments.forEach(comment => ForumRegex.applyStorage(comment));
                         post.comments = post.comments.concat(newComments);
 
                         const dbPostIndex = db.forumPosts.findIndex(p => p.id === post.id);

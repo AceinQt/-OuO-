@@ -291,7 +291,12 @@ function findLegacyNarrationTwin(chat, message) {
     }) || null;
 }
 
-// --- 替换 startMessageEdit 函数 ---
+// HTML 类别只是选择显示规则，编辑框始终放原始正文，不放替换后的卡片模板。
+function syncMessageEditHtmlFields() {
+    const fields = document.getElementById('message-edit-html-fields');
+    if (fields) fields.hidden = document.getElementById('message-edit-type')?.value !== 'regex-html';
+}
+
 function startMessageEdit(messageId) {
     exitMultiSelectMode();
     editingMessageId = messageId;
@@ -351,12 +356,39 @@ function startMessageEdit(messageId) {
         currentType = 'text';
     }
 
+    const htmlRuleSelect = document.getElementById('message-edit-html-rule');
+    const htmlOption = typeSelect?.querySelector('option[value="regex-html"]');
+    const canUseHtml = message.role === 'assistant' && !message.isHidden && !message.isWithdrawn
+        && !message.callSessionId && !chat.callMode && !message.media && !message.stickerData
+        && !message.transferStatus && !message.giftStatus
+        && (!Array.isArray(message.parts) || message.parts.every(part => ['text', 'html'].includes(part?.type)));
+    if (htmlOption) htmlOption.disabled = !canUseHtml;
+    if (htmlRuleSelect) {
+        htmlRuleSelect.replaceChildren();
+        const placeholder = document.createElement('option');
+        placeholder.value = ''; placeholder.textContent = '请选择 HTML 卡片规则';
+        htmlRuleSelect.appendChild(placeholder);
+        const rules = window.ChatRegex ? ChatRegex.getRules(chat, currentChatType, 'display').filter(rule => rule.html === true) : [];
+        for (const rule of rules) {
+            const option = document.createElement('option');
+            option.value = rule.id;
+            const category = (db.regexCategories || []).find(item => item.rules?.some(entry => entry.id === rule.id));
+            option.textContent = `${category?.name || '正则'} / ${rule.name}`;
+            htmlRuleSelect.appendChild(option);
+        }
+        // 自动匹配仍走完整规则链，不能仅因打开编辑就改成单条规则或把旁白变成对白。
+        // 只有已经手动选过的消息才回显 HTML 类别；未匹配时由用户明确选择规则。
+        htmlRuleSelect.value = message.regexHtmlRuleId || '';
+        if (canUseHtml && message.regexHtmlRuleId) currentType = 'regex-html';
+    }
+
     // --- 2. 赋值给 UI ---
     textarea.value = contentToEdit;
     if (typeSelect) {
         typeSelect.value = currentType; // 设置下拉框选中状态
     }
-    
+    syncMessageEditHtmlFields();
+
     modal.classList.add('visible');
     // 稍微延迟聚焦，体验更好
     setTimeout(() => textarea.focus(), 50);
@@ -381,7 +413,28 @@ async function saveMessageEdit() {
     }
 
     const message = chat.history[messageIndex];
-    const selectedType = typeSelect ? typeSelect.value : 'text'; 
+    const selectedType = typeSelect ? typeSelect.value : 'text';
+    const previousBody = window.ChatRegex ? ChatRegex.messageBody(message) : null;
+    // HTML 是显示方式，不是新的说话身份：手动修正旁白时仍然保存旁白外壳。
+    const htmlBodyKind = previousBody?.kind === 'narration' ? 'narration' : 'text';
+    let htmlRuleId = null;
+    if (selectedType === 'regex-html') {
+        htmlRuleId = document.getElementById('message-edit-html-rule')?.value;
+        const rule = window.ChatRegex && ChatRegex.getRules(chat, currentChatType, 'display').find(item => item.id === htmlRuleId && item.html === true);
+        if (message.role !== 'assistant' || message.isHidden || message.isWithdrawn || message.callSessionId || chat.callMode
+            || message.media || message.stickerData || message.transferStatus || message.giftStatus
+            || (Array.isArray(message.parts) && message.parts.some(part => !['text', 'html'].includes(part?.type)))) {
+            showToast('HTML 块仅适用于普通 AI 正文'); return;
+        }
+        if (!rule) { showToast('请选择当前聊天已关联并启用的 HTML 卡片规则'); return; }
+        // 状态标签是原文数据，仍然允许；文档、脚本、样式不能当原文写入模型上下文。
+        if (/<(?:!doctype\b|\/?(?:html|head|body|script|style)\b)/i.test(newText)) {
+            showToast('这里只填写原始短文本，HTML 模板请放在正则的替换内容里'); return;
+        }
+        const result = ChatRegex.replaceText(newText, [rule]);
+        if (result.errors.length) { showToast('所选规则无效，请先修正规则'); return; }
+        if (!result.matched || !result.text.trim()) { showToast('原文未匹配所选规则或替换结果为空，请修正后再保存'); return; }
+    }
 
     let newContent = '';
 
@@ -398,7 +451,7 @@ async function saveMessageEdit() {
 
     let legacyTwinToSave = null;
 
-    if (selectedType === 'narration') {
+    if (selectedType === 'narration' || (htmlRuleId && htmlBodyKind === 'narration')) {
         newContent = `[system-narration:${newText}]`;
     } else if (selectedType === 'user-narration') {
         newContent = `[剧情旁白：${newText}]`;
@@ -431,6 +484,16 @@ async function saveMessageEdit() {
     // 转换后统一落为纯文字 parts，避免旧格式残留导致渲染器继续误判气泡类型。
     chat.history[messageIndex].content = newContent;
     chat.history[messageIndex].parts = [{ type: 'text', text: newContent }];
+    // 未换正文类型时保留存储替换的协议保护，否则正文里的 [system:…] 会让气泡消失。
+    // 明确改成语音/照片等其他类型才解除旧锁；卡片规则 ID 只由这次 HTML 选择保留。
+    const keepKind = message.regexKind === selectedType;
+    if (!keepKind) delete message.regexKind;
+    delete message.regexHtml;
+    delete message.regexHtmlRuleId;
+    if (htmlRuleId) {
+        message.regexHtmlRuleId = htmlRuleId;
+        message.regexKind = htmlBodyKind;
+    }
 
     // 双语照片描述：用户改了中文，之前那份英文提示词就过时了，必须清掉。
     // 留着的话下次点生成会拿旧英文去画，画出来和眼前的描述对不上 ——
@@ -658,22 +721,22 @@ async function withdrawMessage(messageId) {
     // 更新数据模型
     message.isWithdrawn = true;
 
-    // 提取干净的原始内容用于AI上下文和UI的“重新编辑”
-    const cleanContentMatch = message.content.match(/\[.*?的消息：([\s\S]+?)\]/);
+    // 提取干净的原始内容用于 AI 上下文和 UI 的“重新编辑”；只脱最外层，保留内部方括号。
+    const cleanContentMatch = message.content.match(/^\[.*?的(?:消息|语音)[:：]([\s\S]*)\]$/);
     const cleanOriginalContent = cleanContentMatch ? cleanContentMatch[1] : message.content;
     message.originalContent = cleanOriginalContent; // 保存干净的原始内容
 
     // 获取当前用户的昵称
     const myName = (currentChatType === 'private') ? chat.myName : chat.me.realName;
 
-    // 为AI生成新的、可理解的上下文消息
-    const newContent = `[${myName} 撤回了一条消息：${cleanOriginalContent}]`; // 定义新内容变量
+    // 撤回记录仍在原消息位置保留全文，供 AI 理解行为，不当作新的发言。
+    const newContent = `[${myName}撤回了一条消息：${cleanOriginalContent}]`;
     
     message.content = newContent; // 1. 更新 content
 
     // ==========================================
     // 【核心修复】同步更新 parts
-    // 这样 getAiReply 读取 parts 时才能看到撤回提示
+    // 其他上下文/导出入口也会读 parts，必须与 content 一起保持为撤回记录。
     // ==========================================
     if (message.parts) {
         message.parts = [{ type: 'text', text: newContent }];

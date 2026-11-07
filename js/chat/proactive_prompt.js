@@ -4,9 +4,11 @@
  * 私聊主动消息专用 Prompt
  */
 function generateProactivePrivatePrompt(character) {
-    const worldBooksBefore = (character.worldBookIds ||[]).map(id => typeof db !== 'undefined' && db.worldBooks ? db.worldBooks.find(wb => wb.id === id && wb.position === 'before') : null).filter(Boolean).map(wb => wb.content).join('\n');
-    const worldBooksAfter = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).map(wb => wb.content).join('\n');
-    const worldBooksWriting = (character.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'writing')).filter(Boolean).map(wb => wb.content).join('\n');
+    // 按要接收主动消息的角色模式取书，不能跟随当前前台打开的聊天室。
+    const chatWorldBooks = getChatWorldBooks(character);
+    const worldBooksBefore = chatWorldBooks.filter(wb => wb.position === 'before').map(wb => wb.content).join('\n');
+    const worldBooksAfter = chatWorldBooks.filter(wb => wb.position === 'after').map(wb => wb.content).join('\n');
+    const worldBooksWriting = chatWorldBooks.filter(wb => wb.position === 'writing').map(wb => wb.content).join('\n');
     
     const now = new Date();
     const pad = (n) => n < 10 ? '0' + n : n;
@@ -74,7 +76,7 @@ function generateProactivePrivatePrompt(character) {
     }
     prompt += `c) 发送照片/视频:[HH:MM|${character.realName}发来的照片/视频:照片画面的详细描述]\n`;
     prompt += `d) 发送语音:[HH:MM|${character.realName}的语音:语音转述的文字内容]\n`;
-    prompt += `e) 你可以撤回刚刚发送的消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[HH:MM|${character.realName}撤回了上一条消息:被撤回消息的原文]。\n`;   
+    prompt += `e) 你可以撤回之前发送的一条消息。当你觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现你角色性格的机会。格式为：[HH:MM|${character.realName}撤回了一条消息:被撤回消息的原文]。\n`;
     prompt += `f) 你也可以主动给我转账或送礼物。转账格式必须为：[HH:MM|${character.realName}的转账:xxx元；备注：xxx]。送礼物格式必须为：[HH:MM|${character.realName}送来的礼物:xxx]。\n\n`;
     
     prompt += `你可以只发消息给我，也可以根据上下文情况混合使用这些格式，比如先发一张照片，再发几条文字消息，或者中途发一个表情包戳我。\n`;
@@ -139,7 +141,7 @@ function generateProactiveGroupPrompt(group) {
     prompt += `b) 发送表情包:[HH:MM|{成员真名}的表情包: 表情名称] (⚠️ 该成员只能使用其上方列表对应的可用表情包，严禁造词)\n`;
     prompt += `c) 照片/视频:[HH:MM|{成员真名}发来的照片/视频: 画面描述]\n`;
     prompt += `d) 语音:[HH:MM|{成员真名}的语音: 语音文字]\n`;
-    prompt += `e) 群成员可以撤回刚刚发送的消息。当觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现角色性格的机会。格式为：[HH:MM|{成员真名}撤回了上一条消息:被撤回消息的原文]。\n`;   
+    prompt += `e) 群成员可以撤回之前发送的一条消息。当觉得说错了话、感到尴尬、或者只是改变了主意时，都可以这样做。这是一个体现角色性格的机会。格式为：[HH:MM|{成员真名}撤回了一条消息:被撤回消息的原文]。\n`;
     prompt += `f) 群成员可以主动给我转账或送礼物。转账格式必须为：[HH:MM|{成员真名}的转账:xxx元；备注：xxx]。送礼物格式必须为：[HH:MM|{成员真名}送来的礼物:xxx]。\n\n`;    
     prompt += `在同一个时段组内，你可以让一个成员先抛出话题或图片，其他成员自然接话，呈现出自然的群聊氛围！\n`;
     

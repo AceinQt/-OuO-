@@ -506,11 +506,11 @@ function renderUserPersonas() {
         });
     }
 
-    // 在底部固定添加一个“新增”列表项，使用一致的外观
+    // 在底部固定添加一个“新增”列表项，加号复用统一的线框图标，文字保留操作语义。
     const addCard = document.createElement('li');
     addCard.className = 'list-item';
     addCard.innerHTML = `
-        <div class="chat-avatar" style="display: flex; justify-content: center; align-items: center; background-color: #f8f9fa; color: #999; font-size: 24px; font-weight: 300; border: 1px dashed #ccc; box-sizing: border-box;">+</div>
+        <div class="chat-avatar" style="display: flex; justify-content: center; align-items: center; background-color: #f8f9fa; color: #999; border: 1px dashed #ccc; box-sizing: border-box;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg></div>
         <div class="item-details">
             <div class="item-details-row">
                 <div class="item-name" style="color: #333;">新增档案</div>

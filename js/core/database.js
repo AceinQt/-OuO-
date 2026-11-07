@@ -30,14 +30,155 @@ const globalSettingKeys =[
     'githubRepos',
     // ★ 用途绑定（哪个功能用哪个仓库、存哪个目录）。和上面拆开是因为仓库是共享资源，
     //   同一个仓库可以被多个用途引用，凭据不该跟着用途复制好几份。
-    'githubBindings'
+    'githubBindings',
+    // 世界书类别登记（含空类别）：存于设置表，但导出、统计和清空都归世界书。
+    'worldBookCategories',
+    // 正则类别与规则复用设置表，导出、统计和清空独立归「正则」。
+    'regexCategories'
 ];
+
+/**
+ * 正则数据的纯规范化入口，供存储、界面和执行器共用；不编译表达式。
+ * 无效表达式仍保留，由执行器报告错误，不能因此阻止整份备份恢复。
+ * 仅保留约定字段，ID 转字符串并稳定去重；规则 ID 在整个库内唯一。
+ * 是否执行由聊天室关联决定；旧备份的 enabled 字段忽略且不再写回。
+ */
+function normalizeRegexCategories(value) {
+    const categories = [];
+    const categoryIds = new Set();
+    const ruleIds = new Set();
+    const idOf = value => typeof value === 'string' ? value
+        : (typeof value === 'number' && Number.isFinite(value) ? String(value) : '');
+    for (const raw of (Array.isArray(value) ? value : [])) {
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
+        const id = idOf(raw.id);
+        if (!id.trim() || categoryIds.has(id)) continue;
+        categoryIds.add(id);
+        const rules = [];
+        for (const [index, rule] of (Array.isArray(raw.rules) ? raw.rules : []).entries()) {
+            if (!rule || typeof rule !== 'object' || Array.isArray(rule)) continue;
+            const ruleId = idOf(rule.id);
+            if (!ruleId.trim() || ruleIds.has(ruleId)) continue;
+            ruleIds.add(ruleId);
+            rules.push({
+                id: ruleId,
+                name: typeof rule.name === 'string' ? rule.name : '',
+                pattern: typeof rule.pattern === 'string' ? rule.pattern : '',
+                flags: typeof rule.flags === 'string' ? rule.flags : 'g',
+                // 空替换串代表删除命中内容，必须原样保留。
+                replacement: typeof rule.replacement === 'string' ? rule.replacement : '',
+                // 卡片模板只能在显示阶段展开，恢复旧备份时也不能把整段 HTML 写进上下文。
+                mode: rule.html === true || rule.mode === 'display' ? 'display' : 'storage',
+                // 必须显式勾选才执行卡片脚本，旧规则和字符串 "true" 均保持静态。
+                html: rule.html === true,
+                order: typeof rule.order === 'number' && Number.isFinite(rule.order) ? rule.order : index
+            });
+        }
+        categories.push({ id, name: typeof raw.name === 'string' ? raw.name : '', rules });
+    }
+    return categories;
+}
+
+// 类别是整套规则包；新字段存在（包括 []）即为权威，不能借旧规则关联复活已取消的选择。
+// 缺失的类别 ID 留存，供分项恢复后重新生效；旧规则暂无法找到所属类别时不做破坏性迁移。
+function getChatRegexBinding(chat, chatType, categories) {
+    const privateChat = chatType === 'private';
+    const ids = [], modes = Object.create(null);
+    const idList = value => [...new Set((Array.isArray(value) ? value : [])
+        .map(id => typeof id === 'string' ? id : typeof id === 'number' && Number.isFinite(id) ? String(id) : '')
+        .filter(id => id.trim()))];
+    const range = (values, id) => {
+        const configured = values && Object.prototype.hasOwnProperty.call(values, id) ? values[id] : null;
+        return configured ? { online: configured.online === true, offline: configured.offline === true }
+            : { online: true, offline: true };
+    };
+    const add = (id, value) => {
+        if (privateChat && !value.online && !value.offline) return;
+        if (!ids.includes(id)) ids.push(id);
+        if (privateChat) modes[id] = { online: !!modes[id]?.online || value.online, offline: !!modes[id]?.offline || value.offline };
+    };
+    if (Object.prototype.hasOwnProperty.call(chat, 'regexCategoryIds')) {
+        for (const id of idList(chat.regexCategoryIds)) add(id, range(chat.regexCategoryModes, id));
+        return { ids, modes, complete: true };
+    }
+    const owners = new Map();
+    for (const category of (Array.isArray(categories) ? categories : [])) {
+        for (const rule of category.rules || []) owners.set(rule.id, category.id);
+    }
+    let complete = true;
+    for (const id of idList(chat.regexRuleIds)) {
+        const categoryId = owners.get(id);
+        if (!categoryId) { if (!owners.size) complete = false; continue; }
+        add(categoryId, range(chat.regexRuleModes, id));
+    }
+    return { ids, modes, complete };
+}
+// 返回精准补丁而非整条聊天；undefined 是 Dexie 删除字段的约定，内存发布也必须真正 delete。
+function getRegexBindingChanges(chat, chatType, categories) {
+    if (!['regexCategoryIds', 'regexCategoryModes', 'regexRuleIds', 'regexRuleModes'].some(field => Object.prototype.hasOwnProperty.call(chat, field))) return null;
+    const binding = getChatRegexBinding(chat, chatType, categories);
+    if (!binding.complete) return null;
+    const changes = {};
+    if (JSON.stringify(chat.regexCategoryIds) !== JSON.stringify(binding.ids)) changes.regexCategoryIds = binding.ids;
+    if (chatType === 'private') {
+        if (JSON.stringify(chat.regexCategoryModes) !== JSON.stringify(binding.modes)) changes.regexCategoryModes = binding.modes;
+    } else if (Object.prototype.hasOwnProperty.call(chat, 'regexCategoryModes')) changes.regexCategoryModes = undefined;
+    for (const field of ['regexRuleIds', 'regexRuleModes']) {
+        if (Object.prototype.hasOwnProperty.call(chat, field)) changes[field] = undefined;
+    }
+    return Object.keys(changes).length ? changes : null;
+}
+function getRegexBindingFields(chat) {
+    return Object.fromEntries(['regexCategoryIds', 'regexCategoryModes', 'regexRuleIds', 'regexRuleModes'].map(field => [field, chat[field]]));
+}
+function applyRegexBindingChanges(chat, changes) {
+    for (const [field, value] of Object.entries(changes || {})) {
+        if (value === undefined) delete chat[field];
+        else chat[field] = value;
+    }
+}
+
+// 空值和字面「未分类」共用一个类别键，不改写旧条目自身的 category。
+function getWorldBookCategoryKey(value) {
+    return String(value || '').trim() || '未分类';
+}
+
+// 先保留登记顺序，再补条目中的存量类别；Set 可安全处理 __proto__ 等名称。
+function collectWorldBookCategories(categories, books) {
+    const result = new Set();
+    for (const category of (Array.isArray(categories) ? categories : [])) {
+        result.add(getWorldBookCategoryKey(category));
+    }
+    for (const book of (Array.isArray(books) ? books : [])) {
+        if (book && typeof book === 'object') result.add(getWorldBookCategoryKey(book.category));
+    }
+    return [...result];
+}
+
+// 聊天模式是角色的关联设置，不是世界书的全局范围；其他功能仍读取 worldBookIds 并集。
+function getChatWorldBookModes(chat, book) {
+    if (!book || !(chat.worldBookIds || []).includes(book.id)) return { online: false, offline: false };
+    const stored = chat.worldBookModes && Object.prototype.hasOwnProperty.call(chat.worldBookModes, book.id)
+        ? chat.worldBookModes[book.id] : null;
+    // 旧绑定默认两种模式都选；文风只用于线下，残留/导入的线上 true 也不能绕过。
+    return {
+        online: book.position !== 'writing' && (stored ? stored.online === true : true),
+        offline: stored ? stored.offline === true : true
+    };
+}
+
+function getChatWorldBooks(chat, mode = chat.offlineModeEnabled ? 'offline' : 'online') {
+    return (chat.worldBookIds || []).map(id => db.worldBooks.find(book => book.id === id))
+        .filter(book => book && (mode === 'all' || getChatWorldBookModes(chat, book)[mode] === true));
+}
 
 // 2. 初始化内存数据库对象 (db) -> 唯一来源
 window.db = {
     characters:[],
     groups:[],
     worldBooks: [],
+    worldBookCategories: [],
+    regexCategories: [],
     myStickers: [],
 
     // --- 独立模块 ---
@@ -111,7 +252,8 @@ window.db = {
         defaultPresetId: '',
         localCacheLimitMB: 10
     },
-    homeStatusBarColor: '#ffffff',
+    // 仅首页未自定义时贴合默认壁纸顶部；加载时仍以已保存的颜色为准（包括白色）。
+    homeStatusBarColor: '#BEC9CB',
     homeNavigationBarColor: '#ffffff',
 
     // --- 基础设置 ---
@@ -322,6 +464,13 @@ dexieDB.version(17).stores({}).upgrade(async tx => {
             post.title = post.title.replace(/^\[New!\]\s*/, '').replace(/^【新】/, '');
         }
     });
+});
+
+// ★★★ Version 18（API 调用明细：独立本地账本）★★★
+// 记录随每次请求立即落盘，不装入 window.db；日期筛选/分页直接使用时间索引。
+// 普通备份恢复不清除此表，避免导入旧备份时把本机已产生的费用记录抹掉。
+dexieDB.version(18).stores({
+    apiCallLogs: '&id, timestamp'
 });
 
 window.loadData = async () => {
@@ -564,7 +713,49 @@ window.loadData = async () => {
         // =========================================================
         // 处理普通设置
         // =========================================================
-        globalSettingKeys.forEach(key => { if (settings[key] !== undefined) db[key] = settings[key]; });
+        // 缺登记时必须清掉上一轮内存，不能把恢复前的空类别带回新库。
+        db.worldBookCategories = [];
+        globalSettingKeys.forEach(key => {
+            if (key !== 'worldBookCategories' && key !== 'regexCategories' && settings[key] !== undefined) db[key] = settings[key];
+        });
+        // 缺键的旧库必须恢复为空，不能继承前一次加载或恢复前的规则。
+        // 同一事务读最新设置再规范化，写入成功后才更新内存；不走吞错的保存助手。
+        const regexState = await dexieDB.transaction('rw', dexieDB.globalSettings, dexieDB.characters, dexieDB.groups, async () => {
+            const setting = await dexieDB.globalSettings.get('regexCategories');
+            const categories = normalizeRegexCategories(setting?.value);
+            if (JSON.stringify(setting ? setting.value : []) !== JSON.stringify(categories)) {
+                await dexieDB.globalSettings.put({ key: 'regexCategories', value: categories });
+            }
+            const affected = [];
+            // 类别与聊天在同一事务重读，只补绑定字段，不把启动时读到的旧聊天资料写回。
+            for (const tableName of ['characters', 'groups']) {
+                for (const chat of await dexieDB[tableName].toArray()) {
+                    const changes = getRegexBindingChanges(chat, tableName === 'characters' ? 'private' : 'group', categories);
+                    if (changes) await dexieDB[tableName].update(chat.id, changes);
+                    applyRegexBindingChanges(chat, changes);
+                    affected.push({ tableName, id: chat.id, changes: getRegexBindingFields(chat) });
+                }
+            }
+            return { categories, affected };
+        });
+        db.regexCategories = regexState.categories;
+        for (const item of regexState.affected) {
+            const chat = db[item.tableName].find(row => row.id === item.id);
+            if (chat) applyRegexBindingChanges(chat, item.changes);
+        }
+        // 启动补齐与日常 UI 写队列分开；在同一事务读最新两表，避免旧快照覆盖别的窗口。
+        // 不走会吞错的 saveGlobalKeys，写入失败就进入 loadData 原有的失败提示。
+        const worldBookState = await dexieDB.transaction('rw', dexieDB.worldBooks, dexieDB.globalSettings, async () => {
+            const books = await dexieDB.worldBooks.toArray();
+            const setting = await dexieDB.globalSettings.get('worldBookCategories');
+            const categories = collectWorldBookCategories(setting?.value, books);
+            if (JSON.stringify(setting ? setting.value : []) !== JSON.stringify(categories)) {
+                await dexieDB.globalSettings.put({ key: 'worldBookCategories', value: categories });
+            }
+            return { books, categories };
+        });
+        db.worldBooks = worldBookState.books;
+        db.worldBookCategories = worldBookState.categories;
 
         // ★ 学习模块数据赋值（studyBooks 已不含 content / coreadMessages）
         db.studyBooks     = newStudyBooks     || [];
@@ -643,7 +834,9 @@ window.restoreAllTablesToDB = async () => {
         await dexieDB.transaction('rw', [dexieDB.characters, dexieDB.groups], async () => {
             if(db.characters) {
                 const safeChars = db.characters.map(c => { 
-                    const o = {...c}; 
+                    const o = {...c};
+                    // 三种恢复均已准备好正则库；在共用写入边界升级旧绑定，不等下次刷新才生效。
+                    applyRegexBindingChanges(o, getRegexBindingChanges(o, 'private', db.regexCategories));
                     delete o.history;
                     // ★ V6：记忆字段已独立存储，不写回 characters 表
                     delete o.memorySummaries;
@@ -656,7 +849,8 @@ window.restoreAllTablesToDB = async () => {
             }
             if(db.groups) {
                 const safeGroups = db.groups.map(g => { 
-                    const o = {...g}; 
+                    const o = {...g};
+                    applyRegexBindingChanges(o, getRegexBindingChanges(o, 'group', db.regexCategories));
                     delete o.history;
                     delete o.memorySummaries;
                     delete o.longTermSummaries;
@@ -666,6 +860,9 @@ window.restoreAllTablesToDB = async () => {
                 await dexieDB.groups.bulkPut(safeGroups);
             }
         });
+        for (const [tableName, chatType] of [['characters', 'private'], ['groups', 'group']]) {
+            for (const chat of db[tableName] || []) applyRegexBindingChanges(chat, getRegexBindingChanges(chat, chatType, db.regexCategories));
+        }
     } catch (e) {
         console.error("❌ 聊天保存失败:", e);
     }

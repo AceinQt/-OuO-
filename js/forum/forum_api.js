@@ -201,7 +201,7 @@ function getForumGenerationContext() {
     return context;
 }
 
-/** 获取论坛功能的 API 配置（优先读 forumBindings.apiPresetName，fallback 全局默认） */
+/** 获取论坛功能的 API 配置（优先读 forumBindings.apiPresetName，未绑定时使用全局默认） */
 function _getForumApiConfig() {
     const presetName = (db.forumBindings || {}).apiPresetName || '';
     if (presetName) {
@@ -211,6 +211,7 @@ function _getForumApiConfig() {
             // 展开兜底：projectId 之类的新字段不用回来逐个加
             return {
     ...d,
+    presetName: preset.name,
     url: d.url || d.apiUrl || '',
     key: d.key || d.apiKey || '',
     model: d.model || '',
@@ -223,6 +224,7 @@ function _getForumApiConfig() {
     const s = db.apiSettings || {};
     return {
         ...s,
+        presetName: s.presetName || s.activePreset || '全局默认',
         url: s.url || s.apiUrl || '',
         key: s.key || s.apiKey || '',
         model: s.model || '',
@@ -242,6 +244,7 @@ function _getForumApiConfig() {
  */
 async function _forumCallApi(cfg, body, onChunk, meta) {
     return callLLM({
+        feature: '论坛生成',
         cfg,
         messages: body.messages,
         temperature: body.temperature,

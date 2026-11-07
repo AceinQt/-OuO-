@@ -331,25 +331,37 @@ function setupChatSettings() {
         linkWorldBookBtn.addEventListener('click', () => {
             const character = db.characters.find(c => c.id === currentChatId);
             if (!character) return;
-            renderCategorizedWorldBookList(document.getElementById('world-book-selection-list'), db.worldBooks, character.worldBookIds ||[], 'wb-select');
-            document.getElementById('world-book-selection-modal').classList.add('visible');
+            openChatWorldBookSelection(character.id, 'private');
         });
     }
+
+    // 关联弹窗以开窗时的角色 ID 为目标，确认时独立精准保存。
+    document.getElementById('link-regex-btn')?.addEventListener('click', () => {
+        const character = db.characters.find(c => c.id === currentChatId);
+        if (character && typeof openChatRegexSelection === 'function') openChatRegexSelection(character.id, 'private');
+    });
 
     const saveWorldBookSelectionBtn = document.getElementById('save-world-book-selection-btn');
     if (saveWorldBookSelectionBtn) {
         saveWorldBookSelectionBtn.addEventListener('click', async () => {
-            const selectedIds = Array.from(document.getElementById('world-book-selection-list').querySelectorAll('.item-checkbox:checked')).map(input => input.value);
-            if (currentChatType === 'private') {
-                const character = db.characters.find(c => c.id === currentChatId);
-                if (character) character.worldBookIds = selectedIds;
-            } else if (currentChatType === 'group') {
-                const group = db.groups.find(g => g.id === currentChatId);
-                if (group) group.worldBookIds = selectedIds;
+            if (saveWorldBookSelectionBtn.disabled) return;
+            const list = document.getElementById('world-book-selection-list');
+            // 记录开窗目标，异步保存不能受随后切换前台聊天影响。
+            const { chatId, chatType } = list.dataset;
+            const selection = readChatWorldBookSelection(list);
+            saveWorldBookSelectionBtn.disabled = true;
+            try {
+                await saveChatWorldBookSelection(chatId, chatType, selection.ids, selection.modes);
+                if (list.dataset.chatId === chatId && list.dataset.chatType === chatType) {
+                    document.getElementById('world-book-selection-modal').classList.remove('visible');
+                }
+                showToast('世界书关联已更新');
+            } catch (error) {
+                console.error('世界书关联保存失败:', error);
+                showToast(error.message || '保存失败，请重试');
+            } finally {
+                saveWorldBookSelectionBtn.disabled = false;
             }
-            await saveSingleChat(currentChatId, currentChatType);
-            document.getElementById('world-book-selection-modal').classList.remove('visible');
-            showToast('世界书关联已更新');
         });
     }
 }
@@ -437,6 +449,9 @@ function loadSettingsToSidebar() {
             }
             apiPresetSel.value = e.chatApiPreset || '';
         }
+
+        const cacheToggle = document.getElementById('setting-chat-cache-optimization');
+        if (cacheToggle) cacheToggle.checked = e.cacheOptimizationEnabled === true;
 
         // 语音：音色 + 通话开关 + 语气都存进隐藏 input 暂存，侧栏只显示一行摘要，内容走弹窗
         const voicePresetInput = document.getElementById('setting-chat-voice-preset');
@@ -595,6 +610,13 @@ async function saveSettingsFromSidebar() {
         const apiPresetSel = document.getElementById('setting-chat-api-preset');
         if (apiPresetSel) {
             e.chatApiPreset = apiPresetSel.value;
+        }
+
+        const cacheToggleSave = document.getElementById('setting-chat-cache-optimization');
+        if (cacheToggleSave) {
+            const changed = cacheToggleSave.checked !== (e.cacheOptimizationEnabled === true);
+            e.cacheOptimizationEnabled = cacheToggleSave.checked;
+            if (changed && typeof ChatPromptCache !== 'undefined') ChatPromptCache.reset(e);
         }
 
         // 语音：音色 + 通话开关 + 语气。空语气要照样写回去（那是"清空语气要求"），

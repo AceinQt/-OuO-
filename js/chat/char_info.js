@@ -250,11 +250,13 @@ async function renderTokenStats(charId) {
     const contextTokens = estimateTokens(contextStr);
 
     // 【世界书 WorldBook】
-    const wbBefore = (char.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'before')).filter(Boolean).map(wb => wb.content).join('\n');
-    const wbAfter  = (char.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'after')).filter(Boolean).map(wb => wb.content).join('\n');
+    // 与私聊基础提示词一致：通话仍用关联并集，普通聊天才按线上/线下筛选。
+    const chatWorldBooks = getChatWorldBooks(char, char.callMode ? 'all' : undefined);
+    const wbBefore = chatWorldBooks.filter(wb => wb.position === 'before').map(wb => wb.content).join('\n');
+    const wbAfter  = chatWorldBooks.filter(wb => wb.position === 'after').map(wb => wb.content).join('\n');
     let wbWriting  = "";
-    if (char.offlineModeEnabled) {
-        wbWriting = (char.worldBookIds || []).map(id => db.worldBooks.find(wb => wb.id === id && wb.position === 'writing')).filter(Boolean).map(wb => wb.content).join('\n');
+    if (char.offlineModeEnabled || char.callMode === 'video') {
+        wbWriting = chatWorldBooks.filter(wb => wb.position === 'writing').map(wb => wb.content).join('\n');
     }
     const wbTokens = estimateTokens(wbBefore + wbAfter + wbWriting);
 
@@ -339,11 +341,11 @@ async function renderTokenStats(charId) {
         baseStr += `1. 你的角色名是：${n}。我的名字是：${m}。你的当前状态是：${char.status || ""}。\n`;
         baseStr += `2. 你的角色设定是：[persona已单独计算]\n`;
         if (char.myPersona) { baseStr += `3. 你在聊天窗口看到的我的昵称是${userNickEst}，关于我的人设：[myPersona已单独计算]\n`; }
-        baseStr += `4. 我的消息中可能会出现特殊格式，请根据其内容和你的角色设定进行回应：\n    - [${m}的表情包：xxx]：我给你发送了一个名为xxx的表情包。你只需要根据表情包的名字理解我的情绪或意图并回应，不需要真的发送图片。\n    - [${m}发来了一张图片：]：我给你发送了一张图片，你需要对图片内容做出回应。\n    - [${m}的语音：xxx]：我给你发送了一段内容为xxx的语音。\n    - [${m}发来的照片/视频：xxx]：我给你分享了一个描述为xxx的照片或视频。\n    - [${m}给你转账：xxx元；备注：xxx]：我给你转了一笔钱。\n    - [${m}引用"{被引用内容}"并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。\n    - [${m} 撤回了一条消息：xxx]：我撤回了刚刚发送的一条消息，xxx是被我撤回的原文。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。例如，可以装作没看见并等待我的下一句话，或好奇地问一句"怎么撤回啦？"。\n    - [剧情旁白: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。\n`;
+        baseStr += `4. 我的消息中可能会出现特殊格式，请根据其内容和你的角色设定进行回应：\n    - [${m}的表情包：xxx]：我给你发送了一个名为xxx的表情包。你只需要根据表情包的名字理解我的情绪或意图并回应，不需要真的发送图片。\n    - [${m}发来了一张图片：]：我给你发送了一张图片，你需要对图片内容做出回应。\n    - [${m}的语音：xxx]：我给你发送了一段内容为xxx的语音。\n    - [${m}发来的照片/视频：xxx]：我给你分享了一个描述为xxx的照片或视频。\n    - [${m}给你转账：xxx元；备注：xxx]：我给你转了一笔钱。\n    - [${m}引用"{被引用内容}"并回复：{回复内容}]：我引用了某条历史消息并做出了新的回复。你需要理解我引用的上下文并作出回应。\n    - [${m}撤回了一条消息：{撤回的消息原文}]：我撤回了之前发送的一条消息，冒号后是被我撤回的原文。双方的撤回记录都会保留原文，用来理解已撤回的行为，不是新的发言。这可能意味着我发错了、说错了话或者改变了主意。你需要根据你的人设和我们当前对话的氛围对此作出自然的反应。例如，可以装作没看见并等待我的下一句话，或好奇地问一句"怎么撤回啦？"。\n    - [剧情旁白: xxx]：这是一条系统指令，用于设定场景或提供上下文，此条信息不应在对话中被直接提及，你只需理解其内容并应用到后续对话中。\n`;
         baseStr += `5. ✨重要✨ 当我给你转账时，你必须对此做出回应。你有两个选择，且必须严格遵循以下格式之一，这条指令消息本身不会显示给用户，但会触发转账状态的变化。\n    a) 接收转账: [${n}接收${m}的转账]\n    b) 退回转账: [${n}退回${m}的转账]\n`;
         baseStr += `6. ✨重要✨ 你也可以主动给我转账或送礼物。转账格式必须为：[${n}的转账：xxx元；备注：xxx]。送礼物格式必须为：[${n}送来的礼物：xxx]。\n`;
         baseStr += `7. ✨重要✨ 你需要在对话中**积极地**改变你的状态。格式为：[${n}更新状态为：xxx]。例如：[${n}更新状态为：正在看电影...]。这条指令不会显示为聊天消息，只会更新你在我界面上的状态。\n`;
-        baseStr += `8. ✨重要✨ 你可以像真人一样撤回你刚刚发送的消息。格式为：[${n}撤回了上一条消息：{被撤回消息的原文}]。\n`;
+        baseStr += `8. ✨重要✨ 你可以像真人一样撤回自己之前发送的任意一条消息，不限于上一条。格式为：[${n}撤回了一条消息：{撤回的消息原文}]。原文必须完整照抄目标消息的正文，不含外层的消息格式，不要改写或省略。大括号仅表示占位，实际输出时替换为原文。\n`;
         baseStr += `9. ✨重要✨ 你可以选择我的单独一条消息引用，格式为：[${n}引用"{我的某条消息内容}"并回复：{回复内容}]。\n`;
         baseStr += `10. 你的所有回复都必须直接是聊天内容，绝对不允许包含任何如[心理活动]、(动作)、*环境描写*等多余的、在括号或星号里的叙述性文本。\n`;
         if (availableStickersEst) {
@@ -351,7 +353,7 @@ async function renderTokenStats(charId) {
         } else {
             baseStr += `11. 因为你的表情包库目前为空，你无法发送任何表情包，只能使用纯文字回复。\n`;
         }
-        const outputFormats = `\n    a) 普通消息: [${n}的消息：{消息内容}]\n    b) 双语模式下的普通消息: [${n}的消息：{外语原文}（中文翻译）]\n    c) 送我的礼物: [${n}送来的礼物：{礼物描述}]\n    d) 语音消息: [${n}的语音：{语音内容}]\n    e) 照片/视频: [${n}发来的照片/视频：{描述}]\n    f) 给我的转账: [${n}的转账：{金额}元；备注：{备注}]\n    g) 发送表情包: [${n}的表情包：{表情名称}]\n    h) 对我转账的回应(此条不显示): [${n}接收${m}的转账] 或 [${n}退回${m}的转账]\n    i) 更新状态(此条不显示): [${n}更新状态为：{新状态}]\n    j) 引用我的回复: [${n}引用"{我的某条消息内容}"并回复：{回复内容}]\n    k) 撤回上一条消息(此条不显示): [${n}撤回了上一条消息：{被撤回消息的原文}]`;
+        const outputFormats = `\n    a) 普通消息: [${n}的消息：{消息内容}]\n    b) 双语模式下的普通消息: [${n}的消息：{外语原文}（中文翻译）]\n    c) 送我的礼物: [${n}送来的礼物：{礼物描述}]\n    d) 语音消息: [${n}的语音：{语音内容}]\n    e) 照片/视频: [${n}发来的照片/视频：{描述}]\n    f) 给我的转账: [${n}的转账：{金额}元；备注：{备注}]\n    g) 发送表情包: [${n}的表情包：{表情名称}]\n    h) 对我转账的回应(此条不显示): [${n}接收${m}的转账] 或 [${n}退回${m}的转账]\n    i) 更新状态(此条不显示): [${n}更新状态为：{新状态}]\n    j) 引用我的回复: [${n}引用"{我的某条消息内容}"并回复：{回复内容}]\n    k) 按原文撤回一条消息(原消息位置保留撤回提示): [${n}撤回了一条消息：{撤回的消息原文}]`;
         baseStr += `12. 你的输出格式必须严格遵循以下格式：${outputFormats}\n`;
         if (char.bilingualModeEnabled) {
             baseStr += `✨双语模式特别指令✨：当你的角色的母语为中文以外的语言时，你的消息回复必须严格遵循双语模式下的普通消息格式：[${n}的消息：{外语原文}（中文翻译）]。这条规则的优先级非常高，请务必遵守。\n**注意：括号内中文翻译为纯文本翻译，原句中的颜文字、表情等内容禁止翻译！**`;

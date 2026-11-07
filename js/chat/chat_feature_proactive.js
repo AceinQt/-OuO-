@@ -355,6 +355,8 @@ async function checkAndDeliverProactiveMessages() {
                     // imagePromptEn、content 只留中文。主动消息同样会产出照片(见 1238 行示例格式)，
                     // 漏掉这里就会在通知和气泡里漏出英文
                     if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(newMsg);
+                    // 正则在草稿物化为消息时才执行；不改调度/原草稿，也不碰控制或媒体消息。
+                    if (window.ChatRegex) ChatRegex.applyStorage(newMsg, chat, type);
                     chat.history.push(newMsg);
                     putMsgs.push(newMsg);
                     if (typeof currentChatId !== 'undefined' && currentChatId === chat.id && typeof addMessageBubble === 'function') {
@@ -669,6 +671,8 @@ async function checkAndDeliverProactiveMessages() {
 
                     // 双语照片描述：与实时回复路径(chat_ai_service.js)对齐，英文摘走、content 只留中文
                     if (typeof stripBilingualImagePrompt === 'function') stripBilingualImagePrompt(newMsg);
+                    // 正则在草稿物化为消息时才执行；不改调度/原草稿，也不碰控制或媒体消息。
+                    if (window.ChatRegex) ChatRegex.applyStorage(newMsg, chat, type);
                     chat.history.push(newMsg);
                     msgsToPut.push(newMsg);
                     
@@ -1149,15 +1153,18 @@ async function generateBackgroundProactiveMessages(chat, maxCalls, type, queueTy
         // ── 读取主动消息 API 配置 ──────────────────────────────
         // 优先级同 getAiReply：主动消息专用预设 > 聊天自己的预设 > 全局默认。
         // 选「和聊天一致」时 proactiveApiPresetName 为空，必须回落到 chatApiPreset。
-        let effectiveApi = db.apiSettings || {};
+        let effectiveApi = { ...(db.apiSettings || {}),
+            presetName: db.apiSettings?.presetName || db.apiSettings?.activePreset || '全局默认' };
         const _overrideName = chat.proactiveApiPresetName || chat.chatApiPreset || null;
         if (_overrideName) {
             const preset = (db.apiPresets || []).find(p =>
                 p.name === _overrideName && (!p.type || p.type === 'chat')
             );
-            // Flex 只认选中的预设；缺字段不能继承全局开启，其他字段仍可兜底。
+            // Flex 和计价只认选中的预设；缺字段分别关闭、归零，其他字段仍可兜底。
             if (preset && preset.data) effectiveApi = { ...db.apiSettings, ...preset.data,
-                flexEnabled: !!preset.data.flexEnabled };
+                flexEnabled: !!preset.data.flexEnabled,
+                usagePricing: preset.data.usagePricing,
+                presetName: preset.name };
         }
         const { url, key, model } = effectiveApi;
         const temperature = effectiveApi.temperature !== undefined ? effectiveApi.temperature : 0.85;
@@ -1297,6 +1304,7 @@ const memoryLength = chat.maxMemory || 15;
         // 这里固定拿完整文本，下面要按 #SECRET_CHAT_...# 标签整体解析。
         try {
             textBlock = (await callLLM({
+                feature: '主动消息预生成',
                 cfg: effectiveApi,
                 messages: [
                     { role: 'system', content: systemPrompt },

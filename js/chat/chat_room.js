@@ -658,10 +658,16 @@ function setupChatRoom() {
             if (pvCard) {
                 if (e.target.closest('.image-zoom-btn')) return;
                 const imageOverlay = pvCard.querySelector('.pv-card-image-overlay');
-                const footer = pvCard.querySelector('.pv-card-footer');
-                if (imageOverlay && footer) {
-                    imageOverlay.classList.toggle('hidden');
-                    footer.classList.toggle('hidden');
+                const actions = pvCard.querySelector('.pv-card-actions');
+                // 提示底栏已移除，翻面只依赖图片层，不能再等 footer 存在。
+                if (imageOverlay) {
+                    const showingDescription = imageOverlay.classList.toggle('hidden');
+                    // 用渐隐类同步图片层；inert 立即禁用点击／焦点，淡出期间和异步加载后都不能误触。
+                    // 不能用 hidden/display:none，否则操作组会瞬间消失或出现，和图片过渡脱节。
+                    if (actions) {
+                        actions.classList.toggle('hidden', showingDescription);
+                        actions.inert = showingDescription;
+                    }
                 }
             }
             const giftCard = e.target.closest('.gift-card');
@@ -729,6 +735,7 @@ let isTouchLongPress = false; // 用于标记是否是由触摸触发的长按
         }
     });
 
+    document.getElementById('message-edit-type')?.addEventListener('change', syncMessageEditHtmlFields);
     const messageEditForm = document.getElementById('message-edit-form');
     if (messageEditForm) {
         messageEditForm.addEventListener('submit', (e) => {

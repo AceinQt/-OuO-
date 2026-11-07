@@ -1,5 +1,17 @@
 // forum_detail.js - 帖子详情页：渲染、评论回复/删除、删帖、复制、匿名回复
 
+            // 正文格式化和正则展示共用同一入口，保留原论坛的斜体与对话高亮。
+            function formatForumPostBody(source) {
+                return String(source ?? '').replace(/\r\n?/g, '\n').split('\n').map(line => {
+                    const text = line.trim();
+                    if (!text) return '';
+                    let html = marked.parse(text);
+                    // 强制处理紧挨汉字的 *斜体*，并高亮中文对话引号。
+                    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+                    return html.replace(/(“[^”]*”)/g, '<span class="inline-quote">$1</span>');
+                }).join('');
+            }
+
             // --- 修改部分 1：详情页渲染 (统一头像颜色) ---
             async function renderPostDetail(post) {
                 db.currentViewingPostId = post.id;
@@ -54,30 +66,10 @@
                 // 标题
                 titleEl.textContent = forumCleanTitle(post.title);
 
-                // 正文
-                if (post.content) {
-                    contentEl.className = 'post-detail-content-body markdown-content';
-                    let raw = post.content || '';
-                    raw = raw.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-                    const lines = raw.split('\n');
-                    const htmlParts = lines.map(line => {
-                        const text = line.trim();
-                        if (!text) return '';
-                        let html = marked.parse(text);
-                        // --- 【核心修复 1】: 强制处理未识别的斜体 ---
-                        // 解决 *文字* 紧挨着汉字时不显示斜体的问题
-                        // 查找成对的星号，强制替换为 <em> 标签
-                        html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-                        // --- 【核心修复 2】: 对话引号高亮 ---
-                        // 匹配 “任意内容”，添加高亮样式
-                        html = html.replace(/(“[^”]*”)/g, '<span class="inline-quote">$1</span>');
-                        return html;
-                    });
-                    contentEl.innerHTML = htmlParts.join('');
-                } else {
-                    contentEl.innerHTML = '';
-                }
+                // 正文：显示型只转换局部副本，不能回写帖子或影响搜索/引用。
+                contentEl.className = 'post-detail-content-body markdown-content';
+                if (window.ForumRegex) ForumRegex.renderBody(contentEl, post, formatForumPostBody);
+                else contentEl.innerHTML = DOMPurify.sanitize(formatForumPostBody(post.content));
 
                 nameEl.textContent = post.username;
                 timeEl.textContent = new Date(post.timestamp || Date.now()).toLocaleString();
@@ -179,7 +171,7 @@
                           </div>
                           <div class="comment-floor" style="font-size:12px; color:#999;">${newTag}#${floorNumber}</div>
                       </div>
-                      <div class="comment-content">${comment.content.replace(/\n/g, '<br>')}</div>
+                      <div class="comment-content"></div>
                       <div class="comment-timestamp" style="font-size:11px; color:#aaa; margin-top:4px;">
                         ${displayTime}
                         <span class="comment-delete-btn" data-original-index="${index}">删除</span>
@@ -193,6 +185,12 @@
                     commentsHtml = '<li style="padding:20px; text-align:center; color:#999;">暂无评论，快来抢沙发吧~</li>';
                 }
                 commentListEl.innerHTML = commentsHtml;
+                commentListEl.querySelectorAll('.comment-content').forEach((container, index) => {
+                    const comment = displayComments[index];
+                    const format = text => text.replace(/\n/g, '<br>');
+                    if (window.ForumRegex) ForumRegex.renderBody(container, comment, format);
+                    else container.innerHTML = DOMPurify.sanitize(format(String(comment.content ?? '')));
+                });
 
                 // 【新增】应用自定义CSS
                 applyCustomPostCss();
@@ -289,7 +287,9 @@
                         content: content,
                         timestamp: new Date().toLocaleString(),
                         avatar: commentAvatar,
-                        isUser: isUserComment
+                        isUser: isUserComment,
+                        // 匿名回复也是手写内容，独立记录来源以免显示正则误处理。
+                        forumUserAuthored: true
                     };
 
                     post.comments.push(newComment);

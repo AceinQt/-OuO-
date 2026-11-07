@@ -207,7 +207,9 @@ const scrollableArea = document.querySelector('#forum-screen .forum-content-area
                             comments: [],
                             timestamp: Date.now(),
                             avatar: postAvatar,
-                            isUser: isUserPost
+                            isUser: isUserPost,
+                            // 匿名只影响显示身份，仍是用户手写正文，不应参与 AI 正则替换。
+                            forumUserAuthored: true
                         };
 
                         db.forumPosts.unshift(newPost);

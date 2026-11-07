@@ -592,8 +592,8 @@ function sanitizeShareFieldText(text) {
  *
  * 合并而不是二选一（`preset.data || db.apiSettings`）：预设里没填的字段
  * ——尤其是温度和流式开关——要能落到全局默认上。口径和 chat_ai_service.js
- * 解析 chatApiPreset 时的口径一致；唯独 Flex 只认当前预设，缺字段就是关闭。
- * 不能让旧预设从全局默认继承付费路由开关。
+ * 解析 chatApiPreset 时的口径一致；Flex 和计价只认当前预设，缺字段分别关闭、归零。
+ * 不能让旧预设从全局默认继承付费路由开关或另一套价格。
  *
  * 整份 preset.data 原样透传，别只挑 url/key/model 三个字段：
  * vertexExpress 还要 projectId，挑字段会漏掉；温度和流式也会一起丢。
@@ -602,9 +602,14 @@ function _getShareApiConfig(chat) {
     const presetName = chat && chat.chatApiPreset;
     const preset = presetName && (db.apiPresets || [])
         .find(p => p.name === presetName && (!p.type || p.type === 'chat'));
-    if (!preset?.data) return { ...(db.apiSettings || {}) };
+    if (!preset?.data) {
+        const cfg = db.apiSettings || {};
+        return { ...cfg, presetName: cfg.presetName || cfg.activePreset || '全局默认' };
+    }
     return { ...(db.apiSettings || {}), ...preset.data,
-        flexEnabled: !!preset.data.flexEnabled };
+        flexEnabled: !!preset.data.flexEnabled,
+        usagePricing: preset.data.usagePricing,
+        presetName: preset.name };
 }
 
 /**
@@ -765,6 +770,7 @@ async function completeShareContent() {
         }
 
         const raw = await callLLM({
+            feature: '分享补全',
             cfg: _getShareApiConfig(chat),
             messages: [
                 { role: 'system', content: SHARE_COMPLETE_SYSTEM_PROMPT },
@@ -934,7 +940,7 @@ function _plainHiddenForwardText(message) {
 }
 
 /**
- * 一条消息在转发卡片里显示成什么。返回 { name, text }；返回 null = 不收录。
+ * 一条消息在转发卡片里显示成什么。返回 { name, text }；空 name 表示完整通知句，null = 不收录。
  *
  * 为什么不复用 chat_list.js 那套预览逻辑：那边要的是列表里一行摘要，语音和
  * 照片一律压成 [语音] [照片/视频] 就完事了，**正文全丢**。转发要的恰恰是
@@ -949,6 +955,12 @@ function describeForwardedMessage(message, chat, chatType, includeHidden = false
     const raw = (typeof message.content === 'string') ? message.content : '';
     // 日期分隔线不是消息，转过去只是噪音，开关开着也不收
     if (raw.trim() === '[time-divider]') return null;
+    // 撤回在原聊天室是可见通知，必须先于隐藏消息过滤处理。
+    // 旧 AI 记录用 [system: ... Original: 原文] 存储；先走隐藏分支会漏转，
+    // 打开「显示隐藏」时还会泄露原文。无论开关状态都只转发通知句。
+    if (message.isWithdrawn) {
+        return { name: '', text: `${_forwardSenderName(message, chat, chatType)}撤回了一条消息` };
+    }
     if (message.isHidden || FORWARD_SKIP_REGEX.test(raw)) {
         if (!includeHidden) return null;
         // 署名写「隐藏」而不是 _forwardSenderName：这些消息的 role 多半是 'user'，
@@ -974,8 +986,6 @@ function describeForwardedMessage(message, chat, chatType, includeHidden = false
 
     // --- 以下都是某个人说的话 ---
     const name = _forwardSenderName(message, chat, chatType);
-
-    if (message.isWithdrawn) return { name, text: '[已撤回]' };
 
     // 图片识别消息的 content **本身就是 base64**（parts 里才有那句提示语），
     // 所以必须先按 parts 判掉，不然几十 KB 的 data URI 会被当正文抄进卡片。
@@ -1030,7 +1040,8 @@ function buildForwardTranscript(messages, chat, chatType, includeHidden = false)
     const lines = [];
     (messages || []).forEach(m => {
         const item = describeForwardedMessage(m, chat, chatType, includeHidden);
-        if (item) lines.push(`${item.name}：${item.text}`);
+        // 撤回是完整通知句，不再加「姓名：」；普通发言仍保留署名。
+        if (item) lines.push(item.name ? `${item.name}：${item.text}` : item.text);
     });
     return sanitizeShareFieldText(lines.join('\n'));
 }
