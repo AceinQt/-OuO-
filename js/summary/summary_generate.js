@@ -28,7 +28,7 @@
 
 /**
  * 根据功能类型（'summary'/'journal'）获取对应API配置。
- * 优先读取角色/群组绑定的预设，fallback到全局默认 db.apiSettings。
+ * 优先读取角色/群组绑定的预设，未绑定时使用全局默认 db.apiSettings。
  */
 function _getMemoryApiConfig(type, chatObj) {
     const presetField = type === 'summary' ? 'summaryApiPreset' : 'journalApiPreset';
@@ -37,9 +37,10 @@ function _getMemoryApiConfig(type, chatObj) {
         const preset = (db.apiPresets || []).find(
             p => p.name === presetName && (!p.type || p.type === 'chat')
         );
-        if (preset && preset.data) return preset.data;
+        if (preset && preset.data) return { ...preset.data, presetName: preset.name };
     }
-    return db.apiSettings || {};
+    const cfg = db.apiSettings || {};
+    return { ...cfg, presetName: cfg.presetName || cfg.activePreset || '全局默认' };
 }
 
 
@@ -48,10 +49,11 @@ function _getMemoryApiConfig(type, chatObj) {
  * 流式时读完所有 chunk 后返回完整文本，行为对上层透明。
  * gemini 原生 / openai 兼容两种格式的差异由 callLLM 处理（js/api/llm_client.js）。
  * @param {object} cfg  预设对象（_getMemoryApiConfig 的返回值，含 provider）
- * @param {object} body { messages, temperature, stream? }
+ * @param {object} body { messages, temperature, stream?, feature }
  */
 async function _fetchCompletion(cfg, body) {
     return callLLM({
+        feature: body.feature || '总结',
         cfg,
         messages: body.messages,
         temperature: body.temperature,
@@ -492,6 +494,7 @@ ${outputInstruction}
 const _memCfg = _getMemoryApiConfig(type, chat);
 const { url, key, model, temperature: presetTemp, streamEnabled } = _memCfg;
 const rawContent = await _fetchCompletion(_memCfg, {
+    feature: type === 'summary' ? '总结' : '日记',
     model,
     messages: [
         { role: 'system', content: systemPrompt },
@@ -887,6 +890,7 @@ ${wbWriting ? `\n【特别文风/内容指导】：\n${wbWriting}\n` : ''}
 const _memCfg2 = _getMemoryApiConfig('summary', chat);
 const { url, key, model, temperature: presetTemp, streamEnabled } = _memCfg2;
 const rawContent = await _fetchCompletion(_memCfg2, {
+    feature: '长期记忆',
     model,
     messages: [
         { role: 'system', content: systemPrompt },

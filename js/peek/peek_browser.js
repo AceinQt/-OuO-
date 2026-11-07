@@ -178,7 +178,7 @@ www.example.com/tech-review-2026
 #SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:最近有没有什么特别想吃的？][19:16|${senderName}的消息:我刚刚看到一个不错的菜谱，周末我们一起做做看？]
 `;
 
-        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
+        const contentStr = await callPeekApi({ ...cfg, feature: '偷看浏览器生成', messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const browserRawText = parts[0] || '';

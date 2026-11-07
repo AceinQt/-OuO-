@@ -43,6 +43,8 @@ function triggerBackAction() {
     // 下面是"先播飞出动画、动画结束才 click"，等到 click 被 main.js 的闸挡掉时
     // 页面已经飞出去了，只能弹回来，看着像卡了一下。
     if (typeof window.isUiBusy === 'function' && window.isUiBusy()) return;
+    // 世界书多选/写入中的返回在动画前处理，不能先把页面飞走再被 click 拦回。
+    if (typeof consumeWorldBookBack === 'function' && consumeWorldBookBack()) return;
 
     const activeScreen = document.querySelector('.screen.active');
     if (!activeScreen || activeScreen.id === 'home-screen') return;

@@ -770,6 +770,7 @@ function rpgGetApiConfig() {
         const p = chatPresets.find(p => p.name === window.rpgSelectedApiPreset);
         if (p?.data) return {
             ...p.data,
+            presetName: p.name,
             url:   p.data.url || p.data.apiUrl || '',
             key:   p.data.key || p.data.apiKey || '',
             model: p.data.model || '',
@@ -784,6 +785,7 @@ function rpgGetApiConfig() {
         const p = chatPresets.find(p => p.name === activeName);
         if (p?.data) return {
             ...p.data,
+            presetName: p.name,
             url:   p.data.url || p.data.apiUrl || '',
             key:   p.data.key || p.data.apiKey || '',
             model: p.data.model || '',
@@ -795,6 +797,7 @@ function rpgGetApiConfig() {
     // 最终兜底旧版 db.apiSettings
     return {
         ...(db.apiSettings || {}),
+        presetName: db.apiSettings?.presetName || db.apiSettings?.activePreset || '全局默认',
         url:   db.apiSettings?.url || '',
         key:   db.apiSettings?.key || '',
         model: db.apiSettings?.model || '',
@@ -858,7 +861,9 @@ function rpgShowApiPickerDialog() {
             showToast(label);
             resolve(window.rpgSelectedApiPreset);
         }));
-        actionsEl.appendChild(createBtn('取消', 'btn-neutral', () => resolve(undefined)));
+        const cancelBtn = createBtn('取消', 'btn-neutral', () => resolve(undefined));
+        cancelBtn.dataset.appuiDismiss = ''; // 遮罩/返回复用原取消回调，不改选择值。
+        actionsEl.appendChild(cancelBtn);
 
         overlay.classList.add('visible');
     });
@@ -868,8 +873,8 @@ function rpgShowApiPickerDialog() {
  * 统一 AI 请求：支持流式和非流式，均返回完整 content 字符串
  * gemini 原生 / openai 兼容两种格式的差异由 callLLM 处理（js/api/llm_client.js）
  */
-async function rpgFetchAI(cfg, messages, temperature, stream) {
-    return callLLM({ cfg, messages, temperature, stream: !!stream });
+async function rpgFetchAI(cfg, messages, temperature, stream, feature = '游戏生成') {
+    return callLLM({ cfg, messages, temperature, stream: !!stream, feature });
 }
 
 
@@ -1225,7 +1230,7 @@ if (!url || !key || !model) return showToast('请先配置API');
 
         try {
             const content = await rpgFetchAI(cfg,
-    [{ role: "user", content: prompt }], cfg.temperature, cfg.stream);
+    [{ role: "user", content: prompt }], cfg.temperature, cfg.stream, '游戏角色生成');
 
             const parseTag = (tag) => {
                 const regex = new RegExp(`${tag}\\s*(.*)`);
@@ -2600,7 +2605,7 @@ prompt += `\n关系：两人是共同冒险的搭档。请确保台词符合伙�
 
                 try {
                     const content = await rpgFetchAI(cfg,
-    [{ role: "user", content: prompt }], cfg.temperature, cfg.stream);
+    [{ role: "user", content: prompt }], cfg.temperature, cfg.stream, '游戏台词生成');
 
                     // 5. 解析结果
                     const parseTag = (tag) => {
@@ -4016,7 +4021,7 @@ ${p2GameName}：台词...
 
         // --- API 请求 ---
         const rawContent = await rpgFetchAI(cfg,
-    [{ role: "user", content: prompt }], Math.max(cfg.temperature, 1.0), cfg.stream);
+    [{ role: "user", content: prompt }], Math.max(cfg.temperature, 1.0), cfg.stream, '游戏剧情生成');
 
 // ==========================================
 // ★★★ 修复版：智能切割 + 杜绝空对话框 ★★★

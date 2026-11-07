@@ -3,13 +3,14 @@
 // 购物车渲染、购物车生成
 // ==========================================
 
+// 商品占位图使用 Lucide shopping-bag（ISC），保留原布局类名，粗细在 peek.css 中调整。
 // 单条商品的 HTML（分页渲染复用）
 function _buildCartItemHtml(item, isEdit) {
     if (!item.id) item.id = 'cart_old_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
     const isSelected = isEdit && PeekDeleteManager.selectedIds.has(item.id);
     return `
         <li class="cart-item ${isEdit ? 'is-selecting' : ''} ${isSelected ? 'selected' : ''}" data-id="${item.id}">
-            <img src="./png/peek_cart_item.png" class="cart-item-image" alt="${item.title}">
+            <svg class="cart-item-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 10a4 4 0 0 1-8 0"/><path d="M3.103 6.034h17.794"/><path d="M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z"/></svg>
             <div class="cart-item-details">
                 <h3 class="cart-item-title">${item.title} ${item.isNew ? '<span class="new-badge">new!</span>' : ''}</h3>
                 <p class="cart-item-spec">规格：${item.spec}</p>
@@ -193,7 +194,7 @@ async function generateAndRenderPeekCart(options = {}) {
 #SECRET_CHAT_EVENING_85%#[19:16|${senderName}发来的照片/视频:耳机的图片][19:15|${senderName}的消息:你觉得黑色的耳机好看还是白色的好看？][19:16|${senderName}的消息:我想换个新耳机，但在颜色上纠结了半天...]
 `;
 
-        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
+        const contentStr = await callPeekApi({ ...cfg, feature: '偷看购物车生成', messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const cartRawText = parts[0] || '';

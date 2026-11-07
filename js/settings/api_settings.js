@@ -40,6 +40,47 @@ const IMAGE_PROVIDER_URLS = {
 };
 
 // ============================================================
+// 费用表单：单价随预设保存，不从其它预设或全局默认继承。
+// 账本统一清洗有限、非负数；未加载账本的旧嵌入入口只按零价回落。
+// ============================================================
+const _API_PRICING_PREFIXES = { chat: 'api-chat', embedding: 'api-emb', voice: 'api-voice', image: 'api-image' };
+const _API_PRICING_PARTS = ['input', 'output', 'cache'];
+// 非文字预设没有 Flex 编辑框，回写时仍保留导入数据中的这组值，避免无声丢字段。
+const _apiPricingHiddenFlex = {};
+
+function _normalizeApiUsagePricing(raw) {
+    if (window.ApiUsageLedger && typeof window.ApiUsageLedger.normalizePricing === 'function') {
+        return window.ApiUsageLedger.normalizePricing(raw);
+    }
+    return { standard: { input: 0, output: 0, cache: 0 }, flex: { input: 0, output: 0, cache: 0 } };
+}
+
+function _apiPricingFieldIds(type) {
+    const prefix = _API_PRICING_PREFIXES[type];
+    return (type === 'chat' ? ['standard', 'flex'] : ['standard'])
+        .flatMap(tier => _API_PRICING_PARTS.map(part => `${prefix}-price-${tier}-${part}`));
+}
+
+function _readApiUsagePricing(type) {
+    const prefix = _API_PRICING_PREFIXES[type];
+    const raw = { flex: _apiPricingHiddenFlex[type] };
+    (type === 'chat' ? ['standard', 'flex'] : ['standard']).forEach(tier => {
+        raw[tier] = {};
+        _API_PRICING_PARTS.forEach(part => { raw[tier][part] = _getVal(`${prefix}-price-${tier}-${part}`); });
+    });
+    return _normalizeApiUsagePricing(raw);
+}
+
+function _writeApiUsagePricing(type, raw) {
+    const pricing = _normalizeApiUsagePricing(raw);
+    _apiPricingHiddenFlex[type] = { ...pricing.flex };
+    const prefix = _API_PRICING_PREFIXES[type];
+    (type === 'chat' ? ['standard', 'flex'] : ['standard']).forEach(tier => {
+        _API_PRICING_PARTS.forEach(part => _setVal(`${prefix}-price-${tier}-${part}`, pricing[tier][part]));
+    });
+}
+
+// ============================================================
 // 描述符表：加新 API 类型只改这里
 // ============================================================
 // tab 级：
@@ -69,9 +110,11 @@ const API_TAB_DEFS = {
         providerUrls: CHAT_PROVIDER_URLS,
         providerFields: [
             { rowId: 'api-chat-project-row', providers: ['vertexExpress'] },
-            // 本站仅给 Google 原生两条线开放：Gemini 用 body，Vertex 用 Flex 头。
-            // 中转站/其他 provider 是否另有计费参数不能靠模型名猜。
-            { rowId: 'api-chat-flex-row', providers: ['gemini', 'vertexExpress'] }
+            // 原生 Vertex 不提供 Flex 开关；经 ouo-vertex2oai 使用时应选 NewAPI。
+            // Gemini 用 body，NewAPI 显式开启时用 service_tier，需要代理支持此契约。
+            // 不能只看模型名就猜代理会转换或已按 Flex 计费。
+            { rowId: 'api-chat-flex-row', providers: ['newapi', 'gemini'] },
+            { rowId: 'api-chat-flex-hint', providers: ['newapi', 'gemini'] }
         ],
         fields: [
             { key: 'provider', kind: 'text',        blank: 'newapi', get: s => s.provider || 'newapi' },
@@ -434,6 +477,7 @@ function _readApiForm(type) {
     if (!def) return {};
     const data = {};
     def.fields.forEach(f => { data[f.key] = _readApiField(def, f); });
+    data.usagePricing = _readApiUsagePricing(type);
     return data;
 }
 
@@ -441,12 +485,14 @@ function _readApiForm(type) {
 function _apiDataFromSource(def, src) {
     const data = {};
     def.fields.forEach(f => { data[f.key] = f.get(src || {}); });
+    data.usagePricing = _normalizeApiUsagePricing(src && src.usagePricing);
     return data;
 }
 
 /**
  * 按当前 provider 显示/隐藏专属字段行（如 vertexExpress 的 Project ID）。
- * 用 hidden 属性而非 style.display —— .form-group 只声明 margin-bottom，不会盖掉它。
+ * 用 hidden 属性而非 style.display；开关行的 display:flex 另由 api.css 的
+ * .form-group-switch[hidden] 覆盖，不能只依赖浏览器默认的 hidden 样式。
  * def 没写 providerFields 的 tab（如 embedding）直接跳过。
  */
 function _syncApiProviderFields(type) {
@@ -457,6 +503,16 @@ function _syncApiProviderFields(type) {
         const row = document.getElementById(pf.rowId);
         if (row) row.hidden = !pf.providers.includes(provider);
     });
+    if (type === 'chat') {
+        const hint = document.getElementById('api-chat-flex-hint');
+        if (hint) {
+            const text = {
+                newapi: '开启后发送 service_tier: flex，需要代理明确支持；使用 ouo-vertex2oai 时请部署新版 Go 代理。开关和请求成功不代表已验证折扣。',
+                gemini: '仅支持的模型可使用 Flex，代理需确认透传。可能排队或返回 429/503，不自动降级全价；开启后请保存预设。'
+            };
+            hint.textContent = text[provider] || '';
+        }
+    }
 }
 
 /**
@@ -472,6 +528,8 @@ function _applyDataToForm(type, src, { legacy = false } = {}) {
         const get = (legacy && f.getLegacy) ? f.getLegacy : f.get;
         _writeApiField(def, f, get(src));
     });
+    // 必须只读这条预设自己的单价：老预设缺字段＝零，不借全局那份。
+    _writeApiUsagePricing(type, src.usagePricing);
     _syncApiProviderFields(type);
 }
 
@@ -488,6 +546,7 @@ function _clearFormFields(type) {
         if (f.kind === 'modelList') return;   // 和 modelSelect 是同一个元素，上面已经清了
         _writeApiField(def, f, f.blank);
     });
+    _writeApiUsagePricing(type, null);
     _syncApiProviderFields(type);
 }
 
@@ -498,6 +557,7 @@ function applyPresetToForm(type, name) {
     const preset = _getPresets(type).find(p => p.name === name);
     if (!preset) return;
     if (preset.data) _applyDataToForm(type, preset.data);
+    else _writeApiUsagePricing(type, null);
     _setPresetNameInput(type, name);
     // 同步"是否默认"开关
     _setChecked(_apiId(def, 'set-default'), _activePresetName(def) === name);
@@ -1505,6 +1565,7 @@ function _applyVoicePresetToForm(presetId) {
     _setVal('api-voice-key', preset ? preset.apiKey : '');
     _setVal('api-voice-group', preset ? preset.groupId : '');
     _setVal('api-voice-speaker', preset ? preset.speakerId : '');
+    _writeApiUsagePricing('voice', preset && preset.usagePricing);
     // 模型行 / Group ID 行 / 语速音调属性 / 各种占位符都跟着服务商变。
     // ★ 不传 autofillUrl —— 上面已经按预设填好地址了，再自动填一次会把中转地址冲掉。
     _applyVoiceProviderToForm(provider, preset ? preset.speed : undefined,
@@ -1529,7 +1590,8 @@ function _readVoicePresetFromForm() {
         speakerId: _getVal('api-voice-speaker').trim(),
         // 空字符串会被归一化成该服务商的默认语速/音调，所以不用在这里判空
         speed: _getVal('api-voice-speed'),
-        pitch: _getVal('api-voice-pitch')
+        pitch: _getVal('api-voice-pitch'),
+        usagePricing: _readApiUsagePricing('voice')
     });
 }
 
@@ -1799,7 +1861,7 @@ async function previewVoiceSynthesis() {
     _setVoiceTestResult('正在合成，请稍等…');
 
     try {
-        const result = await synthesizeVoice({ text, profile: preset, settings });
+        const result = await synthesizeVoice({ text, profile: preset, settings, feature: '语音试听' });
 
         const kb = (result.bytes.byteLength / 1024).toFixed(1);
         _setVoiceTestResult(
@@ -1936,6 +1998,7 @@ function initVoiceApiTab() {
         'api-voice-preset-name', 'api-voice-provider',
         'api-voice-url', 'api-voice-key', 'api-voice-group', 'api-voice-model',
         'api-voice-speaker', 'api-voice-speed', 'api-voice-pitch',
+        ..._apiPricingFieldIds('voice'),
         'api-voice-max-chars', 'api-voice-daily-limit', 'api-voice-cache-limit'
     ]);
 }
@@ -2073,6 +2136,7 @@ function _applyImagePresetToForm(presetId) {
     _setVal('api-image-url', preset ? preset.apiUrl : '');
     _setVal('api-image-key', preset ? preset.apiKey : '');
     _setVal('api-image-project', preset ? (preset.projectId || '') : '');
+    _writeApiUsagePricing('image', preset && preset.usagePricing);
 
     _setImageModelSelectValue(preset ? preset.model : 'dall-e-3');
 
@@ -2201,7 +2265,8 @@ function _readImagePresetFromForm() {
         model: _getVal('api-image-model').trim(),
         size: _getVal('api-image-size'),
         quality: _getVal('api-image-quality'),
-        style: _getVal('api-image-style')
+        style: _getVal('api-image-style'),
+        usagePricing: _readApiUsagePricing('image')
     });
 }
 
@@ -2445,6 +2510,7 @@ async function previewImageGeneration() {
 
     try {
         const result = await generateImage({
+            feature: '图片生成测试',
             prompt: prompt,
             preset: preset,
             // 测试生成只用这一页上填的东西。聊天里的「画面风格」和「负面提示词」
@@ -2640,7 +2706,7 @@ function initImageApiTab() {
     // 监控表单改动，点亮底部的未保存提示
     _watchDirty('image', [
         'api-image-url', 'api-image-key', 'api-image-preset-name', 'api-image-set-default', 'api-image-provider',
-        'api-image-project',
+        'api-image-project', ..._apiPricingFieldIds('image'),
         'api-image-model', 'api-image-size', 'api-image-quality', 'api-image-style', 'api-image-cache-limit'
     ]);
 
@@ -2733,7 +2799,7 @@ function _initApiTab(type) {
     // 监听表单变化 → 标记脏数据
     // 去重：modelList 和 model 是同一个 select，不去重会给它挂两个一样的监听
     _watchDirty(type, [...new Set([
-        _apiId(def, 'preset-name'),
+        _apiId(def, 'preset-name'), ..._apiPricingFieldIds(type),
         ...def.fields.map(f => _apiFieldId(def, f))
     ])]);
 }

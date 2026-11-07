@@ -61,7 +61,7 @@ function _buildAlbumPhotoEl(photo, isEdit) {
     photoEl.dataset.description = photo.description;
 
     const img = document.createElement('img');
-    img.src = './png/card_photo_recv.jpg';
+    img.src = './png/card_photo.jpg';
     img.alt = "相册照片";
     photoEl.appendChild(img);
 
@@ -242,7 +242,7 @@ video
 #SECRET_CHAT_AFTERNOON_85%#[15:15|${senderName}发来的照片/视频:详细描述][15:16|${senderName}的消息:翻相册看到这张，觉得挺好看的，发给你看看。]
 `;
 
-        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
+        const contentStr = await callPeekApi({ ...cfg, feature: '偷看相册生成', messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const albumRawText = parts[0] || '';

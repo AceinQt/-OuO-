@@ -26,8 +26,8 @@ function setupWallpaperApp() {
     const colorPicker = document.getElementById('home-status-bar-color-picker');
     const colorInput = document.getElementById('home-status-bar-color-input');
 
-    // 1. 初始化值 (如果没有设置过，默认给个白色或者你想要的默认色)
-    const savedColor = db.homeStatusBarColor || '#FFFFFF';
+    // 1. 回显已保存的颜色；未设置时与初始首页一致，初始化不写回用户设置。
+    const savedColor = db.homeStatusBarColor || '#BEC9CB';
     colorPicker.value = savedColor;
     colorInput.value = savedColor;
 

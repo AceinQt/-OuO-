@@ -474,6 +474,7 @@ const charMsg = { role: 'char', content: '', timestamp: Date.now(), charName };
   try {
     let streamed = '';
     const reply = await callAI(userPrompt, {
+      feature: '共读',
       systemPrompt,
       onStream: (chunk) => {
         streamed += chunk;
@@ -530,6 +531,7 @@ async function _coreadCharReply(userText, fallbackMsg = null) {
   try {
     let streamed = '';
     const reply = await callAI(userPrompt, {
+      feature: '共读',
       systemPrompt,
       onStream: (chunk) => {
         streamed += chunk;

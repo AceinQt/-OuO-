@@ -67,6 +67,7 @@ function renderPeekTransferStation(entries, isAppend = false, resetPage = false)
         });
     }
 
+    // 底栏图标使用 Lucide mail-check（ISC），仅替换装饰，不增加按钮行为。
     screen.innerHTML = `
         <header class="app-header">
             <button class="back-btn" data-target="peek-screen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -85,7 +86,7 @@ function renderPeekTransferStation(entries, isAppend = false, resetPage = false)
             </div>
             <div class="transfer-station-input-area">
                 <div class="fake-input"></div>
-                <button class="plus-btn"></button>
+                <button class="plus-btn" aria-label="文件传输助手"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h8"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/><path d="m16 19 2 2 4-4"/></svg></button>
             </div>
         </main>
     `;
@@ -201,7 +202,7 @@ https://example.com/interesting-article
 #SECRET_CHAT_NOON_85%#[12:15|${senderName}的消息:我前阵子看到一篇关于心理学的文章，挺有意思的][12:16|${senderName}的消息:https://example.com/interesting-article]
 `;
 
-        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
+        const contentStr = await callPeekApi({ ...cfg, feature: '偷看中转站生成', messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const transferRawText = parts[0] || '';

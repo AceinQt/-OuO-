@@ -198,7 +198,9 @@ const resetChatListTabs = () => {
 const pageActions = {
     'study-screen': () => window.StudyModule?.renderMain(),
     'api-settings-screen': openApiSettingsScreen,
-    'world-book-screen': typeof renderWorldBookList !== 'undefined' ? renderWorldBookList : null,
+    'world-book-screen': typeof renderWorldBookFeatureDirectory !== 'undefined' ? renderWorldBookFeatureDirectory : null,
+    'world-book-category-screen': typeof renderWorldBookCategoryList !== 'undefined' ? renderWorldBookCategoryList : null,
+    'regex-category-screen': typeof renderRegexRuleList !== 'undefined' ? renderRegexRuleList : null,
     'customize-screen': typeof renderCustomizeForm !== 'undefined' ? renderCustomizeForm : null,
     'tutorial-screen': typeof renderTutorialContent !== 'undefined' ? renderTutorialContent : null,
     'storage-analysis-screen': window.refreshStorageScreen,
@@ -288,9 +290,9 @@ window.init = async () => {
         if (typeof applyScreenAdaptation === 'function') {
          applyScreenAdaptation(); 
      }
-        // 设置状态栏颜色
+        // 加载后应用首页状态栏颜色；只在缺省时使用默认壁纸的顶部色，不覆盖用户设置。
         if (typeof setAndroidThemeColor === 'function') {
-            setAndroidThemeColor(db.homeStatusBarColor || '#FFFFFF');
+            setAndroidThemeColor(db.homeStatusBarColor || '#BEC9CB');
             document.body.style.backgroundColor = window.db.homeNavigationBarColor || '#FFFFFF';
         }
 
@@ -331,6 +333,11 @@ window.init = async () => {
                 return; 
             }
 
+            // 世界书两层多选的返回先取消选择；保存期间不让异步回调把用户拉回旧页。
+            if (navTarget.classList.contains('back-btn') && typeof consumeWorldBookBack === 'function' && consumeWorldBookBack()) {
+                return;
+            }
+
             const targetId = navTarget.getAttribute('data-target');
                 
                 // ★ 提取判断条件
@@ -358,9 +365,11 @@ window.init = async () => {
                 }
             }
 
-            // C. 关闭弹窗逻辑
-            const openOverlay = document.querySelector('.modal-overlay.visible, .action-sheet-overlay.visible');
+            // C. 关闭实际点中的遮罩；叠着其他弹窗时不能只取文档里的第一个可见层。
+            const openOverlay = e.target.closest('.modal-overlay.visible, .action-sheet-overlay.visible');
             if (openOverlay && e.target === openOverlay) {
+                // 通用输入/确认弹窗必须真正取消，否则等待结果的页面一直锁着按钮。
+                if (typeof AppUI !== 'undefined' && typeof AppUI.dismiss === 'function' && AppUI.dismiss(openOverlay)) return;
                 openOverlay.classList.remove('visible');
             }
         });
@@ -424,6 +433,7 @@ window.init = async () => {
         if (typeof setupForwardMessagesModal === 'function') setupForwardMessagesModal();
         if (typeof setupTimeSkipSystem === 'function') setupTimeSkipSystem();
         if (typeof setupWorldBookApp === 'function') setupWorldBookApp();
+        if (typeof setupRegexApp === 'function') setupRegexApp();
         if (typeof setupFontSettingsApp === 'function') setupFontSettingsApp();
         if (typeof setupGroupChatSystem === 'function') setupGroupChatSystem();
 
@@ -440,6 +450,7 @@ window.init = async () => {
         
         
         if (typeof setupStorageAnalysisScreen === 'function') setupStorageAnalysisScreen();
+        if (typeof setupApiCallDetails === 'function') setupApiCallDetails();
         if (typeof setupPomodoroApp === 'function') setupPomodoroApp();
         if (typeof setupPomodoroSettings === 'function') setupPomodoroSettings();
         if (typeof setupPomodoroGlobalSettings === 'function') setupPomodoroGlobalSettings();
@@ -448,12 +459,7 @@ window.init = async () => {
         if (typeof setupUserPersonaScreen === 'function') setupUserPersonaScreen();
         if (typeof setupGroupInfoScreen === 'function') setupGroupInfoScreen();
 
-        // 绑定特殊按钮
-        const delWbBtn = document.getElementById('delete-selected-world-books-btn');
-        if (delWbBtn) delWbBtn.addEventListener('click', deleteSelectedWorldBooks);
-
-        const cancelWbBtn = document.getElementById('cancel-wb-multi-select-btn');
-        if (cancelWbBtn) cancelWbBtn.addEventListener('click', exitWorldBookMultiSelectMode);
+        // 世界书按钮由 setupWorldBookApp 统一绑定，不能在这里再绑一份。
 
         // 申请持久化存储权限 (防止手机空间不足时删数据)
         if (navigator.storage && navigator.storage.persist) {

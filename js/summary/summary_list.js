@@ -915,6 +915,7 @@ const sysPrompt = `请为以下对话片段生成详细总结和摘要。严格�
 
         // 二次调用固定走非流式：下面要按格式整体正则解析
         const raw = await callLLM({
+            feature: '重解析记忆',
             cfg: _chunkCfg,
             messages: [
                 { role: 'system', content: sysPrompt },

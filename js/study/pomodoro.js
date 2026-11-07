@@ -461,7 +461,7 @@ const userNick = userPersonaObj ? userPersonaObj.nickname : '一个普通人'; /
                             break;
                     }
 
-                    // NEW: Add session history context
+                    // 补充本次专注互动的历史上下文
                     if (pomodoroSessionHistory && pomodoroSessionHistory.length > 0) {
                         const charName = character.realName || '角色';
                         const historyContext = pomodoroSessionHistory.map(item => {
@@ -503,11 +503,12 @@ try {
         // 流式：清空 typing indicator，实时 append
         messageP.textContent = '';
         await callAI(prompt, {
+            feature: '番茄互动',
             systemPrompt,
             onStream: (chunk) => { messageP.textContent += chunk; }
         });
     } else {
-        const reply = await callAI(prompt, { systemPrompt });
+        const reply = await callAI(prompt, { feature: '番茄互动', systemPrompt });
         showTypewriterMessage(messageP, reply);
     }
 

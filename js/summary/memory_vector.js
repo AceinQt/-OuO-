@@ -253,7 +253,8 @@ async function resetAccessBoost() {
 // 只会觉得"记忆莫名其妙不生效"，极难查。
 const MAX_EMBED_CHARS = 4000;
 
-async function callEmbeddingApi(text, chat) {
+// 默认调用是检索查询；批量记忆向量化显式传 feature，避免两种付费用途混在一起。
+async function callEmbeddingApi(text, chat, options = {}) {
     if (typeof text === 'string' && text.length > MAX_EMBED_CHARS) {
         console.warn(`[Embed] 输入 ${text.length} 字超过上限，截断到 ${MAX_EMBED_CHARS} 字`);
         text = text.slice(0, MAX_EMBED_CHARS);
@@ -315,7 +316,14 @@ async function callEmbeddingApi(text, chat) {
     const controller = new AbortController();
     const timeoutId  = setTimeout(() => controller.abort(), 30000);
 
+    // 不展开全局设置：实际选中的 embedding 预设独占凭据、模型和报价。
+    const cfg = { ...apiConfig, url, key, model, provider, usagePricing: apiConfig.usagePricing };
+    let usageTracker = null;
+    let usageError = null;
     try {
+        usageTracker = typeof beginApiUsage === 'function'
+            ? beginApiUsage({ cfg, feature: options.feature || '向量检索', protocol: 'embedding', requestBody: body })
+            : null;
         const res = await fetch(fetchUrl, {
             method:  'POST',
             headers: provider === 'gemini'
@@ -325,19 +333,21 @@ async function callEmbeddingApi(text, chat) {
             signal:  controller.signal,
         });
 
-        clearTimeout(timeoutId);
+        usageTracker?.response?.(res);
 
         if (!res.ok) {
-    let errStr = `HTTP ${res.status}`;
-    try {
-        const errJson = await res.json();
-        console.log('[Embed] 错误响应完整内容:', JSON.stringify(errJson)); // 加这行
-        errStr = errJson.error?.message || errJson.detail || errJson.message || errStr;
-    } catch(e){}
-    throw new Error(errStr);
-}
+            let errStr = `HTTP ${res.status}`;
+            try {
+                const errJson = await res.json();
+                usageTracker?.usage?.(errJson);
+                console.log('[Embed] 错误响应完整内容:', JSON.stringify(errJson));
+                errStr = errJson.error?.message || errJson.detail || errJson.message || errStr;
+            } catch (_) {}
+            throw Object.assign(new Error(errStr), { status: res.status, response: res });
+        }
 
         const result = await res.json();
+        usageTracker?.usage?.(result);
 
         if (provider === 'gemini') {
             if (!result.embedding || !result.embedding.values) throw new Error('Gemini API 返回格式异常');
@@ -348,11 +358,14 @@ async function callEmbeddingApi(text, chat) {
         }
 
     } catch (error) {
-        clearTimeout(timeoutId);
+        usageError = error;
         if (error.name === 'AbortError') {
             throw new Error('网络请求超时 (被系统挂起或网络差)');
         }
         throw error;
+    } finally {
+        clearTimeout(timeoutId);
+        await usageTracker?.finish?.(usageError);
     }
 }
 
@@ -385,7 +398,7 @@ async function startEmbedBatch() {
                 if (progressEl) progressEl.textContent = `跳过片段 ${i + 1}（摘要未生成，请先二次调用）`;
                 continue;
             }
-            const vec    = await callEmbeddingApi(chunk.summary, chat);
+            const vec    = await callEmbeddingApi(chunk.summary, chat, { feature: '记忆向量化' });
             chunk.embedding = vec;
         } catch (e) {
         console.error('[Embed] 失败详情:', e, chunk); // ← 加这行

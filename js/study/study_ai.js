@@ -12,16 +12,17 @@ function _getStudyApiConfig() {
 
   if (presetName) {
     const preset = allPresets.find(p => p.name === presetName && (!p.type || p.type === 'chat'));
-    if (preset?.data) return preset.data;
+    if (preset?.data) return { ...preset.data, presetName: preset.name };
   }
 
   const globalActive = db.apiSettings?.activePreset;
   if (globalActive) {
     const preset = allPresets.find(p => p.name === globalActive && (!p.type || p.type === 'chat'));
-    if (preset?.data) return preset.data;
+    if (preset?.data) return { ...preset.data, presetName: preset.name };
   }
 
-  return db.apiSettings || {};
+  const cfg = db.apiSettings || {};
+  return { ...cfg, presetName: cfg.presetName || cfg.activePreset || '全局默认' };
 }
 
 /**
@@ -41,6 +42,7 @@ async function callAI(prompt, options = {}) {
 
   // 端点/字段/流式协议的两家差异统一由 callLLM 处理（js/api/llm_client.js）
   return callLLM({
+    feature: options.feature || '学习互动',
     cfg,
     messages,
     temperature: cfg.temperature !== undefined ? Number(cfg.temperature) : 0.8,
@@ -146,7 +148,7 @@ async function generateStudyQuestions(content, count, typePreference = 'mixed') 
 教材内容：
 ${content.substring(0, 15000)}`;
 
-  const text = await callAI(prompt);
+  const text = await callAI(prompt, { feature: '学习出题' });
   try {
     const clean = text.replace(/```json|```/g, '').trim();
     const result = JSON.parse(clean);
@@ -215,5 +217,5 @@ true 或 false（仅此一词，表示我的回答是否正确）
 （用你自己的方式，结合人设语气，详细评点我的回答，补充相关知识点，给出改进建议）`;
   }
 
-  return callAI(prompt, { systemPrompt, onStream });
+  return callAI(prompt, { feature: isChoice ? '学习解析' : '学习批改', systemPrompt, onStream });
 }

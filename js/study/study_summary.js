@@ -480,6 +480,7 @@ async function _bsSaveItem(book, { title, content, chapterRange, startChapterIdx
 // 固定非流式：上层要对整段结果做格式解析。
 async function _bsCallApi(cfg, systemPrompt, userContent) {
     return callLLM({
+        feature: '章节总结',
         cfg,
         messages: [
             { role: 'system', content: systemPrompt },

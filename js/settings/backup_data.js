@@ -166,7 +166,16 @@ window.exportPartialData = async function(categoryKey) {
         if (!window.db) throw new Error("数据库未就绪");
 
         switch (categoryKey) {
-            case 'worldBooks': partialData.worldBooks = db.worldBooks || []; break;
+            case 'worldBooks':
+                // 页面合并为「世界书与正则」，沿用 worldBooks 分项键，旧备份结构不改名。
+                partialData.worldBooks = db.worldBooks || [];
+                partialData.worldBookCategories = collectWorldBookCategories(db.worldBookCategories, db.worldBooks);
+                partialData.regexCategories = normalizeRegexCategories(db.regexCategories);
+                break;
+            case 'regex':
+                // 兼容旧独立正则入口；存储页不再单独展示。
+                partialData.regexCategories = normalizeRegexCategories(db.regexCategories);
+                break;
             case 'rpg': partialData.rpgProfiles = db.rpgProfiles || []; break;
             case 'forum':
                 // ★ [论坛懒加载 F1] 从 DB 全量读（懒加载下内存只有窗口，直接用会丢窗口外的帖子）
@@ -285,12 +294,15 @@ const PERSONALIZATION_SETTING_KEYS = [
     'homeSignature', 'insWidgetSettings', 'homeWidgetSettings'
 ];
 const STUDY_SETTING_KEYS = ['studySettings'];
+// 世界书与正则在存储页是一项；旧正则独立入口只使用下面的兼容清单。
+const WORLD_BOOK_SETTING_KEYS = ['worldBookCategories', 'regexCategories'];
+const REGEX_SETTING_KEYS = ['regexCategories'];
 
-// 系统设置 = 白名单减去上面两组。刻意不写死清单 —— 往 globalSettingKeys 加 key 时
+// 系统设置 = 白名单减去个性化、学习、世界书与正则三组。刻意不写死清单 —— 往 globalSettingKeys 加 key 时
 // 这里自动跟上，不用再记得改第二处（统计那边也是同一个思路）。
 function _settingsCategorySettingKeys() {
     if (typeof globalSettingKeys === 'undefined' || !Array.isArray(globalSettingKeys)) return [];
-    const elsewhere = new Set([...PERSONALIZATION_SETTING_KEYS, ...STUDY_SETTING_KEYS]);
+    const elsewhere = new Set([...PERSONALIZATION_SETTING_KEYS, ...STUDY_SETTING_KEYS, ...WORLD_BOOK_SETTING_KEYS]);
     return globalSettingKeys.filter(k => !elsewhere.has(k));
 }
 
@@ -324,8 +336,23 @@ window.clearPartialData = async function (categoryKey) {
             break;
 
         case 'worldBooks':
-            await T.worldBooks.clear();
+            // 条目、世界书类别与正则库同进同退；任一删除失败都回滚，不能只清空半项。
+            // 和原独立清空一致，角色/群/论坛的关联仍保留，缺失的引用由读取端忽略。
+            await T.transaction('rw', T.worldBooks, T.globalSettings, async () => {
+                await T.worldBooks.clear();
+                await T.globalSettings.bulkDelete(WORLD_BOOK_SETTING_KEYS);
+            });
             db.worldBooks = [];
+            db.worldBookCategories = [];
+            db.regexCategories = [];
+            break;
+
+        case 'regex':
+            // 兼容旧独立入口：只清规则库，不改角色/群/论坛绑定，缺失引用由读取端忽略。
+            await T.transaction('rw', T.globalSettings, async () => {
+                await T.globalSettings.bulkDelete(REGEX_SETTING_KEYS);
+            });
+            db.regexCategories = [];
             break;
 
         case 'rpg':
@@ -354,6 +381,13 @@ window.clearPartialData = async function (categoryKey) {
         case 'settings': {
             const keys = _settingsCategorySettingKeys();
             if (keys.length) await T.globalSettings.bulkDelete(keys);
+            // API 用量日志也归系统设置；必须走账本队列清空，避免待写记录在清表后重新落盘。
+            // 老版本或测试环境未加载账本模块时，仍清独立表，不能留下没有清理入口的日志。
+            if (typeof window.ApiUsageLedger?.clear === 'function') {
+                await window.ApiUsageLedger.clear();
+            } else {
+                await clearIfAny(T.apiCallLogs);
+            }
             // GitHub 凭据还有一份遗留在 localStorage 里（GitHubService.getConfig 的兜底读法）。
             // 不一起删的话，"系统设置已清空"之后仓库居然还连得上，凭据等于没清掉。
             try { localStorage.removeItem('qchat_github_config'); } catch (e) {}
@@ -576,6 +610,8 @@ async function* createFullBackupStream() {
         _exportVersion: '5.0',
         _exportTimestamp: Date.now(),
         worldBooks:             db.worldBooks             || [],
+        worldBookCategories:    collectWorldBookCategories(db.worldBookCategories, db.worldBooks),
+        regexCategories:        normalizeRegexCategories(db.regexCategories),
         rpgProfiles:            db.rpgProfiles            || [],
         forumBindings:          db.forumBindings          || {},
         forumUserIdentity:      db.forumUserIdentity      || {},
@@ -717,9 +753,81 @@ async function* createFullBackupStream() {
     } catch (e) {
         console.error('❌ [Backup] 读取书籍正文/共读消息/书本总结失败:', e);
     }
+    // ── 8. API 用量日志：独立行导出，不塞进 meta，也不在内存 db 常驻 ──
+    // 先等待账本队列落盘，再照论坛模式取主键、每批最多 500 条记录。
+    // 表内记录已由账本白名单去掉凭据及请求/响应正文，这里不再引入任何 API 配置。
+    if (typeof window.ApiUsageLedger?.flush === 'function') await window.ApiUsageLedger.flush();
+    if (typeof dexieDB !== 'undefined' && dexieDB.apiCallLogs) {
+        const logKeys = await dexieDB.apiCallLogs.toCollection().primaryKeys();
+        for (let i = 0; i < logKeys.length; i += 500) {
+            const batch = await dexieDB.apiCallLogs.bulkGet(logKeys.slice(i, i + 500));
+            for (const row of batch) {
+                if (row) yield JSON.stringify({ _type: 'apiCallLog', data: row }) + '\n';
+            }
+        }
+    }
 }
 
 // --- 7. 数据合并/恢复核心逻辑 ---
+
+/**
+ * 世界书条目与类别一起恢复。类别是字符串数组，绝不能套通用的按 id 合并逻辑。
+ * 完整替换时缺字段视为空集合；本地部分导入则保留原类别（包括尚无条目的空类别）。
+ * 备份入口已有界面忙锁；先精准事务落盘、成功后改内存，不能依赖吞错的全量保存兜底。
+ * 后续 restoreAllTablesToDB 仍保留原契约，重复写同一份数据是幂等的。
+ */
+async function _restoreWorldBookBackup(data, replace) {
+    const incomingBooks = Array.isArray(data.worldBooks) ? data.worldBooks : [];
+    const incomingCategories = Array.isArray(data.worldBookCategories) ? data.worldBookCategories : [];
+    let books = incomingBooks;
+    let categories = incomingCategories;
+    if (!replace) {
+        const merged = new Map((db.worldBooks || []).map(book => [book.id, book]));
+        for (const book of incomingBooks) merged.set(book.id, book);
+        books = [...merged.values()];
+        categories = [...collectWorldBookCategories(db.worldBookCategories, db.worldBooks), ...incomingCategories];
+    }
+    categories = collectWorldBookCategories(categories, books);
+    await dexieDB.transaction('rw', dexieDB.worldBooks, dexieDB.globalSettings, async () => {
+        if (replace) await dexieDB.worldBooks.clear();
+        if (books.length) await dexieDB.worldBooks.bulkPut(books);
+        await dexieDB.globalSettings.put({ key: 'worldBookCategories', value: categories });
+    });
+    db.worldBooks = books;
+    db.worldBookCategories = categories;
+}
+
+/**
+ * 正则库恢复：全量/云端替换，旧全量缺键视为 []；本地分项按类别与规则两层 ID 合并。
+ * 同类只覆盖同 ID 规则，未匹配规则保留；跨类移动规则时从原类移除，避免重复 ID。
+ * 与世界书相同，事务提交后才更新内存，写入错误必须交给导入入口报告。
+ */
+async function _restoreRegexBackup(data, replace) {
+    const incoming = normalizeRegexCategories(data.regexCategories);
+    let categories = incoming;
+    if (!replace) {
+        const existing = normalizeRegexCategories(db.regexCategories);
+        const existingById = new Map(existing.map(category => [category.id, category]));
+        const incomingOwners = new Map(incoming.flatMap(category => category.rules.map(rule => [rule.id, category.id])));
+        const merged = new Map(existing.map(category => [category.id, {
+            ...category, rules: category.rules.filter(rule => !incomingOwners.has(rule.id))
+        }]));
+        for (const category of incoming) {
+            const old = existingById.get(category.id);
+            // 保留同类原位置，但别的类别接收了同 ID 规则时，原类别不再持有它。
+            const rules = new Map((old?.rules || [])
+                .filter(rule => !incomingOwners.has(rule.id) || incomingOwners.get(rule.id) === category.id)
+                .map(rule => [rule.id, rule]));
+            for (const rule of category.rules) rules.set(rule.id, rule);
+            merged.set(category.id, { ...category, rules: [...rules.values()] });
+        }
+        categories = normalizeRegexCategories([...merged.values()]);
+    }
+    await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
+        await dexieDB.globalSettings.put({ key: 'regexCategories', value: categories });
+    });
+    db.regexCategories = categories;
+}
 
 // =========================================================
 // --- 6.9 V5 JSONL 流式导入 ---
@@ -789,7 +897,8 @@ async function importJsonlStream(byteStream, onProgress) {
         if (meta._type !== 'meta' || !meta._exportVersion) {
             throw new Error('备份文件第一行不是有效的 meta 记录');
         }
-        // 校验通过，现在才清空所有表（与 lazyImportBackupData 的清表清单一致）
+        // 校验通过，现在才清空所有表（与 lazyImportBackupData 的清表清单一致）。
+        // API 用量日志故意不清：旧备份没有日志，新备份也按安全 ID 合并，保留本机已有记录。
         await Promise.all([
             dexieDB.characters.clear(), dexieDB.groups.clear(), dexieDB.worldBooks.clear(),
             dexieDB.myStickers.clear(), dexieDB.userPersonas.clear(), dexieDB.globalSettings.clear(),
@@ -811,9 +920,12 @@ async function importJsonlStream(byteStream, onProgress) {
             // imageCache 是当前浏览器的可淘汰数据，不属于备份内容。
             dexieDB.imageCache?.clear(),
         ]);
-        // 小数据整体进内存 db
+        // 先独立恢复世界书，旧 meta 缺类别时清旧集合，再从恢复条目补齐。
+        await _restoreWorldBookBackup(meta, true);
+        await _restoreRegexBackup(meta, true);
+        // 其他小数据整体进内存 db
         Object.keys(meta).forEach(key => {
-            if (!key.startsWith('_')) db[key] = meta[key];
+            if (!key.startsWith('_') && key !== 'worldBooks' && key !== 'worldBookCategories' && key !== 'regexCategories') db[key] = meta[key];
         });
         // characters/groups/peekData 由后续行逐条填充
         db.characters = [];
@@ -881,6 +993,14 @@ async function importJsonlStream(byteStream, onProgress) {
                 const posts = item.items || [];
                 db.forumPosts.push(...posts);
                 if (posts.length) await dexieDB.forumPosts.bulkPut(posts);
+                break;
+            }
+            case 'apiCallLog': {
+                // 导入必须逐条 await 账本验证与安全 ID 合并，不能把不可信备份直接 bulkPut。
+                // 旧环境缺少账本模块时跳过这类新增行，不影响原有备份格式的恢复。
+                if (typeof window.ApiUsageLedger?.importRecord === 'function') {
+                    await window.ApiUsageLedger.importRecord(item.data);
+                }
                 break;
             }
             case 'studyBookContents':
@@ -1193,8 +1313,17 @@ async function lazyImportBackupData(jsonString) {
     if (!db.groups) db.groups = []; else db.groups.length = 0;
 
     // 小数据 key 集合：顶层所有 key 减去大数组字段和 peekData
+    // 世界书走独立事务，不能让缺字段的旧备份继承恢复前的类别登记。
+    const worldBookData = {};
+    for (const key of ['worldBooks', 'worldBookCategories']) {
+        if (spans[key]) worldBookData[key] = JSON.parse(jsonString.slice(spans[key].vStart, spans[key].vEnd));
+    }
+    await _restoreWorldBookBackup(worldBookData, true);
+    const regexSpan = spans.regexCategories;
+    await _restoreRegexBackup({ regexCategories: regexSpan
+        ? JSON.parse(jsonString.slice(regexSpan.vStart, regexSpan.vEnd)) : [] }, true);
     const smallDataKeys = Object.keys(spans).filter(k =>
-        !LAZY_ARRAY_KEYS.has(k) && k !== 'peekData' && !k.startsWith('_')
+        !LAZY_ARRAY_KEYS.has(k) && k !== 'peekData' && k !== 'worldBooks' && k !== 'worldBookCategories' && k !== 'regexCategories' && !k.startsWith('_')
     );
     for (const key of smallDataKeys) {
         const { vStart, vEnd } = spans[key];
@@ -1443,6 +1572,13 @@ async function importBackupData(data, isCloudPartialRestore = false) {
     const startTime = Date.now();
     try {
         const isPartial = !!data._partialType;
+        const restoresWorldBooks = !isPartial || data._partialType === 'worldBooks'
+            || Object.prototype.hasOwnProperty.call(data, 'worldBooks')
+            || Object.prototype.hasOwnProperty.call(data, 'worldBookCategories');
+        // 新组合分项显式携带 regexCategories；不能只因类型为 worldBooks 就恢复正则，
+        // 否则导入旧的纯世界书云端分项时会把现有正则误清空。
+        const restoresRegex = !isPartial || data._partialType === 'regex'
+            || Object.prototype.hasOwnProperty.call(data, 'regexCategories');
         let message = "";
 
         // === 核心修复：标准化 PeekData 防止旧版数组格式导致崩溃 ===
@@ -1459,7 +1595,7 @@ async function importBackupData(data, isCloudPartialRestore = false) {
         if (isCloudPartialRestore && isPartial) {
             message = `云端数据 (${data._partialType}) 已完整恢复`;
             Object.keys(data).forEach(key => {
-                if (key.startsWith('_')) return; 
+                if (key.startsWith('_') || key === 'worldBooks' || key === 'worldBookCategories' || key === 'regexCategories') return;
                 // 针对 peekData 单独洗数据
                 if (key === 'peekData') {
                     db.peekData = normalizePeek(data.peekData);
@@ -1494,7 +1630,7 @@ if (typeof dexieDB !== 'undefined') {
 }
             message = "全量数据已恢复";
             Object.keys(db).forEach(key => { 
-                if (data[key] !== undefined) {
+                if (key !== 'worldBooks' && key !== 'worldBookCategories' && key !== 'regexCategories' && data[key] !== undefined) {
                     if (key === 'peekData') {
                         db.peekData = normalizePeek(data[key]);
                     } else {
@@ -1507,7 +1643,7 @@ if (typeof dexieDB !== 'undefined') {
         else {
             message = `部分数据 (${data._partialType}) 已合并`;
             Object.keys(db).forEach(key => {
-                if (data[key] !== undefined) {
+                if (key !== 'worldBooks' && key !== 'worldBookCategories' && key !== 'regexCategories' && data[key] !== undefined) {
                     // 安全合并 peekData，防止覆盖其他角色
                     if (key === 'peekData') {
                         if (!db.peekData) db.peekData = {};
@@ -1531,6 +1667,11 @@ if (typeof dexieDB !== 'undefined') {
                 }
             });
         }
+
+        // 世界书局部导入按类别字符串并集；云端分片和全量恢复则完整替换。
+        // 旧的系统分片也可能携带 worldBooks，不能只按 _partialType 判断。
+        if (restoresWorldBooks) await _restoreWorldBookBackup(data, !isPartial || isCloudPartialRestore);
+        if (restoresRegex) await _restoreRegexBackup(data, !isPartial || isCloudPartialRestore);
 
         // =================================================================
         // ★★★ 数据导入后：把老备份文件包含的 History 对象抽取为独立的消息行入库 ★★★

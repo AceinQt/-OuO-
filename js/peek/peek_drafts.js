@@ -117,15 +117,6 @@ function renderPeekDraftsList(isAppend = false, resetPage = false) {
 
     // 底部"上滑加载更多"提示
     PeekPager.updateTip(list.parentElement, 'drafts', sorted.length, 'draft-loading-tip');
-
-    // 绑定长按删除（注意第二个参数修改为新的卡片类名）
-    PeekDeleteManager.attachLongPress(
-        list,
-        '.draft-card-item',
-        'drafts',
-        'items',
-        renderPeekDraftsList
-    );
 }
 
 // ==========================================
@@ -261,7 +252,7 @@ ${char.myName}
 #SECRET_CHAT_NIGHT_85%#[23:15|${senderName}的消息:睡了吗？][23:16|${senderName}的消息:今天又路过那家店，突然有点想你。]
 `;
 
-        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
+        const contentStr = await callPeekApi({ ...cfg, feature: '偷看草稿箱生成', messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts          = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const draftsRawText  = parts[0] || '';
@@ -307,8 +298,18 @@ function initPeekDraftsEvents() {
         ?.addEventListener('click', generateAndRenderPeekDrafts);
 
     // 列表点击 → 详情
-    document.getElementById('peek-drafts-list')
-        ?.addEventListener('click', _onDraftItemClick);
+    const list = document.getElementById('peek-drafts-list');
+    list?.addEventListener('click', _onDraftItemClick);
+
+    // 固定列表容器只在初始化时绑定长按多选，事件委托也覆盖后续新增/分页卡片。
+    // 不能放进渲染函数：进入多选会重绘，重复监听会让一次点击先选中又取消。
+    PeekDeleteManager.attachLongPress(
+        list,
+        '.draft-card-item',
+        'drafts',
+        'items',
+        renderPeekDraftsList
+    );
 
     // 绑定滚动分页加载
     const scrollContainer = document.querySelector('#peek-drafts-screen .content');

@@ -322,6 +322,7 @@ async function generatePeekBatch() {
 
         const contentStr = await callPeekApi({
             ...cfg,
+            feature: '偷看批量生成',
             messages: [{ role: 'user', content: systemPrompt }]
         });
 

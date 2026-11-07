@@ -138,7 +138,17 @@
         const overlays = document.querySelectorAll('.modal-overlay.visible, .action-sheet-overlay.visible');
         if (overlays.length > 0) {
             const top = overlays[overlays.length - 1];
+            // 正则关联提交中的返回和界面取消按钮一样被锁住；保留遮罩及跟踪，再补回已弹出的历史层。
+            // 不能先 untrack/隐藏，否则事务失败后弹窗已经消失，用户也无法原地重试。
+            if (top.id === 'regex-selection-modal' && document.getElementById('save-regex-selection-btn')?.disabled) {
+                pushEntry();
+                return true;
+            }
             untrack(top);
+            // 所有通用弹窗都走自己的取消回调，避免只隐藏后留下忙锁、临时控件或悬空 Promise。
+            if (typeof AppUI !== 'undefined' && typeof AppUI.dismiss === 'function' && AppUI.dismiss(top)) return true;
+            if (typeof cancelWorldBookDialog === 'function' && cancelWorldBookDialog(top)) return true;
+            if (typeof cancelRegexDialog === 'function' && cancelRegexDialog(top)) return true;
             top.classList.remove('visible');
             return true;
         }
@@ -165,6 +175,12 @@
         // （此处补压无手势、可能被标记可跳过，尽力而为）
         if (window.PeekDeleteManager && window.PeekDeleteManager.isEditMode && backBtn) {
             backBtn.click();
+            pushEntry();
+            return;
+        }
+
+        // 世界书：两层多选先取消，写入期间也不离页；补回本次硬件返回消耗的记录。
+        if (typeof consumeWorldBookBack === 'function' && consumeWorldBookBack()) {
             pushEntry();
             return;
         }

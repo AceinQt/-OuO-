@@ -114,7 +114,7 @@ async function generateAndRenderPeekSteps(options = {}) {
 #SECRET_CHAT_EVENING_85%#[19:15|${senderName}的消息:最近一直在健身～][19:16|${senderName}的消息:感觉隐约有点儿肌肉了][19:16|${senderName}发来的照片/视频:手臂照片][19:16|${senderName}的消息:你看是不是？]
 `;
 
-        const contentStr = await callPeekApi({ ...cfg, messages: [{ role: 'user', content: systemPrompt }] });
+        const contentStr = await callPeekApi({ ...cfg, feature: '偷看步数生成', messages: [{ role: 'user', content: systemPrompt }] });
 
         const parts = contentStr.split(/===PROACTIVE_MESSAGES===/i);
         const stepsRawText = parts[0] || '';

@@ -304,7 +304,7 @@ function _buildQueryText(history, fallbackRounds) {
 
 // 对外暴露：给定当前历史消息，执行完整的检索流程
 // 返回可直接注入 prompt 的字符串（失败时返回空串，静默降级）
-async function buildRetrievedMemoryContext(recentHistory, chat) {
+async function buildRetrievedMemoryContext(recentHistory, chat, promptHistory = null) {
     try {
         const chunks     = chat.memoryChunks || [];
         const vectorized = chunks.filter(c => c.embedding);
@@ -319,7 +319,8 @@ async function buildRetrievedMemoryContext(recentHistory, chat) {
 
 // 排除已在上下文窗口内的 chunk，避免重复注入
         const maxMemory   = (chat.maxMemory > 0) ? chat.maxMemory : Infinity;
-        const ctxWindow   = (chat.history || []).slice(-maxMemory).filter(m => !m.isAiIgnore);
+        // 缓存窗口会短于或暂时长于 maxMemory，排重必须按本次实际发送的历史判断。
+        const ctxWindow = (promptHistory || (chat.history || []).slice(-maxMemory)).filter(m => !m.isAiIgnore);
         const ctxStartTime = ctxWindow.length > 0 ? (ctxWindow[0].timestamp || 0) : 0;
 
         // [v1.6] 排除已收藏总结的 chunks（收藏内容已固定注入 allFavs，避免重复）
